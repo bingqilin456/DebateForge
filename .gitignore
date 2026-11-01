@@ -1,0 +1,54 @@
+# 本地原始参考资料与 CodeGraph 索引
+/references/
+/.codegraph/
+
+# 环境变量与秘密；只允许提交不含秘密的示例
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# 依赖与包管理缓存；锁文件应在后续编码阶段正常跟踪
+node_modules/
+vendor/
+.pnpm-store/
+.npm/
+
+# 构建、测试与本地缓存
+bin/
+dist/
+build/
+out/
+coverage/
+.cache/
+.vite/
+*.exe
+*.test
+coverage.out
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# 日志、数据卷及备份；不要笼统忽略 SQL 迁移文件
+logs/
+*.log
+data/
+backups/
+*.sql.gz
+*.db
+*.sqlite
+*.sqlite3
+
+# 本机编辑器、系统和临时文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+~$*

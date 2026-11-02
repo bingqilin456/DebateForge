@@ -1,8 +1,8 @@
 # 思弈阁 Lite / DebateForge
 
-面向中文辩论初学者的 AI 文字辩论训练项目，双人团队约一个月交付可访问、可维护、可测试、可答辩的 MVP。
+面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
-当前任务为 **Project Bootstrap（PB）工程初始化，完成后等待人工审查**。当前功能只有 Go/Gin 存活接口及 Vue 本地联通页面；没有数据库、登录、Eino、模型调用或辩论业务。PB 是 T01、T02、T06 的前置拆分任务，不代表完整 T02、T06 或 W1 已完成。实际验证见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。
+当前处于 **Phase 0：工程初始化与基线验收，PB 待人工验收**。当前功能只有 Go/Gin 存活接口及 Vue 本地联通页面；没有数据库、登录、Eino、模型调用或辩论业务。PB 是 T01、T02、T06 的前置拆分任务，不代表完整 T02、T06 或 Phase 1 已完成。实际验证见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)，本轮仅调整文档，不新增业务实施或部署授权。
 
 ## 环境
 

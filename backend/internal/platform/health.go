@@ -10,4 +10,5 @@ import (
 func live(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{"status": "alive"})
+
 }

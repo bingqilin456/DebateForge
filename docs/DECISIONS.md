@@ -2,7 +2,7 @@
 
 初版：2026 年 11 月 1 日；阶段制调整：2026 年 11 月 2 日。本文区分用户已确认的事实、原规划阶段采纳的决策以及尚待验证的技术与资源假设。规划决策不等于用户已批准实施，更不等于已完成兼容性或生产验证。
 
-PB 授权范围为工程骨架、存活接口、本地代理、基础测试与文档。**Phase 0 已结项，PB 已完成**，见 [结项登记](INIT_ACCEPTANCE.md#人工验收与成员讲解互审登记)。T01–T18 尚未开始，下一阶段实施及 Git 和部署操作按对应授权执行。原规划授权记录保留为历史。
+PB 授权范围为工程骨架、存活接口、本地代理、基础测试与文档。**Phase 0 已结项，PB 已完成**，见 [结项登记](INIT_ACCEPTANCE.md#人工验收与成员讲解互审登记)。2026 年 11 月 6 日用户授权 T01 契约与资源确认，当前状态见 [TASKS](TASKS.md)。后续批次、Git 和部署操作按对应授权执行。原规划授权记录保留为历史。
 
 ## 资料读取记录与依据
 
@@ -67,7 +67,7 @@ B 主责辩题与历史页面，A 主导复杂聊天和流式交互。收益是�
 
 采用 MySQL InnoDB 作为开发集成及生产持久化数据库，GORM 负责数据访问；初始表和后续变更用可审查的版本化 SQL，不在生产启动时 AutoMigrate。依靠短事务、外键及唯一索引保证会话、轮次与消息一致，模型调用放在事务之外。[GORM 事务文档](https://gorm.io/docs/transactions.html)
 
-实体为 users、auth_sessions、topics、debates、debate_turns、messages、debate_summaries。独立轮次表用于失败、幂等和恢复，比只保存一段聊天文本多一张业务表，但让状态与消息可测试；不再引入单独任务系统或事件存储。数据库设计与 API 的唯一契约见 [ARCHITECTURE](ARCHITECTURE.md)。
+实体为 users、auth_sessions、topics、debates、debate_turns、messages、debate_summaries。独立轮次表用于失败、幂等和恢复，使状态与消息可独立验证。数据库设计见 [ARCHITECTURE](ARCHITECTURE.md)，首批 HTTP 契约见 [API](API.md)。
 
 ## ADR-005 同源 Session 认证
 
@@ -164,6 +164,25 @@ B 主责辩题与历史页面，A 主导复杂聊天和流式交互。收益是�
 替代方案：保留固定周表仅延长日期，仍会产生追赶压力；取消估算与门槛，则丢失工作量参考与质量控制，均不采用。
 
 后果：完成时点随实际投入变化，超出估算不降验收标准；任务阻塞记录恢复条件，可转做当前阶段其他满足依赖的任务。真实模型、持久化、用户隔离、安全与预算前置、获准部署、备份恢复及答辩门槛均保留；SSE 仍为可取消 P1。阶段计划调整不授权提交、推送、合并、购买或部署。
+
+## T01 契约与任务边界
+
+- **用户确认**。T05 提供真实 MySQL 辩题的最小只读接口，T06 与 T08 复用。T08 保留完整选题、立场选择与交互。T05 支持首轮查询和幂等重放，完整三轮、显式重试与崩溃租约回收归 T09。
+- **契约裁定**。业务 DTO 和错误码集中在 [API](API.md)。已失败重放为 `409 turn_failed`，状态不明先查会话，已确认失败才附轮次详情。使用同一个详情查询地址恢复客户端状态。
+- **后续实现要求**。PB 的 Go `WriteTimeout=5s` 与首轮模型 45 秒、请求 60 秒预算冲突。T05 联调前调整写期限并用超过 5 秒的 Fake 走真实 HTTP 验收。T07 另验证 Nginx 与前后端超时配合。
+
+## T01 资源与版本登记
+
+2026 年 11 月 6 日。候选版本依据官方发布和模块元数据，运行与组合兼容性由对应任务验证。资源缺口登记到负责的任务。
+
+| 项目 | 已验证事实 | 推荐默认与候选 | 缺口、影响与确认节点 |
+| --- | --- | --- | --- |
+| PB 工具链与锁文件 | 本机 Windows amd64，Go `1.27.1`、Node `24.11.1`、npm `11.6.2`。PB 的 Gin `1.12.0`、Vue `3.5.44`、Arco `2.59.0`、Vite `8.3.5`、plugin-vue `6.0.10`、TypeScript `5.9.3`、vue-tsc `3.3.14`、Vitest `5.0.5`、`@types/node 24.10.1` 已锁定并有既有 Windows 验收记录。 | 复用现有工具链。 | A 在 T02/T03/T04 分别验证新增 Go 模块，T07 验证目标 Linux 镜像。 [PB 记录](INIT_ACCEPTANCE.md#环境与依赖) |
+| MySQL 与隔离库 | 本机 Docker CLI `29.8.2`、Compose `v5.5.1` 可用。指定的 Docker Desktop Linux Engine 端点不可达，`mysql` 不在 PATH，未验证运行中的 MySQL 实例。 | 固定官方 `mysql:8.4.13`（8.4 LTS），InnoDB、`utf8mb4`、UTC。开发与集成测试使用独立容器、卷、凭据和回环端口，集成测试显式校验目标隔离。 | A 在 T02 迁移和集成验证前落实可用引擎或获准的隔离环境，并核对实际镜像与数据库版本。 [MySQL 发布说明](https://dev.mysql.com/doc/relnotes/mysql/8.4/en/news-8-4-13.html) · [官方镜像标签](https://github.com/docker-library/official-images/blob/master/library/mysql) |
+| GORM 与迁移 | 当前模块未接入 GORM 和 MySQL 驱动。官方元数据声明的 Go 最低版本在现有工具链范围内。 | GORM `v1.31.2` 与 `gorm.io/driver/mysql v1.6.0` 用于 CRUD 和短事务。独立 Goose CLI `v3.29.0` 管理版本化 SQL，DDL 与种子分开，迁移账户与应用账户分离。MySQL DDL 可能隐式提交，失败后核对实际结构和版本记录再恢复。 | A 在 T02 核对许可证、锁定依赖并验证组合、空库迁移、重跑和失败处置。替代方案为手工 SQL 及版本登记，易漏记已执行的变更。 [GORM 模块](https://raw.githubusercontent.com/go-gorm/gorm/v1.31.2/go.mod) · [驱动模块](https://raw.githubusercontent.com/go-gorm/mysql/v1.6.0/go.mod) · [Goose](https://github.com/pressly/goose/tree/v3.29.0) |
+| Eino、模型与凭据 | 当前无 Eino 依赖、供应商适配或模型配置。供应商、精确模型 ID 与凭据就绪状态待确认。 | 单供应商 ChatModel `Generate`，完整响应，与 Fake 共用业务侧最小接口。服务端注入凭据，资源登记只记录就绪状态。 | A 在 T04 真实冒烟前确认供应商、模型 ID、适配包版本、Go 兼容性、上下文窗口和凭据就绪。 [Eino ChatModel 指南](https://www.cloudwego.io/docs/eino/core_modules/components/chat_model_guide/) |
+| Token、频率与费用 | 应用限额和超时仅有架构基线，未取得供应商硬额度证据。 | 每用户每分钟 6 次、每日 20 次尝试，用户并发 1、全局并发 2，模型 45 秒、总请求 60 秒、单次 DB 3 秒。输出同时受 Token 和 2000 码点约束，输入预算覆盖三轮与总结。 | A 在 T04 真实调用前确认输入/输出 Token、计费、冒烟上限，T07 开放前验证供应商达到预算会停止调用。预算告警与进程内限额只作补充。 |
+| Linux、域名与 HTTPS | 仓库尚无生产配置，主机、域名、DNS 控制权、证书续期、备份及告警资源待核实。 | 单台 Linux、Compose、Nginx、私网 DB 和持久卷。首次受控试用建议限评审及指定测试人员。 | A 在 T07 前核实资源归属、访问方式、预算、安全验证与独立部署授权。资源缺失时保留本地或 SSH 隧道证据，T07 保持未完成。 |
 
 ## 决策变更规则
 

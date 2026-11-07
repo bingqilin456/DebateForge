@@ -1,6 +1,6 @@
 # 思弈阁 Lite 技术架构
 
-状态：2026 年 11 月 1 日用户已批准 Project Bootstrap 工程初始化。当前只实施 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通；数据库、认证、AI 和部署均为后续设计。产品边界见 [PRD](PRD.md)，方案依据见 [DECISIONS](DECISIONS.md)，当前接口见 [API](API.md)，验证状态见 [INIT_ACCEPTANCE](INIT_ACCEPTANCE.md)。
+2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](TASKS.md) 交付。产品边界见 [PRD](PRD.md)，资源状态和方案依据见 [DECISIONS](DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](INIT_ACCEPTANCE.md)。
 
 ## 架构与技术栈
 
@@ -25,7 +25,7 @@ flowchart LR
 | 部署 | Linux、Docker Compose、Nginx | 一个应用副本，TLS 终止，数据库内网，独立持久化卷 |
 | 观察与维护 | JSON 日志、健康端点、主机和容器检查 | 不新增 Prometheus/Grafana 集群；复用可用的主机告警能力 |
 
-Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2；后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm，不混用其他锁文件。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、Eino 与部署镜像版本留到对应任务核实，不使用浮动 `latest`。
+Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2。后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、GORM、迁移工具候选与 Eino 版本确认节点见 [T01 资源登记](DECISIONS.md#t01-资源与版本登记)。对应任务验证后固定精确版本和镜像标签。
 
 本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/health/`、`/api/` 原路径代理到后端，不增加宽泛 CORS。当前只注册 `/health/live`，`/health/ready` 保留至 T02 数据库子任务。单页面阶段暂不安装 Vue Router、Pinia、Axios，不预建业务空模块。
 
@@ -71,7 +71,7 @@ docs/                               # 本阶段共享规划与后续验收记录
 .env.example                        # 后续创建，不含真实凭据
 ```
 
-每个模块只创建当前任务需要的文件，不为凑齐树提前生成空层。测试文件优先靠近业务文件，集成测试才集中存放。`docs/API.md` 当前仅固定健康接口及骨架错误响应；T01 再固定业务请求、响应及错误示例，本文其余接口仍为后续草案。
+每个模块只创建当前任务需要的文件。测试文件优先靠近业务文件，集成测试集中存放。[API](API.md) 是 PB 健康检查及 Phase 1 业务 HTTP 契约的来源，本文保留数据和实现约束，以及 Phase 2 接口草案。
 
 ## 数据实体与关系
 
@@ -87,11 +87,13 @@ docs/                               # 本阶段共享规划与后续验收记录
 | `messages` | `id, turn_id, role, content, created_at` | turn_id 外键；role 只允许 user/assistant；唯一 `(turn_id, role)` |
 | `debate_summaries` | `id, debate_id, status, schema_version, content_json, attempt_version, lease_expires_at, error_code, model_name, prompt_version, input_tokens, output_tokens, latency_ms, updated_at` | debate_id 外键且唯一；content_json 仅在成功后有值；status 与 lease_expires_at 索引 |
 
-所有表有主键；未列出的必要创建时间在迁移时补齐，不把字段草案当作已执行的 DDL。`topics` 的文字快照使后续改种子不会改变旧会话语义。
+所有表有主键，迁移时补齐必要的创建时间。T02 以版本化种子写入至少 5 个经人工审阅的中文辩题。T05 在 `GET /api/v1/topics` 查询真实 MySQL 中启用的辩题并按 ID 升序返回，T06 和 T08 复用。创建会话时检查辩题可用并将文字快照写入 `debates`，从而保留旧会话的原题。API 的 `topic` 字段由 `topic_id` 和会话快照投影，`ai_stance` 由用户立场反转得到。
 
 关系为：User 1:N AuthSession，User 1:N Debate，Topic 1:N Debate，Debate 1:N Turn（最多 3），Turn 1:N Message（最多 2），Debate 1:0..1 Summary。`debate_turns` 独立保存生成状态与幂等标识，`messages` 保存正式内容，避免把半条流式回复当作历史消息。
 
 使用版本化 SQL 迁移及种子文件，由受控流程执行；GORM 执行 CRUD 与事务。生产启动不运行 `AutoMigrate`，不自动重置或重建表。服务账户仅有必要业务读写权限，迁移使用单独权限。GORM 支持显式事务，跨表业务仍需自行定义事务边界。[GORM 事务文档](https://gorm.io/docs/transactions.html)
+
+T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`、`debate_turns`、`messages`。总结表由 T10 使用版本化迁移加入。Phase 1 的会话详情按 [API](API.md) 返回固定的未开始总结状态。
 
 ## 会话与轮次状态机
 
@@ -99,50 +101,40 @@ docs/                               # 本阶段共享规划与后续验收记录
 
 `debate_turns.status` 只取 `generating`、`completed`、`failed`。初次接收发言即创建 generating 轮次及 user 消息；完整回复持久化才创建 assistant 消息。生成中的增量不作为正式消息保存。
 
+**T05 首轮范围。** 仅接受 `round_no=1`，保留轮次、消息、幂等键、租约与 `attempt_version`，完成首轮后会话仍为 `active`。处理可观察的模型失败、超时和请求取消。**T09 扩展范围。** 加入第 2/3 轮、第四轮拒绝、显式重试及过期租约回收。Phase 1 进程硬崩溃或数据库故障可能遗留 `generating`，客户端在有限轮询后提示稍后查询。
+
 一次新轮次的处理顺序：
 
-1. 在短事务内按用户所有权锁定会话行，先查 client_request_id：已完成返回原结果；生成中返回 202；已失败返回失败状态，不自动重调模型。同一标识附带不同内容或轮次返回 409。
-2. 对新标识校验会话 active、`round_no = completed_rounds + 1`、1 至 3、没有该轮已有记录。已有失败轮必须使用重试入口，不能换标识绕过；唯一约束作为最终保护。
+1. 在短事务内按用户所有权锁定会话行，先查 `client_request_id`。同键同轮同原文已完成返回 200，生成中返回 202，已失败返回 `409 turn_failed`。同一标识附带不同内容或轮次返回 `409 idempotency_conflict`。重放不重新调用模型。
+2. 对新标识校验会话 `active`、`round_no = completed_rounds + 1`，且本阶段允许该轮、该轮无已有记录，否则返回 `409 round_conflict`。T09 上线后，已有失败轮通过显式重试恢复。唯一约束作为最终保护。
 3. 对真正需要生成的新请求，先非阻塞取得模型并发槽；没有槽则回滚并返回 429，不新增轮次或消息。在同一短事务创建 Turn 与 user 消息，记录 `attempt_version = 1`、生成租约后提交。失败重试和总结使用相同的准入顺序，重复查询或已完成结果重放不占模型槽。**不能持有数据库事务或行锁等待模型响应，也不在锁内排队等并发槽。**
 4. 在事务外，用服务端构建的上下文调用 Eino。普通完整回复和 SSE 最终都进入同一完成逻辑。
-5. 成功时再次短事务锁定会话，校验轮次仍 generating 且 attempt_version 匹配，保存唯一 assistant 消息、完成 Turn、增加 completed_rounds；达到 3 时完成 Debate。失败则只标记本次尝试 failed 和受控 error_code，不增加轮数。
+5. 成功时再次短事务锁定会话，校验轮次仍 `generating` 且 `attempt_version` 匹配，保存唯一 assistant 消息、完成 Turn、增加 `completed_rounds`。T09 支持达到 3 时完成 Debate。失败只标记本次尝试为 `failed` 并保存受控 `error_code`。请求取消时，在独立、有界的数据库上下文中尽力以 `generation_cancelled` 标记失败，仍校验状态及版本。成功事务提交后才能返回结果。提交结果不明时返回 503，前端先查询真实状态。
 
 失败轮重试通过独立 POST 入口，必须携带从查询结果取得的 `expected_attempt_version`（正整数），复用已保存 user 原文。在同一短事务内，仅当状态为 failed 且当前 attempt_version 等于期望版本时，才允许取得并发槽、更新 `failed → generating` 并将版本加 1；准入或事务失败则不消耗该版本。成功轮不支持重新生成。数据库提交失败时不得向前端报告 done；查询数据库状态后再决定恢复路径。
 
 重试请求遇到 completed 返回已保存结果，遇到 generating 返回 202，均不调用模型；遇到 failed 但版本已变化返回 409（`attempt_version_conflict`），附当前状态、attempt_version 和查询地址。缺失或非法期望版本返回 400。前端收到 409 后只查询并展示状态，不自动替换版本重发；只有用户再次明确点击重试，才使用最新失败版本。因此，即使一次重试已再次失败，延迟到达的同版本重复请求也不会再触发模型。该规则同样适用于总结重试。attempt_version 同时用于写回检查，旧尝试的成功或失败结果均不能覆盖新尝试。
 
-进程崩溃恢复：租约暂定 90 秒，服务启动及每 30 秒扫描过期 generating Turn/Summary，以条件更新标为 failed。总请求预算不超过 60 秒，过期处理仍需校验状态和 attempt_version。可重试恢复窗口目标为开始生成后不超过 120 秒加一次状态查询；过期不自动重新调用模型，不需要外部任务队列。
+进程崩溃恢复由 T09 实现轮次扫描，T10 复用到总结。租约暂定 90 秒，服务启动及每 30 秒扫描过期 `generating` 记录，以状态和 `attempt_version` 作条件更新标为 `failed`。总请求预算不超过 60 秒，可重试恢复窗口目标为开始生成后不超过 120 秒加一次状态查询。过期只结算状态，重调模型需显式请求。
 
 同一会话的轮次串行，单用户最多 1 个在途模型调用，全局最多 2 个；使用单实例内有界并发控制，满载直接 429 并返回 Retry-After，不排长队。认领事务失败、模型失败、断线、成功等所有退出路径都释放已取得的槽，不能因请求失败永久占用。以上并发约束不支持多副本，未来扩容需重做协调 ADR。
 
 幂等保证数据库中每轮结果至多一份，不保证供应商计费恰好一次。响应丢失先查状态，失败重试可能再次计费；不启用供应商 SDK、代理或前端的隐式模型重试。
 
-## 核心 API 草案
+## Phase 2 API 草案
 
-业务接口统一前缀 `/api/v1`，Cookie Session 认证。除注册、登录和健康端点外均需登录。所有含辩论 ID 的接口先按 `user_id` 过滤，不仅依赖前端隐藏入口。
+Phase 1 的 8 个接口与健康路径见 [API](API.md)。以下为 Phase 2 新增接口的设计草案，路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则。
 
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |
-| `POST /auth/register` | username、password | 201，返回用户基本信息；不自动登录 |
-| `POST /auth/login` | username、password | 200，设置 Session Cookie，返回 user 和 csrf_token |
-| `POST /auth/logout` | CSRF Header | 204，删除服务端 Session 并清 Cookie |
-| `GET /auth/me` | Session Cookie | 200，当前用户及 csrf_token；失效 401；禁止缓存 |
-| `GET /topics` | 无 | 200，启用的预设辩题 |
-| `POST /debates` | topic_id、user_stance | 201，辩题快照、对方立场、completed_rounds=0 |
 | `GET /debates?page=1&page_size=20` | page_size 最大 50 | 200，仅本人，按 created_at、id 倒序，返回 items、total、page、page_size |
-| `GET /debates/:id` | 本人会话 | 200，元数据、按轮次排序的 turns/messages、summary_status；进行中不含未落库增量 |
-| `POST /debates/:id/turns` | round_no、content、client_request_id（UUID） | 新生成完成 201；同标识已完成重放 200；进行中 202，携带 turn_id 和查询地址 |
 | `POST /debates/:id/turns/:turn_id/retry` | expected_attempt_version（必填）；无新内容；CSRF Header | failed 且版本匹配才认领；成功 200，进行中 202，已完成重放 200；失败版本已变化为 409，不调模型 |
 | `POST /debates/:id/summary` | `retry` 默认 false；为 true 时必填 expected_attempt_version | 仅 completed 辩论；首次成功 201，已完成重放 200，进行中 202；失败须 retry=true 且版本匹配才认领，版本冲突 409；not_started 时 retry=true 为 400 |
 | `GET /debates/:id/summary` | 本人会话 | 200，返回 status 和可选 content；未开始也返回 not_started |
-| `GET /health/live` | 实际路径不带 `/api/v1`，Nginx 原路径转发到 Go | 进程存活 200，JSON 为 `{"status":"alive"}`；不调用模型 |
-| `GET /health/ready` | 实际路径不带 `/api/v1`，Nginx 原路径转发到 Go | DB 短超时连通且配置就绪为 200、`{"status":"ready"}`，否则 503、`{"status":"not_ready"}`；无敏感信息、不调用模型 |
 
-重试接口也校验 turn_id 属于 URL 会话及当前用户。GET 不能触发模型调用。202 表示原 HTTP 请求仍在服务端生成，不代表投递了持久化异步任务；前端每 2 秒查询会话状态，终态后停止，不自动重新提交。
+重试接口也校验 `turn_id` 属于 URL 会话及当前用户。GET 仅查询已存状态。202 表示查到 `generating`，前端沿用 [API](API.md#错误码与客户端恢复) 的查询规则。
 
-成功 JSON 采用 `{data, request_id}`；失败采用 `{error: {code, message}, request_id}`，不返回堆栈。会话详情中每个 Turn 至少含 id、round_no、status、attempt_version、client_request_id、error_code、messages；正式消息含 id、role、content、created_at。总结查询及会话详情的总结状态同时返回 attempt_version（not_started 时为 null），成功总结另含 `schema_version` 及 content。生成失败时 502、504 或 503 响应还应提供当前 attempt_version、状态及可查询的 turn_id（若已创建）；总结失败提供总结查询地址。健康端点使用表中的固定 JSON，不套业务响应包装。
-
-错误约定：400 参数不合法，401 未登录，403 CSRF 不通过，404 不存在或非本人资源，409 用户名冲突/轮次冲突/幂等内容冲突/重试版本冲突，413 请求体过大，429 限流，502 模型失败或输出无效，504 生成超时，503 数据库/容量依赖不可用，500 未分类内部错误。供应商 429 可映射受控 503，不原样暴露供应商细节。生成中的 HTTP 202 不算错误。
+总结查询及会话详情的 `summary_status` 同时返回 `status` 和 `attempt_version`（`not_started` 时为 `null`），成功总结另含 `schema_version` 和 `content`。轮次与总结重试版本冲突用 `409 attempt_version_conflict` 和受控 `error.details` 提供当前状态、版本及查询地址。总结失败提供总结查询地址。Phase 2 实施时补齐这些新增接口的 JSON 示例。
 
 ## AI 上下文与总结
 
@@ -189,7 +181,7 @@ SSE 未通过直连、Nginx、中文分块及断线恢复验收时，关闭增�
 
 用户名假设为 3 至 32 位 ASCII 字母、数字及下划线，trim 后小写归一化；密码 12 至 128 个 Unicode 字符且不超过 512 字节，不 trim、不限制必须包含某类字符。注册/登录限制请求体与尝试频率，登录错误统一提示用户名或密码错误。
 
-Session 绑定独立随机 csrf_token，登录后及 GET /auth/me 返回，浏览器仅在内存持有；已登录写请求必须通过 `X-CSRF-Token` 校验并验证 Origin，注册/登录也检查 Origin 且仅接受 JSON。生产同源，不开放任意 CORS；开发用 Vite 同源代理。SameSite 和 HttpOnly 不能替代完整 CSRF 防护。[OWASP Session 建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回，浏览器仅在内存持有。按 [API](API.md#phase-1-业务接口) 校验配置中的完整 Origin，拒绝缺失、`null` 和不匹配值。需要 Session 的写路由同时校验 `X-CSRF-Token`。注册和登录即使携带旧 Cookie，也按匿名路由的规则校验 Origin。生产与 Vite 开发代理均使用浏览器同源请求。[OWASP Session 建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 
 前端默认纯文本渲染；不启用未净化 Markdown HTML。GORM 使用参数绑定并限制可写字段；所有资源读写检查 user_id。Nginx 与 Gin 配合限制请求体 32 KiB，普通列表 page_size 最大 50。可信代理只配置 Nginx 的已知地址，不能盲信外部 X-Forwarded-For。
 
@@ -198,6 +190,8 @@ Session 绑定独立随机 csrf_token，登录后及 GET /auth/me 返回，浏�
 上述请求体/字符限制、注册与登录限流、生成次数与并发限制、超时及供应商硬预算均为 T07 首次公网开放的前置条件，分别在 T03、T04、T05 实现和验证。T13 只做累计回归与参数调优，不能作为首次实现的时间点。总结与重试入口上线时即复用同一限额机制，只有成功认领的新尝试消耗每日生成额度，重复重放与版本冲突不消耗该额度；HTTP 防刷限流仍对请求生效。
 
 请求总预算 60 秒，模型 45 秒，数据库操作 3 秒；生成租约 90 秒，前端请求超时 70 秒，Nginx 代理读取超时暂定 75 秒。普通接口单独使用短超时；生成接口不套会截断 SSE 的通用短超时中间件。结果超长、空回复、非法结构或含供应商拒绝类型均转为受控失败，拒绝输出不伪装成成功训练。
+
+当前 PB 入口的 [HTTP `WriteTimeout`](../backend/cmd/server/main.go) 为 5 秒，短于首轮的模型和请求预算。T05 真实 HTTP 联调前调整写期限以覆盖请求预算，推荐 70 秒，普通接口仍用独立短预算。验收用耗时超过 5 秒的 Fake 走真实 HTTP 并读到成功 JSON，另验证模型超时、取消与查询结果。T07 验证 Nginx、Go 和前端的超时配合。T01 仅登记该要求。
 
 ## 日志、错误与监控
 

@@ -4,16 +4,22 @@
 
 本项目用于双人团队的 AB 实验室复试考核，按阶段目标推进，不限定阶段自然日数或固定投入时长，交付可访问、可维护、可测试、可答辩的 AI 文字辩论训练 MVP。成员 A 主要负责后端、AI 和部署；成员 B 在兼顾 ACM 备赛的前提下完成明确的前端与测试任务。两人必须理解各自负责的代码和技术决策。
 
-**Phase 0（工程初始化与基线验收）已结项，PB 已完成。** 用户确认了人工验收、A 讲解和 B 互审，历史结论见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md#人工验收与成员讲解互审登记)。**T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** T02–T18 尚未开始，后续任务须明确实施授权。
+**Phase 0（工程初始化与基线验收）已结项，PB 已完成。** 用户确认了人工验收、A 讲解和 B 互审，历史结论见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md#人工验收与成员讲解互审登记)。**T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** T02 进行中，仅获准建立隔离 MySQL 开发与集成测试环境，本子任务技术验证后待人工验收，见 [T02 环境记录](docs/T02_MYSQL_ENV_ACCEPTANCE.md)。T03–T18 尚未开始。
 
 PB 是 T01、T02、T06 的前置拆分任务，其授权仅包括最小前后端骨架、`GET /health/live`、本地代理联通页面、基础测试、类型检查和运行文档，允许安装并锁定必要依赖及运行本地验证。完整 T02、T06 和 Phase 1 均未完成。不得接入数据库、GORM、Eino、真实模型、认证或辩论业务，不创建生产部署配置、不部署。PB 完成后停止，不自动进入下一任务；本轮文档调整也不扩大该边界。
+
+上述为 PB 历史授权边界。2026 年 11 月 7 日用户另行授权 T02 的首个环境子任务：在 `infra/mysql/` 建立 `mysql:8.4.13` 本地 Compose、隔离开发/测试库及账户、独立卷与回环端口，启动并验证隔离。秘密文件只在 Git 忽略的本地目录保存。本次不接入后端、不实施业务迁移/种子或 readiness，不进入其余 T02 或 T03–T06，不创建 `deploy/` 或生产配置。完成后停止等待人工验收，完整 T02 不标记完成。
+
+后续授权增量：用户在本轮明确要求继续 T02，并完成一个可独立验证的闭环后停止。本轮实施后端 GORM/MySQL 连接、`/health/ready` 与测试入口目标保护，保留上述环境子任务的历史范围和在途改动。版本化迁移、业务表、5 条种子尚未实施；完整 T02 保持进行中，当前子任务技术验证后待人工验收，见 [后端接入记录](docs/T02_DATABASE_CONNECTION_ACCEPTANCE.md)。不进入 T03、不自动提交或部署。下文“当前仅实现 live”描述为 PB 历史基线，当前端点以 API 和该接入记录为准。
+
+2026 年 11 月 8 日提交授权增量：负责人确认已完成相关自动化验证，决定不再进行配置修复的独立复验，授权在当前 `feat/t02-database` 分支按依赖整理已完成子任务的 commit 和 push。只包括本地 MySQL 环境、数据库接入/Readiness、dotenv、已批准健康契约及相关测试文档；不创建 PR、不合并、不部署或推进剩余 T02。历史“未提交”说明保留为各次实施时的状态。
 
 需求边界以 [PRD](docs/PRD.md) 为准，技术契约以 [ARCHITECTURE](docs/ARCHITECTURE.md) 为准，阶段与任务见 [PLAN](docs/PLAN.md) 和 [TASKS](docs/TASKS.md)，决策及假设见 [DECISIONS](docs/DECISIONS.md)。出现冲突时先指出并修正文档，不自行扩大范围。
 
 ## 目录与编码规范
 
 - 采用单仓库：`backend/` 为 Go 服务（模块路径 `github.com/bingqilin456/DebateForge/backend`），`frontend/` 为 Vue 应用，`docs/` 为共享文档；`deploy/` 留待后续授权。本阶段只创建当前验收需要的文件。
-- 本地后端默认 `127.0.0.1:8080`，前端默认 `127.0.0.1:5173`，Vite 原路径代理 `/health/` 和 `/api/`；不增加宽泛 CORS。当前仅实现 `/health/live`，`/health/ready` 留待数据库任务。本阶段 npm 为唯一前端包管理器，保留 `package-lock.json`；保留锁文件不构成 Git 提交授权。
+- 本地后端默认 `127.0.0.1:8080`，前端默认 `127.0.0.1:5173`，Vite 原路径代理 `/api/`；不增加宽泛 CORS。2026 年 11 月 8 日用户已确认健康路径以当前 Gin 路由为准：`GET /api/health/live`、`GET /api/health/ready`；同步相关文档、前端请求与测试，旧 `/health/live`、`/health/ready` 仅保留历史语境。业务接口仍未实现。本阶段 npm 为唯一前端包管理器，保留 `package-lock.json`；保留锁文件不构成 Git 提交授权。
 - 后端采用 Gin + Eino + GORM + MySQL 的模块化单体，按 `auth`、`topic`、`debate`、`ai` 划分职责。HTTP Handler 负责协议，Service 负责规则，Repository 负责持久化，禁止 Handler 直接拼装 Prompt 或执行 SQL。
 - Go 使用 `gofmt`，错误保留上下文并在 HTTP 边界映射业务码；向下传递 `context.Context`。不随意增加抽象层、通用框架或 goroutine。
 - 前端采用 Vue 3 + TypeScript + Arco Design，使用单文件组件和 Composition API；API 请求统一封装，避免 `any` 和重复的接口类型，页面不保存模型密钥。

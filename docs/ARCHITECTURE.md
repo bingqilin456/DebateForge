@@ -6,6 +6,10 @@
 
 使用单仓库、单个 Go 服务和单个 MySQL 实例。按业务模块组织代码，在进程内调用，不引入 RPC、服务发现、Redis、消息队列或分布式事务。浏览器只访问同源站点，模型 Key 仅存在服务端。
 
+上述单实例描述为目标应用部署形态。T02 本地开发库与集成测试库按冻结要求使用独立 MySQL 容器、卷、账户与回环端口，环境配置见 [本地 MySQL](../infra/mysql/README.md)。本次只建立环境，后端连接、业务迁移和 readiness 留待 T02 后续获准实施。
+
+后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](API.md)；此前 [后端接入记录](T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
+
 ```mermaid
 flowchart LR
     U[浏览器 Vue 3 与 Arco Design] -->|HTTPS 页面及 API| N[Nginx]
@@ -27,7 +31,7 @@ flowchart LR
 
 Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2。后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、GORM、迁移工具候选与 Eino 版本确认节点见 [T01 资源登记](DECISIONS.md#t01-资源与版本登记)。对应任务验证后固定精确版本和镜像标签。
 
-本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/health/`、`/api/` 原路径代理到后端，不增加宽泛 CORS。当前只注册 `/health/live`，`/health/ready` 保留至 T02 数据库子任务。单页面阶段暂不安装 Vue Router、Pinia、Axios，不预建业务空模块。
+本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/api/` 原路径代理到后端，不增加宽泛 CORS。当前注册 `/api/health/live`、`/api/health/ready`，2026 年 11 月 8 日负责人已确认以这两个路径为准；历史无 `/api` 的健康路径不再适用，也不保留开发代理规则。单页面阶段暂不安装 Vue Router、Pinia、Axios，不预建业务空模块。
 
 ## 模块职责
 
@@ -199,15 +203,15 @@ Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回
 
 入口生成或校验 request_id，贯穿业务、模型调用和响应；HTTP 边界统一错误映射，保留内部 cause 供脱敏诊断。panic recovery 返回受控 500；退出时停止接新请求、取消在途模型调用并关闭连接，未完成状态通过恢复规则处理。
 
-基本监控由 A 负责，B 演练检查：每分钟经公网 Nginx 探测一次 HTTPS `/health/ready`，同时核对 HTTP 200、JSON Content-Type 和 `status=ready`，连续 3 次失败告警；主机磁盘使用超过 80%、容器反复退出、24 小时内没有有效备份、证书剩余不足 14 天应能被发现并通知维护者。尽量复用主机或云厂商告警，渠道和费用待资源确认，不为此搭建监控平台。人工每日查看只作补充，不能替代存活异常通知。
+基本监控由 A 负责，B 演练检查：每分钟经公网 Nginx 探测一次 HTTPS `/api/health/ready`，同时核对 HTTP 200、JSON Content-Type 和 `status=ready`，连续 3 次失败告警；主机磁盘使用超过 80%、容器反复退出、24 小时内没有有效备份、证书剩余不足 14 天应能被发现并通知维护者。尽量复用主机或云厂商告警，渠道和费用待资源确认，不为此搭建监控平台。人工每日查看只作补充，不能替代存活异常通知。
 
-T07 即经 Nginx 验证 `/health/live`、`/health/ready` 返回约定 JSON；数据库不可达时 ready 为 503，Go 停止时探测为非 2xx 或连接失败，任何 HTML 200 都不能算健康。T16 再分别模拟数据库不可达、应用停止和备份过期，核对健康返回、日志和告警到达。供应商故障通过模型错误率和受控冒烟发现，不在每分钟健康探测中调用收费模型。
+T07 即经 Nginx 验证 `/api/health/live`、`/api/health/ready` 返回约定 JSON；数据库不可达时 ready 为 503，Go 停止时探测为非 2xx 或连接失败，任何 HTML 200 都不能算健康。T16 再分别模拟数据库不可达、应用停止和备份过期，核对健康返回、日志和告警到达。供应商故障通过模型错误率和受控冒烟发现，不在每分钟健康探测中调用收费模型。
 
 ## 部署、持久化与恢复方案
 
 以下为后续获准后的实施顺序，本阶段不生成配置或连接服务器：
 
-1. 单台 Linux 主机，先确认资源预算、域名和网络要求；Nginx 提供静态 Vue 构建产物和 `/api/` 反向代理。另为 `/health/live`、`/health/ready` 配置精确匹配，原路径转发到 Go，保留上游状态码与 JSON Content-Type；其他 `/health/` 路径返回 404。SPA 回退仅用于前端页面，API 与健康端点均不得回退为 HTML，健康端点不得用 Nginx 固定 200 代替后端检查。[Nginx 请求路由文档](https://nginx.org/en/docs/http/request_processing.html)
+1. 单台 Linux 主机，先确认资源预算、域名和网络要求；Nginx 提供静态 Vue 构建产物和 `/api/` 反向代理。另为 `/api/health/live`、`/api/health/ready` 配置精确匹配，原路径转发到 Go，保留上游状态码与 JSON Content-Type；其他 `/health/` 路径返回 404。SPA 回退仅用于前端页面，API 与健康端点均不得回退为 HTML，健康端点不得用 Nginx 固定 200 代替后端检查。[Nginx 请求路由文档](https://nginx.org/en/docs/http/request_processing.html)
 2. Compose 管理 Nginx、Go、MySQL；公网仅开放 80/443，SSH 按管理来源限制，应用与 MySQL 端口只在内部网络可达。MySQL 使用命名卷或受控目录，重建容器不得删除卷。
 3. 首次公网开放前，须通过注册/登录限流、请求体与字符边界、生成次数/并发/超时和供应商硬预算检查；未通过则不开放。首次真实账号或消息通过公网传输前必须启用 HTTPS；80 只用于证书验证和跳转，配置自动续期并演练检查。域名未就绪时先保留本地或 SSH 隧道验收，不开放明文登录。
 4. 真实配置通过权限受限的环境文件或 secrets 注入，示例文件只含占位值。服务非 root 运行，限制资源，配置 restart 与健康检查；就绪失败不能靠无穷重启解决。

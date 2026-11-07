@@ -10,7 +10,7 @@ import (
 )
 
 // NewRouter 不使用默认日志与 Recovery，避免记录原始路径、查询参数和 panic 堆栈。
-func NewRouter(logger *slog.Logger) *gin.Engine {
+func NewRouter(logger *slog.Logger, database DatabasePinger) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	// 本地直连只信任 socket 对端，不接受外部伪造的代理地址头。
@@ -35,7 +35,10 @@ func NewRouter(logger *slog.Logger) *gin.Engine {
 		}()
 		c.Next()
 	})
-	router.GET("/health/live", live)
+
+	apiGroup := router.Group("/api")
+	apiGroup.GET("/health/live", live)
+	apiGroup.GET("/health/ready", ready(database))
 	router.NoRoute(func(c *gin.Context) {
 		writeError(c, http.StatusNotFound, "not_found", "接口不存在")
 	})

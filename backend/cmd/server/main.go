@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bingqilin456/DebateForge/backend/internal/platform"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -32,18 +33,48 @@ func main() {
 	}
 }
 
+// loadDotEnv 用操作系统的键名规则保留已有值，兼容 Windows 大小写和显式空值。
+func loadDotEnv() error {
+	values, err := godotenv.Read()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		// 解析错误可能携带文件原文，不把原始错误写入启动日志。
+		return errors.New("加载 .env 失败，请检查文件权限与格式")
+	}
+	for key, value := range values {
+		if _, present := os.LookupEnv(key); present {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return errors.New("应用 .env 配置失败，请检查环境变量格式")
+		}
+	}
+	return nil
+}
+
 func run(ctx context.Context, logger *slog.Logger) error {
+	// 仅启动入口补充本地配置；CI 可不提供 .env。
+	if err := loadDotEnv(); err != nil {
+		return err
+	}
 	cfg, err := platform.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("配置无效: %w", err)
 	}
+	database, err := platform.OpenDatabase(cfg.Database)
+	if err != nil {
+		return fmt.Errorf("初始化数据库失败: %w", err)
+	}
+	defer database.Close()
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           platform.NewRouter(logger),
+		Handler:           platform.NewRouter(logger, database),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,

@@ -55,7 +55,7 @@ onMounted(checkHealth)
           </Alert>
         </div>
         <dl class="details">
-          <div><dt>检查接口</dt><dd><code>GET /health/live</code></dd></div>
+          <div><dt>检查接口</dt><dd><code>GET /api/health/live</code></dd></div>
           <div><dt>最近检查</dt><dd>{{ checkedAt ?? '等待首次检查' }}</dd></div>
         </dl>
         <Button type="primary" size="large" long :loading="status === 'checking'" :disabled="status === 'checking'" @click="checkHealth">

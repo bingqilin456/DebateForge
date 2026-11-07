@@ -1,0 +1,1444 @@
+# 文档核对快照；规划接口、安全占位符及健康路径裁定详见 API.md。
+openapi: 3.1.1
+jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
+info:
+  title: DebateForge（思弈阁）API 契约与实现核对
+  version: t01-frozen-2026-11-08
+  description: 文档快照日期 2026-11-08（Asia/Shanghai）。依据 docs/API.md 已冻结 T01 契约和当前工作区代码；不是发布版本。共 10 个操作：2 个已实现健康接口、8 个未实现业务契约。健康路径依
+    2026-11-08 用户裁定统一为 /api/health/live、/api/health/ready，业务契约保持 T01 设计。所有 /api/v1 业务接口当前均未注册，真实请求为 404；其状态、Schema、安全、限流均为规划，不能视为已实现。Phase
+    2 四个草案只保留扩展索引，不进入 paths。字段未冻结的行为不自行补全。
+servers:
+- url: http://127.0.0.1:8080
+  description: 本地后端默认地址；不代表当前进程已启动或生产已部署。
+- url: http://127.0.0.1:5173
+  description: Vite 开发代理，/api/ 原路径转发。
+tags:
+- name: 健康检查
+  description: 当前已实现 /api/health/，已由项目负责人确认。
+- name: 认证
+  description: T03 未实施。
+- name: 辩题
+  description: T05 未实施。
+- name: 辩论
+  description: T05 未实施。
+security: []
+x-contract-source: docs/API.md
+x-cookie-name-status: unresolved; SESSION_COOKIE_NAME_TBD is a documentation placeholder, not a frozen or implemented
+  Cookie name
+x-router-errors:
+  '404': not_found：未注册路径；所有规划业务接口当前均走此分支。
+  '405': method_not_allowed：仅已注册路径上的不支持方法。
+  '500': internal_error：受控 panic。
+x-router-error-responses:
+  '404':
+    $ref: '#/components/responses/RouterNotFound'
+  '405':
+    $ref: '#/components/responses/RouterMethodNotAllowed'
+  '500':
+    $ref: '#/components/responses/RouterInternalError'
+x-phase2-drafts:
+- method: GET
+  path: /api/v1/debates
+  source: docs/ARCHITECTURE.md#phase-2-api-草案
+  status: draft
+- method: POST
+  path: /api/v1/debates/{id}/turns/{turn_id}/retry
+  source: docs/ARCHITECTURE.md#phase-2-api-草案
+  status: draft
+- method: POST
+  path: /api/v1/debates/{id}/summary
+  source: docs/ARCHITECTURE.md#phase-2-api-草案
+  status: draft
+- method: GET
+  path: /api/v1/debates/{id}/summary
+  source: docs/ARCHITECTURE.md#phase-2-api-草案
+  status: draft
+paths:
+  /api/health/live:
+    get:
+      operationId: getLiveHealth
+      tags:
+      - 健康检查
+      summary: 存活检查（已实现）
+      description: 2026-11-08 项目负责人确认以当前 Gin 路由为准：/api/health/live。旧 /health/ 路径未注册，返回 404；已实现不表示已部署。
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: HTTP 进程可处理请求；不检查数据库或模型。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveHealth'
+              example:
+                status: alive
+        '500':
+          $ref: '#/components/responses/RouterInternalError'
+  /api/health/ready:
+    get:
+      operationId: getReadyHealth
+      tags:
+      - 健康检查
+      summary: 就绪检查（已实现）
+      description: 2026-11-08 项目负责人确认以当前 Gin 路由为准：/api/health/ready。旧 /health/ 路径未注册，返回 404；已实现不表示已部署。
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: 数据库 Ping 在最多 3 秒预算内成功。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyHealth'
+              example:
+                status: ready
+        '503':
+          description: 数据库依赖缺失、不可达、超时或请求取消；不暴露底层错误。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotReadyHealth'
+              example:
+                status: not_ready
+        '500':
+          $ref: '#/components/responses/RouterInternalError'
+  /api/v1/auth/register:
+    post:
+      operationId: registerUser
+      summary: 注册用户（未实现）
+      description: 用户名 trim 后小写并检查唯一；注册不自动登录。同 IP 每小时最多 5 次，限流先于 Argon2id 哈希；只校验 Origin，即使请求带旧 Cookie。
+      tags:
+      - 认证
+      x-implementation-status: planned
+      x-task: T03
+      security: []
+      responses:
+        '201':
+          description: 用户已创建，随后由用户登录。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+              example:
+                data:
+                  id: '42'
+                  username: alice
+                request_id: req-register
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '409':
+          $ref: '#/components/responses/UsernameConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            example:
+              username: Alice
+              password: example-password
+  /api/v1/auth/login:
+    post:
+      operationId: loginUser
+      summary: 登录（未实现）
+      description: 按 IP、归一化用户名分别每分钟最多 10 次；限流先于密码校验。凭据错误统一 401 invalid_credentials。只校验 Origin；Session 原值仅通过 Cookie
+        传输。
+      tags:
+      - 认证
+      x-implementation-status: planned
+      x-task: T03
+      security: []
+      responses:
+        '200':
+          description: 签发新 Session，返回用户和 CSRF token。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                data:
+                  user:
+                    id: '42'
+                    username: alice
+                  csrf_token: example-csrf
+                request_id: req-login
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '401':
+          $ref: '#/components/responses/InvalidCredentials'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+            example:
+              username: Alice
+              password: example-password
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutUser
+      summary: 退出当前 Session（未实现）
+      description: 无请求体。删除当前 Session 并以同名、同路径 Cookie 清除；Session 已失效为 401。
+      tags:
+      - 认证
+      x-implementation-status: planned
+      x-task: T03
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '204':
+          description: 已退出，无响应体。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/SessionCookie'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+  /api/v1/auth/me:
+    get:
+      operationId: getCurrentUser
+      summary: 查询当前用户（未实现）
+      description: 无请求参数，恢复当前用户及当前 Session 的 CSRF token。
+      tags:
+      - 认证
+      x-implementation-status: planned
+      x-task: T03
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 当前用户及 CSRF token。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                data:
+                  user:
+                    id: '42'
+                    username: alice
+                  csrf_token: example-csrf
+                request_id: req-me
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /api/v1/topics:
+    get:
+      operationId: listTopics
+      summary: 列出启用的预设辩题（未实现）
+      description: 无查询参数，仅 enabled=true，按 id 升序；空列表为 items=[]。读取真实 MySQL，由 T06/T08 复用。
+      tags:
+      - 辩题
+      x-implementation-status: planned
+      x-task: T05
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 启用辩题列表。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicsResponse'
+              example:
+                data:
+                  items:
+                  - id: '7'
+                    title: 大学课程是否应采用开放式考核
+                    description: 讨论学习效果与评价公平
+                request_id: req-topics
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /api/v1/debates:
+    post:
+      operationId: createDebate
+      summary: 创建辩论会话（未实现）
+      description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
+      tags:
+      - 辩论
+      x-implementation-status: planned
+      x-task: T05
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '201':
+          description: 已保存的新会话，active、completed_rounds=0。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebateResponse'
+              example:
+                data:
+                  id: '123'
+                  topic:
+                    id: '7'
+                    title: 大学课程是否应采用开放式考核
+                    description: 讨论学习效果与评价公平
+                  user_stance: pro
+                  ai_stance: con
+                  status: active
+                  completed_rounds: 0
+                  created_at: '2026-11-06T08:00:00Z'
+                  updated_at: '2026-11-06T08:00:00Z'
+                request_id: req-create
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDebateRequest'
+            example:
+              topic_id: '7'
+              user_stance: pro
+  /api/v1/debates/{id}/turns:
+    post:
+      operationId: submitTurn
+      summary: 提交首轮发言或重放结果（未实现）
+      description: 校验会话所有权，T05 只接受第 1 轮。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
+        round_conflict。新尝试短事务认领、保存原文及 attempt_version=1，事务外调用模型，按状态和版本写回。每用户每分钟 6 次、每天最多 20 次尝试（失败也计入）；单用户并发 1、全局
+        2。请求预算 60 秒、模型 45 秒；前端超时 70 秒。202、丢失响应或状态不明先 GET 详情，每 2 秒查询，最多 120 秒，不自动生成或换键重试。显式重试和第 2/3 轮归 T09。
+      tags:
+      - 辩论
+      x-implementation-status: planned
+      x-task: T05
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      responses:
+        '200':
+          description: 重放已完成结果，不调用模型。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              example:
+                data:
+                  turn:
+                    id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: completed
+                    attempt_version: 1
+                    error_code: null
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                    - id: '902'
+                      role: assistant
+                      content: 统一考核仍有助于比较基础知识掌握程度。
+                      created_at: '2026-11-06T08:01:05Z'
+                  completed_rounds: 1
+                  query_url: /api/v1/debates/123
+                request_id: req-turn
+        '201':
+          description: 新轮生成完成且已持久化。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              example:
+                data:
+                  turn:
+                    id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: completed
+                    attempt_version: 1
+                    error_code: null
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                    - id: '902'
+                      role: assistant
+                      content: 统一考核仍有助于比较基础知识掌握程度。
+                      created_at: '2026-11-06T08:01:05Z'
+                  completed_rounds: 1
+                  query_url: /api/v1/debates/123
+                request_id: req-turn
+        '202':
+          description: 相同请求仍在生成；先查 query_url。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              example:
+                data:
+                  turn:
+                    id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: generating
+                    attempt_version: 1
+                    error_code: null
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                  completed_rounds: 0
+                  query_url: /api/v1/debates/123
+                request_id: req-pending
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TurnConflict'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/GenerationLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/ModelError'
+        '503':
+          $ref: '#/components/responses/GenerationUnavailable'
+        '504':
+          description: 模型生成超时；确认失败轮次已保存时附 details。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/ErrorEnvelope'
+                - properties:
+                    error:
+                      properties:
+                        code:
+                          enum:
+                          - model_timeout
+              example:
+                error:
+                  code: model_timeout
+                  message: 回复生成超时，请查看会话状态
+                  details:
+                    turn_id: '456'
+                    status: failed
+                    attempt_version: 1
+                    query_url: /api/v1/debates/123
+                request_id: req-timeout
+          x-error-codes:
+          - model_timeout
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTurnRequest'
+            example:
+              round_no: 1
+              content: 开放式考核可以评估实际应用能力。
+              client_request_id: 550e8400-e29b-41d4-a716-446655440000
+  /api/v1/debates/{id}:
+    get:
+      operationId: getDebate
+      summary: 查询本人会话详情（未实现）
+      description: 无查询参数。按当前用户与路径 id 同时匹配，不存在和越权返回相同 404。turns 按 round_no 排序，同轮先 user 后 assistant；保留已保存失败原因及原文。Phase
+        1 summary_status 固定为 not_started/null。
+      tags:
+      - 辩论
+      x-implementation-status: planned
+      x-task: T05
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 会话快照、已保存轮次及未开始的总结状态。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebateDetailResponse'
+              example:
+                data:
+                  debate:
+                    id: '123'
+                    topic:
+                      id: '7'
+                      title: 大学课程是否应采用开放式考核
+                      description: 讨论学习效果与评价公平
+                    user_stance: pro
+                    ai_stance: con
+                    status: active
+                    completed_rounds: 0
+                    created_at: '2026-11-06T08:00:00Z'
+                    updated_at: '2026-11-06T08:00:00Z'
+                  turns:
+                  - id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                    attempt_version: 1
+                    error_code: model_timeout
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                  summary_status:
+                    status: not_started
+                    attempt_version: null
+                request_id: req-detail
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: SESSION_COOKIE_NAME_TBD
+      description: 规划的服务器端 Session。冻结契约未指定 Cookie 具体名称；本 name 仅为满足 OpenAPI 必填项的显式占位符，不能直接作为客户端 Cookie 名。T03 确认真实名称后替换。
+      x-name-unresolved: true
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: 要求 Session 的 POST 与 SessionCookie 同时提供；注册和登录不要求此头，所有 POST 仍要求合法 Origin。
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      description: 与服务器配置的完整 Origin（协议、主机、端口）严格相等；拒绝缺失、字符串 null 或不匹配值。开发值见示例，生产为配置的 HTTPS Origin。
+      schema:
+        type: string
+      example: http://127.0.0.1:5173
+    DebateId:
+      name: id
+      in: path
+      required: true
+      description: 当前用户的会话 ID；非法格式 400，不存在或非本人 404。
+      schema:
+        $ref: '#/components/schemas/EntityId'
+      example: '123'
+  headers:
+    RequestId:
+      description: 服务器生成的请求关联标识；有 JSON 信封时与 request_id 一致。
+      schema:
+        $ref: '#/components/schemas/RequestId'
+    NoStore:
+      description: 健康 Handler 与规划业务响应禁止缓存；当前路由层的 404/405/500 未统一设置此头。
+      schema:
+        type: string
+        const: no-store
+    RetryAfter:
+      description: 再次尝试前等待的秒数。
+      schema:
+        type: integer
+        minimum: 0
+    SessionCookie:
+      description: 规划：签发或清除配置的 Session Cookie，具体名称尚未冻结。生产 Secure、HttpOnly、SameSite=Lax、Path=/，不设 Domain；有效期暂定 24
+        小时。退出使用同名、同路径 Cookie。
+      schema:
+        type: string
+  schemas:
+    EntityId:
+      type: string
+      pattern: ^[1-9][0-9]*$
+      maxLength: 20
+      description: 正整数十进制字符串，值须在 1–18446744073709551615（MySQL BIGINT UNSIGNED）内；上界由应用按数值校验。
+      x-numeric-maximum: '18446744073709551615'
+      examples:
+      - '123'
+    RequestId:
+      type: string
+      description: 服务器生成的关联标识；JSON 信封中的值与响应头 X-Request-ID 相同。
+    UtcTime:
+      type: string
+      format: date-time
+      description: UTC RFC 3339 时间。
+      examples:
+      - '2026-11-06T08:00:00Z'
+    PositiveInteger:
+      type: integer
+      minimum: 1
+    CompletedRounds:
+      type: integer
+      minimum: 0
+      description: 已成功持久化的完成轮数；Phase 1 只接受首轮，完整三轮由 T09 实施。
+    Stance:
+      type: string
+      enum:
+      - pro
+      - con
+      description: pro 为正方，con 为反方。
+    Credentials:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          description: 先去首尾空白，再转小写；归一化后 3–32 位，仅 ASCII 字母、数字、下划线。限制作用于归一化值，不能直接限制原始字符串长度。
+        password:
+          type: string
+          writeOnly: true
+          minLength: 12
+          maxLength: 128
+          x-max-utf8-bytes: 512
+          description: 按原样校验，不 trim；12–128 个 Unicode 码点，且 UTF-8 最多 512 字节。
+    User:
+      type: object
+      required:
+      - id
+      - username
+      properties:
+        id:
+          $ref: '#/components/schemas/EntityId'
+        username:
+          type: string
+          pattern: ^[a-z0-9_]{3,32}$
+          description: 归一化后的用户名。
+    AuthData:
+      type: object
+      required:
+      - user
+      - csrf_token
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        csrf_token:
+          type: string
+          description: 当前 Session 的独立 CSRF token；浏览器只在内存保存。
+    Topic:
+      type: object
+      required:
+      - id
+      - title
+      - description
+      properties:
+        id:
+          $ref: '#/components/schemas/EntityId'
+        title:
+          type: string
+        description:
+          type: string
+    CreateDebateRequest:
+      type: object
+      required:
+      - topic_id
+      - user_stance
+      properties:
+        topic_id:
+          $ref: '#/components/schemas/EntityId'
+        user_stance:
+          $ref: '#/components/schemas/Stance'
+    Debate:
+      type: object
+      required:
+      - id
+      - topic
+      - user_stance
+      - ai_stance
+      - status
+      - completed_rounds
+      - created_at
+      - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/EntityId'
+        topic:
+          $ref: '#/components/schemas/Topic'
+        user_stance:
+          $ref: '#/components/schemas/Stance'
+        ai_stance:
+          $ref: '#/components/schemas/Stance'
+        status:
+          type: string
+          enum:
+          - active
+          - completed
+          description: Phase 1 创建为 active；T09 完成三轮后才能成为 completed。
+        completed_rounds:
+          $ref: '#/components/schemas/CompletedRounds'
+        created_at:
+          $ref: '#/components/schemas/UtcTime'
+        updated_at:
+          $ref: '#/components/schemas/UtcTime'
+      description: topic 为创建时快照；ai_stance 必须与 user_stance 相反。
+    SubmitTurnRequest:
+      type: object
+      required:
+      - round_no
+      - content
+      - client_request_id
+      properties:
+        round_no:
+          $ref: '#/components/schemas/PositiveInteger'
+          description: 正整数；T05 只接受第 1 轮。不允许的状态或轮序为 409 round_conflict，而非把所有非 1 值当成输入格式错误。
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: 1–2000 个 Unicode 码点；拒绝全空白，保存原文，不 trim。
+        client_request_id:
+          type: string
+          format: uuid
+          description: UUID，解析后统一为小写带连字符形式；同一会话内唯一。
+    Message:
+      type: object
+      required:
+      - id
+      - role
+      - content
+      - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/EntityId'
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+        content:
+          type: string
+        created_at:
+          $ref: '#/components/schemas/UtcTime'
+    Turn:
+      type: object
+      required:
+      - id
+      - round_no
+      - client_request_id
+      - status
+      - attempt_version
+      - error_code
+      - messages
+      properties:
+        id:
+          $ref: '#/components/schemas/EntityId'
+        round_no:
+          $ref: '#/components/schemas/PositiveInteger'
+        client_request_id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+        status:
+          type: string
+          enum:
+          - generating
+          - completed
+          - failed
+        attempt_version:
+          $ref: '#/components/schemas/PositiveInteger'
+          description: 首轮新尝试从 1 开始；参与状态及版本条件写回。
+        error_code:
+          type:
+          - string
+          - 'null'
+          enum:
+          - null
+          - model_error
+          - model_timeout
+          - model_unavailable
+          - dependency_unavailable
+          - generation_cancelled
+          description: 已持久化的失败原因；无错误为 null。generation_cancelled 仅从详情读取，不是 HTTP 错误码。
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          description: 按同轮 user、assistant 排序；生成中或失败时保留 user 原文，完成后有正式 assistant 回复。
+    SummaryStatus:
+      type: object
+      required:
+      - status
+      - attempt_version
+      properties:
+        status:
+          type: string
+          const: not_started
+        attempt_version:
+          type: 'null'
+      description: Phase 1 固定未开始；T10 接入总结时另行完善契约。
+    TurnResultData:
+      type: object
+      required:
+      - turn
+      - completed_rounds
+      - query_url
+      properties:
+        turn:
+          $ref: '#/components/schemas/Turn'
+        completed_rounds:
+          $ref: '#/components/schemas/CompletedRounds'
+        query_url:
+          type: string
+          pattern: ^/api/v1/debates/[1-9][0-9]*$
+          description: 相对会话详情查询地址。
+    TurnFailureDetails:
+      type: object
+      required:
+      - turn_id
+      - status
+      - attempt_version
+      - query_url
+      properties:
+        turn_id:
+          $ref: '#/components/schemas/EntityId'
+        status:
+          type: string
+          const: failed
+        attempt_version:
+          $ref: '#/components/schemas/PositiveInteger'
+        query_url:
+          type: string
+          pattern: ^/api/v1/debates/[1-9][0-9]*$
+    ErrorEnvelope:
+      type: object
+      required:
+      - error
+      - request_id
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - invalid_request
+              - unauthenticated
+              - invalid_credentials
+              - csrf_failed
+              - not_found
+              - method_not_allowed
+              - username_conflict
+              - round_conflict
+              - idempotency_conflict
+              - turn_failed
+              - request_too_large
+              - rate_limited
+              - generation_busy
+              - internal_error
+              - model_error
+              - dependency_unavailable
+              - model_unavailable
+              - model_timeout
+            message:
+              type: string
+              description: 受控展示文案，客户端不按文案分支。
+            details:
+              $ref: '#/components/schemas/TurnFailureDetails'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+      description: 仅在发送轮次的 502/504/503 或 409 turn_failed 且失败轮次已确认落库时附 details；提交结果不明时省略。
+    LiveHealth:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: alive
+    ReadyHealth:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: ready
+    NotReadyHealth:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          const: not_ready
+      description: 503 就绪失败使用健康 JSON，不使用业务错误信封。
+    UserResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    AuthResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthData'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    TopicsResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          type: object
+          required:
+          - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Topic'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    DebateResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/Debate'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    TurnResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/TurnResultData'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    DebateDetailResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          type: object
+          required:
+          - debate
+          - turns
+          - summary_status
+          properties:
+            debate:
+              $ref: '#/components/schemas/Debate'
+            turns:
+              type: array
+              items:
+                $ref: '#/components/schemas/Turn'
+            summary_status:
+              $ref: '#/components/schemas/SummaryStatus'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+  responses:
+    InvalidRequest:
+      description: 非法参数、ID、JSON、媒体类型或字段限制。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - invalid_request
+      x-error-codes:
+      - invalid_request
+    Unauthenticated:
+      description: Session 缺失或已失效。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - unauthenticated
+      x-error-codes:
+      - unauthenticated
+    InvalidCredentials:
+      description: 用户名不存在与密码错误使用相同错误。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - invalid_credentials
+      x-error-codes:
+      - invalid_credentials
+    CsrfFailed:
+      description: Origin 或适用的 X-CSRF-Token 校验失败。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - csrf_failed
+      x-error-codes:
+      - csrf_failed
+    NotFound:
+      description: 辩题不可用，或会话不存在/不属于当前用户；会话缺失与越权使用相同提示。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - not_found
+      x-error-codes:
+      - not_found
+    UsernameConflict:
+      description: 归一化用户名已占用。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - username_conflict
+      x-error-codes:
+      - username_conflict
+    TurnConflict:
+      description: 状态或轮序不允许、同键内容/轮号不一致、已失败轮次重放；turn_failed 已确认失败时附 details。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - round_conflict
+                      - idempotency_conflict
+                      - turn_failed
+      x-error-codes:
+      - round_conflict
+      - idempotency_conflict
+      - turn_failed
+    RequestTooLarge:
+      description: 请求体超过 32 KiB。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - request_too_large
+      x-error-codes:
+      - request_too_large
+    RateLimited:
+      description: 请求频率超限；带 Retry-After 秒数。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - rate_limited
+      x-error-codes:
+      - rate_limited
+    GenerationLimited:
+      description: 请求频率/每日生成次数超限或用户/全局模型并发槽满；带 Retry-After 秒数。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - rate_limited
+                      - generation_busy
+      x-error-codes:
+      - rate_limited
+      - generation_busy
+    InternalError:
+      description: 受控内部错误，不回传堆栈或内部细节。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - internal_error
+      x-error-codes:
+      - internal_error
+    ModelError:
+      description: 模型失败、无效输出或拒答；确认失败轮次已保存时附 details。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - model_error
+      x-error-codes:
+      - model_error
+    DependencyUnavailable:
+      description: 存储不可用；提交结果不明时省略 details。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - dependency_unavailable
+      x-error-codes:
+      - dependency_unavailable
+    GenerationUnavailable:
+      description: 数据库不可用/提交结果不明，或供应商容量/额度不可用；确认失败已保存时附 details，否则省略。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - dependency_unavailable
+                      - model_unavailable
+      x-error-codes:
+      - dependency_unavailable
+      - model_unavailable
+    ModelTimeout:
+      description: 模型生成超时；确认失败轮次已保存时附 details。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - model_timeout
+      x-error-codes:
+      - model_timeout
+    RouterNotFound:
+      description: 当前未注册路径：404 not_found。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: not_found
+              message: 接口不存在
+            request_id: example-request-id
+      x-error-codes:
+      - not_found
+    RouterMethodNotAllowed:
+      description: 已注册路径不支持该方法：405 method_not_allowed。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: method_not_allowed
+              message: 请求方法不支持
+            request_id: example-request-id
+      x-error-codes:
+      - method_not_allowed
+    RouterInternalError:
+      description: 路由中间件捕获 panic：500 internal_error。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+      x-error-codes:
+      - internal_error

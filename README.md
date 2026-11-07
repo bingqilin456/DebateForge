@@ -2,7 +2,7 @@
 
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
-当前处于 **Phase 0：工程初始化与基线验收，PB 待人工验收**。当前功能只有 Go/Gin 存活接口及 Vue 本地联通页面；没有数据库、登录、Eino、模型调用或辩论业务。PB 是 T01、T02、T06 的前置拆分任务，不代表完整 T02、T06 或 Phase 1 已完成。实际验证见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)，本轮仅调整文档，不新增业务实施或部署授权。
+**Phase 0（工程初始化与基线验收）已结项，PB 已完成。** 当前交付为 Go/Gin 存活接口及 Vue 本地联通页面。技术验证和结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。Phase 1 从 T01 开始，须明确该任务的实施授权。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
 
 ## 环境
 
@@ -104,11 +104,11 @@ npm run build
 | [PRD](docs/PRD.md) | 完整 MVP 产品范围，本次未修改 |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
 | [API](docs/API.md) | 本阶段实际健康与错误契约 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 待人工验收 |
+| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 已完成 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 
 A 负责后端与集成，B 参与前端审查和验证，后续仍需独立完成辩题与历史页面并能讲解。AI 生成和测试不能替代双方理解。references 仅供本地参考，不纳入版本管理。
 
-本任务完成后停止等待人工审查。数据库、认证、AI 辩论、生产部署及 Git 提交、推送、合并均需后续对应授权。
+数据库、认证、AI 辩论、生产部署及 Git 提交、推送、合并均需对应授权。
 

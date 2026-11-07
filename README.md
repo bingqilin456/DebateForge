@@ -2,11 +2,13 @@
 
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
-**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** 当前运行交付仍为 Go/Gin 存活接口及 Vue 本地联通页面，技术验证和 Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02–T18 尚未开始，批次 2 实施仍须明确授权。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
+**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** 应用运行交付仍为 Go/Gin 存活接口及 Vue 本地联通页面，技术验证和 Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02 进行中，首个获准子任务为隔离 MySQL 本地环境，技术验证后待人工验收，完整 T02 未完成；T03–T18 尚未开始。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
 
 ## 环境
 
-首轮实际环境为 Windows amd64、Go **1.27.1**、Node.js **24.11.1**、npm **11.6.2**。先通过 `go version`、`node --version`、`npm --version` 核对版本。本阶段无需 MySQL、Docker、模型 Key 或环境文件。
+首轮实际环境为 Windows amd64、Go **1.27.1**、Node.js **24.11.1**、npm **11.6.2**。先通过 `go version`、`node --version`、`npm --version` 核对版本。PB 应用仍无需 MySQL、Docker、模型 Key 或环境文件。
+
+T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker Desktop Linux Engine、Compose 和官方 MySQL `8.4.13`；Windows PowerShell 5.1 不受支持。开发库为 `127.0.0.1:13306/siyige_dev`，测试库为 `127.0.0.1:13307/siyige_test`；容器、卷、账户、口令和网络分别隔离。启动、连接及验证命令见 [MySQL 环境说明](infra/mysql/README.md)，实际证据见 [T02 环境验收记录](docs/T02_MYSQL_ENV_ACCEPTANCE.md)。当前后端尚未连接数据库，`/health/ready` 仍未实现。
 
 后端为独立模块 `github.com/bingqilin456/DebateForge/backend`。前端只使用 npm，保留 package-lock.json；不要混用其他包管理器或锁文件。
 
@@ -104,7 +106,7 @@ npm run build
 | [PRD](docs/PRD.md) | 完整 MVP 产品范围与验收标准 |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
 | [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约，业务尚未实现 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，业务实现尚未开始 |
+| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 仅环境子任务进行中 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 

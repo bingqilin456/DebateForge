@@ -2,7 +2,7 @@
 
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
-**Phase 0（工程初始化与基线验收）已结项，PB 已完成。** 当前交付为 Go/Gin 存活接口及 Vue 本地联通页面。技术验证和结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。Phase 1 从 T01 开始，须明确该任务的实施授权。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
+**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** 当前运行交付仍为 Go/Gin 存活接口及 Vue 本地联通页面，技术验证和 Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02–T18 尚未开始，批次 2 实施仍须明确授权。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
 
 ## 环境
 
@@ -101,14 +101,14 @@ npm run build
 | 文档 | 用途 |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | 协作规范、当前授权、安全及验收边界 |
-| [PRD](docs/PRD.md) | 完整 MVP 产品范围，本次未修改 |
+| [PRD](docs/PRD.md) | 完整 MVP 产品范围与验收标准 |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
-| [API](docs/API.md) | 本阶段实际健康与错误契约 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 已完成 |
+| [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约，业务尚未实现 |
+| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，业务实现尚未开始 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 
-A 负责后端与集成，B 参与前端审查和验证，后续仍需独立完成辩题与历史页面并能讲解。AI 生成和测试不能替代双方理解。references 仅供本地参考，不纳入版本管理。
+A 负责后端与集成，B 负责明确的前端与测试任务，后续独立完成并理解辩题与历史页面。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。
 
 数据库、认证、AI 辩论、生产部署及 Git 提交、推送、合并均需对应授权。
 

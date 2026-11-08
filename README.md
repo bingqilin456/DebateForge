@@ -1,5 +1,7 @@
 # 思弈阁 Lite / DebateForge
 
+**T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](docs/acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。
+
 **T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
 
 **当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
@@ -157,8 +159,8 @@ npm run build
 | [AGENTS.md](AGENTS.md) | 协作规范、当前授权、安全及验收边界 |
 | [PRD](docs/product/PRD.md) | 完整 MVP 产品范围与验收标准 |
 | [ARCHITECTURE](docs/architecture/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
-| [API](docs/api/API.md) | 健康检查与 Phase 1 业务接口契约；4 个认证接口已实现，其余业务待实施 |
-| [OpenAPI 3.1](docs/api/openapi.yaml) | 6 个已实现接口、4 个 T05 规划接口；本地与 HTTPS Cookie 名已明确 |
+| [API](docs/api/API.md) | 健康检查与 Phase 1 业务接口契约；4 个认证接口和 4 个 T05 业务接口已实现 |
+| [OpenAPI 3.1](docs/api/openapi.yaml) | 10 个已实现接口；T05 无收费范围独立复审 PASS、人工验收通过并结项，本地与 HTTPS Cookie 名已明确 |
 | [T03 认证记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
 | [PLAN](docs/planning/PLAN.md) / [TASKS](docs/planning/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
 | [DECISIONS](docs/decisions/DECISIONS.md) | 选型理由、授权增量、未落实假设 |

@@ -1,10 +1,12 @@
 # 思弈阁 Lite / DebateForge
 
+**当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
+
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
 **Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02 进行中，已有隔离 MySQL 环境，本轮新增后端连接、Readiness 和测试目标保护，技术验证后待人工验收；业务迁移/种子未实施，完整 T02 未完成，T03–T18 尚未开始。前端仍为本地联通页面。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
 
-2026 年 11 月 8 日迁移进展：六表版本化迁移已完成技术验证及有条件独立审查，负责人已接受验证边界和延期项，授权本轮提交及推送；学习讲解尚未登记，见 [迁移记录](docs/T02_MIGRATIONS_ACCEPTANCE.md)。上段“迁移未实施”保留为前次子任务状态；5 条种子尚未实施，完整 T02 仍进行中。
+2026 年 11 月 8 日当前进展：六表初始迁移后，新增 00007–00009 精确枚举 CHECK、00010 五条事务性辩题种子、历史保护回归及测试 MySQL 服务重启验证，技术闭环已通过，见 [种子与持久化记录](docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。完整 T02 仍进行中，等待独立审查、辩题人工审阅、负责人验收及学习讲解；本轮不提交、推送或合并。上段及下方“种子未实施”等早期接入描述保留为历史状态。初始迁移的有条件审查及历史提交授权见 [迁移记录](docs/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 ## 环境
 
@@ -14,7 +16,7 @@ T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker D
 
 后端为独立模块 `github.com/bingqilin456/DebateForge/backend`。前端只使用 npm，保留 package-lock.json；不要混用其他包管理器或锁文件。
 
-版本化迁移使用独立工具 module `backend/tools/migrate/`，锁定 Goose v3.29.0，通过显式 up/status 执行；服务启动不建表。六个 SQL 文件、固定目标保护、测试方法及 MySQL 部分 DDL 失败恢复见 [迁移说明](backend/migrations/README.md)。本轮只迁移测试库，开发库未迁移，也未写入种子；下方早期接入记录中的“迁移未实施”属于历史状态。工具需在其自身目录运行 test/vet/build，服务目录的 `go test ./...` 不会覆盖独立 module。
+版本化迁移使用独立工具 module `backend/tools/migrate/`，锁定 Goose v3.29.0，通过显式 up/status 执行；服务启动不建表或播种。当前共十个 SQL 文件：六表、三个枚举修复、五条种子版本，固定目标保护及失败恢复见 [迁移说明](backend/migrations/README.md)。只在测试库验证，开发库未迁移。工具需在其自身目录运行 test/vet/build，服务目录的 `go test ./...` 不会覆盖独立 module。根目录可显式运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1` 重启测试 MySQL 并核对持久化，详见该验收记录。
 
 ## 获取与启动
 
@@ -147,7 +149,7 @@ npm run build
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
 | [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约，业务尚未实现 |
 | [OpenAPI 3.1](docs/openapi.yaml) | 与 API 文档对应的机器规范，区分 2 个已实现健康接口及 8 个规划业务接口 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 迁移有条件验收、延期项已接受，学习讲解尚未登记，种子未实施 |
+| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 

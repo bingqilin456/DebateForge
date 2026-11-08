@@ -1,8 +1,8 @@
 # T02 版本化数据库迁移
 
-仅包含初始六表及版本记录，未写入辩题种子，未实现业务 Repository/Handler。总结表留 T10。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/API.md)；本次证据见 [迁移验收记录](../../docs/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子。未实现业务 Repository/Handler，总结表留 T10。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/API.md)；最新证据见 [种子与持久化记录](../../docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/T02_MIGRATIONS_ACCEPTANCE.md)。
 
-2026 年 11 月 8 日独立审查有条件通过，负责人已接受验证边界及延期项，详见 [风险登记](../../docs/TASKS.md#t02-迁移延期问题登记)。当前枚举 CHECK 可接受尾随空格，必须在业务状态写入前通过新增前向迁移解决；禁止修改已执行的六份 SQL。历史保护测试覆盖及受控诊断问题仍待后续处理。本轮仅整理提交和推送，不实施延期修复或种子。
+2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
 ## 入口与执行顺序
 
@@ -19,7 +19,7 @@
 
 工具逐版本调用 `ApplyVersion(..., true)`，已执行版本作为空操作跳过。未调用会在加锁前初始化元数据的 `Up/HasPending` 路径。历史只接受完整的前向版本前缀；缺失本地已执行文件、历史间隙、重复记录和非前向记录均拒绝。未知数据库版本不能被低版本工具静默忽略。
 
-`status` 显示版本号、pending/applied、文件名和 UTC 成功时间。**首次 status 也会由 Goose 创建版本表和版本 0**，不是纯只读操作，但不会建业务表。`up` 输出本次实际执行数；首次为 `applied=6`，重跑为 `applied=0`。CLI 总预算 60 秒，建连 3 秒，单次读写 10 秒，解锁 3 秒；超时不等于 MySQL DDL 一定未发生。
+`status` 显示版本号、pending/applied、文件名和 UTC 成功时间。**首次 status 也会由 Goose 创建版本表和版本 0**，不是纯只读操作，但不会建业务表。`up` 输出本次实际执行数；初始六表历史首次为 `applied=6`，本轮从该基线升级为 `applied=4`，当前版本重跑为 `applied=0`。CLI 总预算 60 秒，建连 3 秒，单次读写 10 秒，解锁 3 秒；超时不等于 MySQL DDL 一定未发生。
 
 ## 使用
 
@@ -47,12 +47,29 @@ Pop-Location
 | --- | --- |
 | 00001 users | `username VARCHAR(32)` ASCII、不区分大小写唯一；应用在 T03 trim/小写归一化。`password_hash VARCHAR(255)` 保存 Argon2id 编码，`created_at`。 |
 | 00002 auth_sessions | `user_id` 外键；SHA-256 `token_hash BINARY(32)` 保存原始摘要字节并唯一；`csrf_token VARCHAR(128)` ASCII；`expires_at` 索引、`created_at`。不存 Session 原值。 |
-| 00003 topics | `title/description TEXT`、`enabled BOOLEAN` 默认 true 并 CHECK 0/1、`created_at`。本轮无种子插入。 |
+| 00003 topics | `title/description TEXT`、`enabled BOOLEAN` 默认 true 并 CHECK 0/1、`created_at`。初始版本不含种子，00010 插入五题。 |
 | 00004 debates | 用户/辩题外键；标题/描述快照 TEXT；pro/con、active/completed 使用区分大小写的 ASCII 字符串和 CHECK；完成轮数 0–3；创建/更新时间；索引 `(user_id,created_at,id)`。 |
 | 00005 debate_turns | 会话外键；轮号 1–3；规范 UUID `client_request_id CHAR(36)`；两组唯一键 `(debate_id,round_no)`、`(debate_id,client_request_id)`；三种状态 CHECK；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建时间；索引 `(status,lease_expires_at)`。 |
 | 00006 messages | 轮次外键；user/assistant CHECK；`(turn_id,role)` 唯一；`content TEXT`、创建时间。 |
 
 生成元数据：`error_code/prompt_version VARCHAR(64)` ASCII，`model_name VARCHAR(255)` utf8mb4，token 用量和耗时为可空 `INT UNSIGNED`。未知用量为 NULL，不能记成 0。2000 码点、UUID 规范化、用户名规则、状态转换、所有权及密码哈希仍由后续业务任务实现；数据库检查不能替代这些规则。`updated_at` 由后续业务显式维护，无隐式 ON UPDATE。文本使用 TEXT，避免自行引入短标题上限；后续新增输入边界须同步契约。
+
+## 新增版本与种子
+
+| 版本 | 增量 |
+| --- | --- |
+| 00007 | debates 的 pro/con 和 active/completed 字节精确 CHECK |
+| 00008 | debate_turns 的 generating/completed/failed 字节精确 CHECK |
+| 00009 | messages 的 user/assistant 字节精确 CHECK |
+| 00010 | topics 固定 ID 1–5，完整中文标题/双边立场描述，enabled=true |
+
+00007–00009 每份仅一条 ALTER，保留原约束、列类型和状态集合；校验已有行，异常时失败且不改数据。CAST AS BINARY 可拒绝字段宽度内的尾随空格；MySQL 对超长尾随空格先截断，`assistant ` 存为规范 `assistant`，不能宣称 CHECK 拒绝所有原始请求，后续业务入口必须精确校验。
+
+00010 的幂等由历史和会话锁保证：重复 **up** 不再 INSERT，不是可绕过 Goose 手工重放的 SQL。DML 与版本登记在同一事务内；固定 ID 被占用时整笔失败，不覆盖数据或登记成功，无 IGNORE/REPLACE/UPSERT。包含五条题目的闭环已获负责人人工验收，内容见最新验收记录；未来修改须新增迁移。
+
+本轮从已有 1–6 的测试库实际新增 `applied=4`，重跑 `applied=0`；当前空库预期 `applied=10`，本轮未新建空库重测。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
+
+新增集成测试覆盖异常历史在 up/status 下拒绝、合法前缀继续、既有异常枚举阻止 ALTER 和种子冲突回滚。独立探针表保留且每次运行增加，不改正式历史，不清理旧数据。默认仍跳过真实数据库测试。
 
 ## 失败、重跑与恢复
 

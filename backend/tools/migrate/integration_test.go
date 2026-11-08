@@ -71,8 +71,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 7 { // Goose 初始版本 0 + 六个 DDL 版本。
-		t.Fatalf("版本历史条数 = %d，期望 7", len(before))
+	if len(before) != 11 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本。
+		t.Fatalf("版本历史条数 = %d，期望 11", len(before))
 	}
 	var tables, summary int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 6 {
@@ -105,8 +105,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 6 {
-		t.Fatal("状态未显示六个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 10 {
+		t.Fatal("状态未显示十个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -196,13 +196,57 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	insert("INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "中文发言🌱")
 	reject(1062, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "重复")
 	reject(3819, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "system", "非法角色")
+	// 必须拒绝 PAD SPACE 反例，不能只测与合法值完全不同的字符串。
+	for _, check := range []struct {
+		table, column string
+		id            int64
+		valid         []string
+		invalid       []string
+	}{
+		{"debates", "user_stance", debate, []string{"pro", "con"}, []string{"PRO", "Con", "", " pr"}},
+		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
+		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
+		{"messages", "role", 0, []string{"user", "assistant"}, []string{"user ", "USER", "Assistant", "", " user", "user\t"}},
+	} {
+		where, id := "id", check.id
+		if check.table == "messages" {
+			where, id = "turn_id", turn
+		}
+		query := "UPDATE " + check.table + " SET " + check.column + "=? WHERE " + where + "=?"
+		for _, value := range check.valid {
+			if _, err := tx.Exec(query, value, id); err != nil {
+				t.Fatalf("合法 %s.%s=%q 被拒: %v", check.table, check.column, value, err)
+			}
+		}
+		for _, value := range check.invalid {
+			_, err := tx.Exec(query, value, id)
+			var mysqlErr *driver.MySQLError
+			if !errors.As(err, &mysqlErr) || mysqlErr.Number != 3819 {
+				t.Fatalf("%s.%s=%q 期望 MySQL 3819，得到 %v", check.table, check.column, value, err)
+			}
+		}
+	}
+	// MySQL 对超出 VARCHAR 宽度的空格先截断再执行 CHECK；此边界只能保证
+	// 存储值精确，原始请求的词法拒绝必须在业务入口完成，不能擅自改冻结类型。
+	if _, err := tx.Exec("UPDATE messages SET role='assistant ' WHERE turn_id=?", turn); err != nil {
+		t.Fatal(err)
+	}
+	var role string
+	if err := tx.QueryRow("SELECT role FROM messages WHERE turn_id=?", turn).Scan(&role); err != nil || role != "assistant" {
+		t.Fatal("VARCHAR 边界留下非规范角色", err)
+	}
 	token := strings.Repeat("a", 32)
 	insert("INSERT INTO auth_sessions(user_id,token_hash,csrf_token,expires_at) VALUES (?,?,?,'2026-11-09 00:00:00')", user, token, "fixture-csrf")
 	reject(1062, "INSERT INTO auth_sessions(user_id,token_hash,csrf_token,expires_at) VALUES (?,?,?,'2026-11-09 00:00:00')", user, token, "fixture-csrf")
 	var text string
-	if err := tx.QueryRow("SELECT content FROM messages WHERE turn_id=? AND role='user'", turn).Scan(&text); err != nil || text != "中文发言🌱" {
+	if err := tx.QueryRow("SELECT content FROM messages WHERE turn_id=?", turn).Scan(&text); err != nil || text != "中文发言🌱" {
 		t.Fatal("utf8mb4 内容未保真", err)
 	}
+}
+
+func TestMySQLEnumExactValues(t *testing.T) {
+	db, _ := integrationDB(t)
+	assertSchemaConstraints(t, db)
 }
 
 func TestMySQLFailureRecoveryWithoutDeletingData(t *testing.T) {

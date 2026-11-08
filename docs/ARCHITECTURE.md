@@ -1,5 +1,7 @@
 # 思弈阁 Lite 技术架构
 
+**当前结项状态（2026 年 11 月 8 日）：T02 已通过最终独立技术审查及项目负责人人工验收，标记已完成。** M01/M02 按本次审查结论关闭；M03 及已接受的恢复/验证边界继续保留。验收依据见 [种子与持久化记录](T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。此前“进行中/待验收”等为各子任务当时状态，不覆盖本次结项。T03–T18 不因结项自动启动，Phase 1 尚未完成。
+
 2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](TASKS.md) 交付。产品边界见 [PRD](PRD.md)，资源状态和方案依据见 [DECISIONS](DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](INIT_ACCEPTANCE.md)。
 
 ## 架构与技术栈
@@ -11,6 +13,8 @@
 后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](API.md)；此前 [后端接入记录](T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
 
 2026 年 11 月 8 日迁移增量：六张 Phase 1 表的版本化 SQL 已在隔离测试库验证，工具为独立 Goose v3.29.0 CLI module，仅显式 up/status，使用迁移账户及会话锁。服务仍不自动迁移；逻辑实体及 API 不变，物理类型、执行与失败恢复见 [迁移说明](../backend/migrations/README.md)。上段“迁移未实施”保留为历史，种子仍未实施，总结表仍归 T10；当前闭环已获有条件独立审查，负责人已接受验证边界及延期项并授权提交/推送；学习讲解尚未登记，延期门槛见 [任务登记](TASKS.md#t02-迁移延期问题登记)。
+
+2026 年 11 月 8 日种子增量：新增 00007–00009 字节精确枚举 CHECK，保留原六份 SQL/冻结列类型；00010 在 Goose 事务中插入固定 ID 1–5，重复 up 不多写，ID 冲突失败且不覆盖。服务启动不迁移或播种。历史保护与重启持久化已技术验证，详见 [当前记录](T02_SEEDS_PERSISTENCE_ACCEPTANCE.md) 和 [ADR-014](DECISIONS.md#adr-014-t02-精确枚举与版本化种子)。待独立审查、辩题人工审阅及最终验收，完整 T02 未完成；上方“种子未实施”为历史状态。
 
 ```mermaid
 flowchart LR

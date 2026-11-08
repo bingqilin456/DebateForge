@@ -92,3 +92,13 @@ MySQL Community Server 8.4 是冻结的成熟 LTS 方案，服务端采用 GPLv2
 - [MySQL GRANT](https://dev.mysql.com/doc/refman/8.4/en/grant.html)、[客户端 option file](https://dev.mysql.com/doc/refman/8.4/en/option-files.html)、[MySQL 许可证](https://www.mysql.com/about/legal/licensing/opensource-license.html)
 
 实际执行记录、首次失败及恢复、未执行项见 [T02 环境验收记录](../../docs/T02_MYSQL_ENV_ACCEPTANCE.md)。本子任务完成技术验证后停止，等待人工验收，不自动进入剩余 T02 或 T03–T06。
+
+## 迁移种子的重启持久化核对
+
+2026 年 11 月 8 日另获授权，00007–00010 及五条种子已技术验证，见 [当前记录](../../docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。仅测试库已迁移，服务启动不自动建表或播种。先按 [迁移说明](../../backend/migrations/README.md) 显式 up，再停止并发写入，从根目录执行：
+
+```powershell
+pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1
+```
+
+该脚本会校验固定 Docker context/project/service、镜像/回环端口/数据卷和实际迁移账户，只 restart mysql-test，保留容器/卷，开发容器不能变化。比较重启前后 0–10 正式历史、六表结构/行数及五条种子字节内容/时间；证据仅存 Git 忽略的 `.cache/t02-mysql/persistence-*.json`。不迁移、播种、清理数据或重建容器。当前严格要求测试库 topics 仅有 ID 1–5 五条启用种子，后续出现其他辩题时须重新审阅验收条件。技术通过不代表独立审查或完整 T02 验收通过。

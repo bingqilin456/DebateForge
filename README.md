@@ -1,20 +1,20 @@
 # 思弈阁 Lite / DebateForge
 
-**T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
+**T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
 
-**当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
+**当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
 
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
 
-**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02 进行中，已有隔离 MySQL 环境，本轮新增后端连接、Readiness 和测试目标保护，技术验证后待人工验收；业务迁移/种子未实施，完整 T02 未完成，T03–T18 尚未开始。前端仍为本地联通页面。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
+**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/acceptance/INIT_ACCEPTANCE.md)。T02 进行中，已有隔离 MySQL 环境，本轮新增后端连接、Readiness 和测试目标保护，技术验证后待人工验收；业务迁移/种子未实施，完整 T02 未完成，T03–T18 尚未开始。前端仍为本地联通页面。阶段计划及暂停恢复规则见 [PLAN](docs/planning/PLAN.md)。
 
-2026 年 11 月 8 日当前进展：六表初始迁移后，新增 00007–00009 精确枚举 CHECK、00010 五条事务性辩题种子、历史保护回归及测试 MySQL 服务重启验证，技术闭环已通过，见 [种子与持久化记录](docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。完整 T02 仍进行中，等待独立审查、辩题人工审阅、负责人验收及学习讲解；本轮不提交、推送或合并。上段及下方“种子未实施”等早期接入描述保留为历史状态。初始迁移的有条件审查及历史提交授权见 [迁移记录](docs/T02_MIGRATIONS_ACCEPTANCE.md)。
+2026 年 11 月 8 日当前进展：六表初始迁移后，新增 00007–00009 精确枚举 CHECK、00010 五条事务性辩题种子、历史保护回归及测试 MySQL 服务重启验证，技术闭环已通过，见 [种子与持久化记录](docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。完整 T02 仍进行中，等待独立审查、辩题人工审阅、负责人验收及学习讲解；本轮不提交、推送或合并。上段及下方“种子未实施”等早期接入描述保留为历史状态。初始迁移的有条件审查及历史提交授权见 [迁移记录](docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 ## 环境
 
 首轮实际环境为 Windows amd64、Go **1.27.1**、Node.js **24.11.1**、npm **11.6.2**。先通过 `go version`、`node --version`、`npm --version` 核对版本。PB 应用仍无需 MySQL、Docker、模型 Key 或环境文件。
 
-T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker Desktop Linux Engine、Compose 和官方 MySQL `8.4.13`；Windows PowerShell 5.1 不受支持。开发库为 `127.0.0.1:13306/siyige_dev`，测试库为 `127.0.0.1:13307/siyige_test`；容器、卷、账户、口令和网络分别隔离。启动、连接及验证命令见 [MySQL 环境说明](infra/mysql/README.md)，实际证据见 [T02 环境验收记录](docs/T02_MYSQL_ENV_ACCEPTANCE.md)。本轮后端已接入 GORM/MySQL 和 `/api/health/ready`，技术验证后待人工验收；版本化迁移和种子仍未实施，完整 T02 未完成，见 [后端接入记录](docs/T02_DATABASE_CONNECTION_ACCEPTANCE.md)。上文 PB 应用不依赖数据库的描述保留为历史基线，当前启动需要秘密文件。
+T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker Desktop Linux Engine、Compose 和官方 MySQL `8.4.13`；Windows PowerShell 5.1 不受支持。开发库为 `127.0.0.1:13306/siyige_dev`，测试库为 `127.0.0.1:13307/siyige_test`；容器、卷、账户、口令和网络分别隔离。启动、连接及验证命令见 [MySQL 环境说明](infra/mysql/README.md)，实际证据见 [T02 环境验收记录](docs/acceptance/T02_MYSQL_ENV_ACCEPTANCE.md)。本轮后端已接入 GORM/MySQL 和 `/api/health/ready`，技术验证后待人工验收；版本化迁移和种子仍未实施，完整 T02 未完成，见 [后端接入记录](docs/acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md)。上文 PB 应用不依赖数据库的描述保留为历史基线，当前启动需要秘密文件。
 
 后端为独立模块 `github.com/bingqilin456/DebateForge/backend`。前端只使用 npm，保留 package-lock.json；不要混用其他包管理器或锁文件。
 
@@ -45,7 +45,7 @@ go run ./cmd/server
 
 服务启动先用 `godotenv.Read()` 解析**当前工作目录**的 `.env`，逐项通过 `os.LookupEnv()` 判断是否补充，再执行原有 `LoadConfig()`。优先级为：**已有进程环境变量（含显式空值） > `.env` > 原有默认值**；Windows 按系统规则识别大小写不同的同名变量。只加载这一份文件，不自动读取 `.env.test` 或父目录。缺少 `.env` 时继续使用环境变量和默认值，CI 无需创建环境文件，但必填的 `DB_PASSWORD_FILE` 及原有校验仍生效。文件不可读、解析失败或 `os.Setenv()` 拒绝非法变量时启动失败，错误不回显文件内容。`LoadConfig()` 和集成测试入口不自行加载 `.env`，默认测试流程不读取本地开发配置。
 
-首次配置优化的历史证据见 [dotenv 验收记录](docs/T02_DOTENV_ACCEPTANCE.md)；ADR-012 路径统一、Windows 兼容修复及本轮验证见 [配置与 API 契约修复记录](docs/T02_CONFIG_FIX_ACCEPTANCE.md)。负责人已取消小范围独立复验并授权提交、推送当前分支；完整 T02 未结项。
+首次配置优化的历史证据见 [dotenv 验收记录](docs/acceptance/T02_DOTENV_ACCEPTANCE.md)；ADR-012 路径统一、Windows 兼容修复及本轮验证见 [配置与 API 契约修复记录](docs/acceptance/T02_CONFIG_FIX_ACCEPTANCE.md)。负责人已取消小范围独立复验并授权提交、推送当前分支；完整 T02 未结项。
 
 `APP_ENV` 默认 dev，也可显式为 test；未设置 DB 地址/库/账户时按该环境选取现有固定默认值。切换环境必须同时调整全部 DB 配置，避免 dev 的 `.env` 与 test 的系统变量混用。仅支持本地回环地址和对应应用账户，禁止 root/迁移账户；显式空值、非法配置、缺失/不可读秘密文件会启动失败。配置合法但 DB 停机时服务仍启动，ready 返回 503，数据库恢复后后续检查重新 Ping。当前不接受生产配置或任意 DSN，不自动迁移、建表或写种子。
 
@@ -81,7 +81,7 @@ Invoke-RestMethod http://127.0.0.1:5173/api/health/live
 
 `AUTH_ORIGIN` 默认 `http://127.0.0.1:5173`，表示浏览器页面来源；所有认证 POST 必须携带该精确 Origin，退出另需当前 Session 的 `X-CSRF-Token`。注册不自动登录，登录和 me 返回 CSRF，Session 原值只通过 HttpOnly Cookie 传输。HTTP 开发 Cookie 为 `siyige_session_dev`；HTTPS 策略使用独立的 `__Host-siyige_session` 并开启 Secure；不使用 localStorage/JWT。
 
-当前 APP_ENV 仍只允许 dev/test，开发库未迁移；T03 实际验收使用固定隔离测试库，命令见下节。开发库显式迁移须按相应授权执行，不在本轮自动运行。配置、安全边界和独立审查状态见 [T03 记录](docs/T03_AUTH_ACCEPTANCE.md)。前端认证页面属于 T06，本轮未实现。
+当前 APP_ENV 仍只允许 dev/test，开发库未迁移；T03 实际验收使用固定隔离测试库，命令见下节。开发库显式迁移须按相应授权执行，不在本轮自动运行。配置、安全边界和独立审查状态见 [T03 记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。前端认证页面属于 T06，本轮未实现。
 
 ## 测试与构建
 
@@ -153,17 +153,18 @@ npm run build
 
 | 文档 | 用途 |
 | --- | --- |
+| [文档导航](docs/README.md) | 推荐阅读顺序、分类入口、状态差异及本次路径迁移对照 |
 | [AGENTS.md](AGENTS.md) | 协作规范、当前授权、安全及验收边界 |
-| [PRD](docs/PRD.md) | 完整 MVP 产品范围与验收标准 |
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
-| [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约；4 个认证接口已实现，其余业务待实施 |
-| [OpenAPI 3.1](docs/openapi.yaml) | 6 个已实现接口、4 个 T05 规划接口；本地与 HTTPS Cookie 名已明确 |
-| [T03 认证记录](docs/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
-| [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
-| [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
+| [PRD](docs/product/PRD.md) | 完整 MVP 产品范围与验收标准 |
+| [ARCHITECTURE](docs/architecture/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
+| [API](docs/api/API.md) | 健康检查与 Phase 1 业务接口契约；4 个认证接口已实现，其余业务待实施 |
+| [OpenAPI 3.1](docs/api/openapi.yaml) | 6 个已实现接口、4 个 T05 规划接口；本地与 HTTPS Cookie 名已明确 |
+| [T03 认证记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
+| [PLAN](docs/planning/PLAN.md) / [TASKS](docs/planning/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
+| [DECISIONS](docs/decisions/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
+| [INIT_ACCEPTANCE](docs/acceptance/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 
-A 负责后端与集成，B 负责明确的前端与测试任务，后续独立完成并理解辩题与历史页面。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。
+A 负责后端与集成，B 负责明确的前端与测试任务，后续独立完成并理解辩题与历史页面。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。
 
 数据库、认证、AI 辩论、生产部署及 Git 提交、推送、合并均需对应授权。
 

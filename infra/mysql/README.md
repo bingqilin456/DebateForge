@@ -91,11 +91,11 @@ MySQL Community Server 8.4 是冻结的成熟 LTS 方案，服务端采用 GPLv2
 - [Git 换行属性](https://git-scm.com/docs/gitattributes)、[PowerShell 版本门槛](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_requires)、[原生命令错误策略](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_preference_variables#psnativecommanduseerroractionpreference)
 - [MySQL GRANT](https://dev.mysql.com/doc/refman/8.4/en/grant.html)、[客户端 option file](https://dev.mysql.com/doc/refman/8.4/en/option-files.html)、[MySQL 许可证](https://www.mysql.com/about/legal/licensing/opensource-license.html)
 
-实际执行记录、首次失败及恢复、未执行项见 [T02 环境验收记录](../../docs/T02_MYSQL_ENV_ACCEPTANCE.md)。本子任务完成技术验证后停止，等待人工验收，不自动进入剩余 T02 或 T03–T06。
+实际执行记录、首次失败及恢复、未执行项见 [T02 环境验收记录](../../docs/acceptance/T02_MYSQL_ENV_ACCEPTANCE.md)。本子任务完成技术验证后停止，等待人工验收，不自动进入剩余 T02 或 T03–T06。
 
 ## 迁移种子的重启持久化核对
 
-2026 年 11 月 8 日另获授权，00007–00010 及五条种子已技术验证，见 [当前记录](../../docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。仅测试库已迁移，服务启动不自动建表或播种。先按 [迁移说明](../../backend/migrations/README.md) 显式 up，再停止并发写入，从根目录执行：
+2026 年 11 月 8 日另获授权，00007–00010 及五条种子已技术验证，见 [当前记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。仅测试库已迁移，服务启动不自动建表或播种。先按 [迁移说明](../../backend/migrations/README.md) 显式 up，再停止并发写入，从根目录执行：
 
 ```powershell
 pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1

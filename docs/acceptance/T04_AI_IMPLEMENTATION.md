@@ -1,7 +1,7 @@
 # T04 AI 切片实施交接记录
 
 > DSH 实现切片仅包含 `backend/internal/ai/**`、`backend/go.mod`、`backend/go.sum` 与本文件；不注册路由、不装配 main、不改 auth/DB/frontend、不提交、不部署、不发起真实模型请求。Codex 整合另更新共享文档。
-> 计划见 [T04 AI 计划](T04_AI_PLAN.md)，最终证据以 [验收记录](T04_AI_ACCEPTANCE.md) 为准。
+> 计划见 [T04 AI 计划](../planning/T04_AI_PLAN.md)，最终证据以 [验收记录](T04_AI_ACCEPTANCE.md) 为准。
 
 ## 原始实施状态（2026-11-08，DSH 写于编码前）
 

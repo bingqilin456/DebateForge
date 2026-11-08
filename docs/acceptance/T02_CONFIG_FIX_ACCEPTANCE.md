@@ -4,7 +4,7 @@
 
 ## 授权与基线
 
-本轮依用户明确要求，以 [ADR-012](DECISIONS.md#adr-012-健康端点统一为当前-gin-路径) 为准使用 `GET /api/health/live`、`GET /api/health/ready`，不恢复历史路径，也不增加兼容别名。业务契约保持 T01 设计。
+本轮依用户明确要求，以 [ADR-012](../decisions/DECISIONS.md#adr-012-健康端点统一为当前-gin-路径) 为准使用 `GET /api/health/live`、`GET /api/health/ready`，不恢复历史路径，也不增加兼容别名。业务契约保持 T01 设计。
 
 开始时分支为 `feat/t02-database`、HEAD 为 `fe047c1`，暂存区为空，存在数据库接入、dotenv、API/OpenAPI 和前端的未提交修改。本轮开始时，Gin 路由、API/OpenAPI、前端默认请求和页面提示，以及后端 HTTP、Readiness、集成测试路径已使用新契约；这些在途改动保留并验证，不记为本轮新增实现。后端路由测试同时保留旧路径返回 404 的反例。
 
@@ -18,9 +18,9 @@
 | `backend/cmd/server/dotenv_test.go` | 增加 Windows 六项变量大小写混用与空值、文件空值、解析失败无部分写入、NUL 非法值及既有安全校验的回归用例 |
 | `backend/internal/platform/config_test.go` | 测试夹具显式设置合法 HTTP 地址，避免数据库配置测试继承终端中的非法或空 HTTP_ADDR |
 | `frontend/vite.config.ts` | 只保留原路径 `/api/` 代理，移除历史 `/health/` 规则；不增加 CORS、rewrite 或新代理目标 |
-| `README.md`、`AGENTS.md`、`docs/ARCHITECTURE.md` | 同步当前代理说明；README 明确 Windows 优先级与加载失败行为 |
-| `docs/API.md`、`docs/openapi.yaml` | 同步代理说明；OpenAPI 路径、操作、DTO 和状态码不变 |
-| `docs/T02_DOTENV_ACCEPTANCE.md`、`docs/T02_DATABASE_CONNECTION_ACCEPTANCE.md` | 增加历史证据说明及当前修复记录指引，不改写历史实测结论 |
+| `README.md`、`AGENTS.md`、`docs/architecture/ARCHITECTURE.md` | 同步当前代理说明；README 明确 Windows 优先级与加载失败行为 |
+| `docs/api/API.md`、`docs/api/openapi.yaml` | 同步代理说明；OpenAPI 路径、操作、DTO 和状态码不变 |
+| `docs/acceptance/T02_DOTENV_ACCEPTANCE.md`、`docs/acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md` | 增加历史证据说明及当前修复记录指引，不改写历史实测结论 |
 | 本记录 | 保存本轮实际证据与待验收边界 |
 
 不新增或升级依赖。`go.mod`、`go.sum`、数据库配置及目标保护生产代码、秘密读取、连接池、Readiness Handler、集成测试安全入口和 MySQL 基础设施保持开始时内容。

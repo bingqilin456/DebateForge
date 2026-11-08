@@ -1,8 +1,8 @@
 # T02 版本化数据库迁移
 
-当前共十个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子。未实现业务 Repository/Handler，总结表留 T10。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/API.md)；最新证据见 [种子与持久化记录](../../docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子。未实现业务 Repository/Handler，总结表留 T10。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；最新证据见 [种子与持久化记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
-2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
+2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/planning/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
 ## 入口与执行顺序
 

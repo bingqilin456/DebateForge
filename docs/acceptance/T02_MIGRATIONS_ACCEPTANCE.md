@@ -18,14 +18,14 @@
 | 使用与恢复 | `backend/migrations/README.md` |
 | 独立迁移工具 | `backend/tools/migrate/{main,config,runner}.go`、独立 `go.mod/go.sum` |
 | 自动化测试 | 工具目录 `config_test.go`、`runner_test.go`、`integration_test.go` |
-| 状态与选型 | `AGENTS.md`、`README.md`、`docs/{ARCHITECTURE,DECISIONS,PLAN,TASKS}.md` |
-| 本轮执行计划 | `docs/superpowers/plans/2026-11-08-t02-migrations.md` |
+| 状态与选型 | `AGENTS.md`、`README.md`、`docs/architecture/ARCHITECTURE.md`、`docs/decisions/DECISIONS.md`、`docs/planning/PLAN.md`、`docs/planning/TASKS.md` |
+| 本轮执行计划 | `docs/planning/2026-11-08-t02-migrations.md` |
 
 服务端 `go.mod/go.sum`、已有业务/健康代码及测试、前端、API/OpenAPI、Compose 与账户均未修改。没有创建 `deploy/`，没有接入 AutoMigrate。编译产物只在被忽略的 `.cache/t02-mysql/migrate.exe`。
 
 ## 架构和数据库结果
 
-沿用 Goose v3.29.0，用官方 Provider 构建独立 CLI module，不把迁移依赖引入服务。六张表及物理字段选择见 [迁移说明](../backend/migrations/README.md#版本与物理结构)，落地决策见 [ADR-013](DECISIONS.md#adr-013-t02-独立-goose-迁移入口与失败保护)。
+沿用 Goose v3.29.0，用官方 Provider 构建独立 CLI module，不把迁移依赖引入服务。六张表及物理字段选择见 [迁移说明](../../backend/migrations/README.md#版本与物理结构)，落地决策见 [ADR-013](../decisions/DECISIONS.md#adr-013-t02-独立-goose-迁移入口与失败保护)。
 
 流程为：解析显式 env/秘密文件/up或status → 固定本地目标校验 → 有界读取秘密 → 同一个实际 SQL 连接校验库/账户/MySQL 版本 → 命名锁 → 校验已执行历史为本地版本的前缀 → Goose 初始化元数据/执行单版本 SQL/登记成功 → 解锁。已执行版本不重复 DDL 或 INSERT；多进程可在版本边界交替，锁冲突立即拒绝。原始 SQL、DSN 和驱动错误不对外输出。
 
@@ -104,7 +104,7 @@ Remove-Item Env:SIYIGE_MIGRATION_TEST, Env:SIYIGE_MIGRATION_PASSWORD_FILE
 
 每个后缀对应 `t02_failure_versions_<后缀>` 和 `t02_failure_probe_<后缀>`；这些不是业务实体或种子，清理需单独授权。事务回滚可能消耗自增编号，不承诺 ID 连续。
 
-- MySQL DDL 与版本登记仍有故障窗口；本轮验证了“保留部分 DDL、失败版本不登记、重复不静默跳过”，没有声称数据库操作整体可回滚。恢复指引见 [迁移说明](../backend/migrations/README.md#失败重跑与恢复)。
+- MySQL DDL 与版本登记仍有故障窗口；本轮验证了“保留部分 DDL、失败版本不登记、重复不静默跳过”，没有声称数据库操作整体可回滚。恢复指引见 [迁移说明](../../backend/migrations/README.md#失败重跑与恢复)。
 - 未在正式历史上模拟进程硬终止、补记版本或执行破坏性恢复；不提供自动修复/Down，不声称覆盖所有断电时序。
 - Goose 原生历史无 SQL 校验和，不检测所有已登记表的后续手工结构漂移；文件不可变和独立结构审查仍是要求。
 - 工具只支持冻结的本地 MySQL 8.4.13，不是生产迁移入口；未来生产配置/备份/迁移权限需单独设计与授权。
@@ -125,7 +125,7 @@ Remove-Item Env:SIYIGE_MIGRATION_TEST, Env:SIYIGE_MIGRATION_PASSWORD_FILE
 
 2026 年 11 月 8 日独立复审对照冻结模型、实际文件及 Goose v3.29.0 源码，确认独立 module 与服务解耦、同会话身份校验/锁/DDL/登记顺序和解锁错误处理；四个离线单测、vet、模块校验、gofmt 及 Git 差异检查通过。仅以 SELECT 独立核对测试库身份、六表引擎/排序规则、版本 0–6 及时间戳，与本文记录一致；并确认 ascii_bin 的 PAD SPACE 属性及枚举尾随空格比较问题。
 
-独立复审未重跑真实迁移、数据库失败注入、锁冲突或 race 集成测试，也未验证硬终止后的人工恢复；前文八项测试含 race 的结果属于开发阶段记录，不冒充独立复验结果。SQL 无校验和和后续手工结构漂移风险仍保留。复审发现两个 P2 和一个 P3，完整问题、影响、负责人及关闭条件登记于 [TASKS](TASKS.md#t02-迁移延期问题登记)。
+独立复审未重跑真实迁移、数据库失败注入、锁冲突或 race 集成测试，也未验证硬终止后的人工恢复；前文八项测试含 race 的结果属于开发阶段记录，不冒充独立复验结果。SQL 无校验和和后续手工结构漂移风险仍保留。复审发现两个 P2 和一个 P3，完整问题、影响、负责人及关闭条件登记于 [TASKS](../planning/TASKS.md#t02-迁移延期问题登记)。
 
 项目负责人在本次对话中接受有条件通过、上述验证边界及三个延期项，授权登记、核对交付后在当前分支提交，并推送到 origin/feat/t02-database。枚举 CHECK 必须在业务状态写入前解决，禁止修改已执行的六份 SQL。学习讲解未登记，5 条辩题种子和重启持久化验证未实施；完整 T02 继续进行中。本次授权不包括 PR、合并、部署或后续开发。
 

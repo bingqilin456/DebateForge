@@ -1,6 +1,6 @@
 # T02 后端数据库连接与 Readiness 验收记录
 
-本文保留数据库接入时的历史证据，旧健康路径不作为当前调用地址。当前接口为 `GET /api/health/live`、`GET /api/health/ready`，依据 [ADR-012](DECISIONS.md#adr-012-健康端点统一为当前-gin-路径)；本轮测试迁移及配置修复结果见 [配置与 API 契约修复记录](T02_CONFIG_FIX_ACCEPTANCE.md)。数据库安全校验、秘密管理和 Readiness 语义沿用本文实现。
+本文保留数据库接入时的历史证据，旧健康路径不作为当前调用地址。当前接口为 `GET /api/health/live`、`GET /api/health/ready`，依据 [ADR-012](../decisions/DECISIONS.md#adr-012-健康端点统一为当前-gin-路径)；本轮测试迁移及配置修复结果见 [配置与 API 契约修复记录](T02_CONFIG_FIX_ACCEPTANCE.md)。数据库安全校验、秘密管理和 Readiness 语义沿用本文实现。
 
 实施跨 2026 年 11 月 7–8 日（Asia/Shanghai）。状态：当前子任务完成技术验证，待项目负责人最终验收及学习讲解；完整 T02 保持进行中。
 
@@ -25,7 +25,7 @@
 
 配置非法或秘密文件缺失/不可读/为空/超长：启动失败，错误字符串不含秘密路径、内容或原始驱动错误。配置有效但 MySQL 不可达：HTTP 进程仍运行，live=200，ready=503。GORM 和驱动不输出原始日志；保留 cause 供 errors.Is/As 判断取消等错误。
 
-健康端点保持 [API](API.md#就绪检查与-pb-错误) 冻结的路径和 JSON：`GET /health/live` → `200 {"status":"alive"}`；`GET /health/ready` → `200 {"status":"ready"}` 或 `503 {"status":"not_ready"}`。均无认证、无模型调用、包含 X-Request-ID 和 Cache-Control: no-store。ready 从请求 Context 派生最多 3 秒预算，只 Ping，不表示表结构、种子或业务可用。
+健康端点保持 [API](../api/API.md#就绪检查与-pb-错误) 冻结的路径和 JSON：`GET /health/live` → `200 {"status":"alive"}`；`GET /health/ready` → `200 {"status":"ready"}` 或 `503 {"status":"not_ready"}`。均无认证、无模型调用、包含 X-Request-ID 和 Cache-Control: no-store。ready 从请求 Context 派生最多 3 秒预算，只 Ping，不表示表结构、种子或业务可用。
 
 ## 核心实现与文件
 
@@ -35,7 +35,7 @@
 - `backend/cmd/server/main.go`：只组装池，不在启动时联网、迁移或建表；HTTP 退出后关闭池，保留 PB HTTP 超时参数。
 - `backend/internal/platform/*_test.go`、`backend/cmd/server/main_test.go`：配置/目标/秘密、取消/超时、健康/脱敏、真实 HTTP 入口与关闭测试。
 - `backend/tests/integration/database_test.go`：TestMain 在读秘密/联网前校验固定目标；连接后核对 DATABASE()、CURRENT_USER()。仅 SELECT/Ping，不做清库等操作。
-- `backend/go.mod`、`go.sum` 锁定新增依赖；README/API/5 份已有在途文档增量同步；[实施计划](superpowers/plans/2026-11-08-t02-database-connection.md) 保留步骤和执行记录。
+- `backend/go.mod`、`go.sum` 锁定新增依赖；README/API/5 份已有在途文档增量同步；[实施计划](../planning/2026-11-08-t02-database-connection.md) 保留步骤和执行记录。
 
 ## 实际验证
 
@@ -48,7 +48,7 @@
 5. 用 `go test -c` 生成忽略目录内的集成测试程序，秘密路径故意指向不存在文件。逐项设置 APP_ENV=dev、DB_ADDR=127.0.0.1:13306、DB_ADDR=localhost:13307、DB_NAME=siyige_dev、DB_USER=siyige_test_migrator、DB_USER=root、SIYIGE_INTEGRATION=true；7 项均退出 1，返回配置/目标拒绝，未到秘密读取/数据库连接路径。
 6. `go vet ./...`、`go build ./...`、`go mod verify` 通过；`gofmt -l cmd internal tests` 无输出。
 
-运行命令见 [README](../README.md#测试与构建)。集成测试需要显式 APP_ENV=test、SIYIGE_INTEGRATION=1 及测试应用秘密文件，任意配置不符均失败。
+运行命令见 [README](../../README.md#测试与构建)。集成测试需要显式 APP_ENV=test、SIYIGE_INTEGRATION=1 及测试应用秘密文件，任意配置不符均失败。
 
 ### 环境限制与处理
 

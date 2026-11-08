@@ -15,7 +15,7 @@ Codex 读取冻结契约、核对环境、写实施计划并主控监督；DSH �
 - `backend/cmd/server/main.go`、`main_test.go`：组装真实认证依赖、验证启动入口确实注册认证路由。
 - `backend/tests/integration/auth_test.go`：真实 HTTP、Argon2id、GORM/MySQL 的完整认证链路。
 - `backend/go.mod`：仅将原已锁定的 x/crypto v0.48.0 改为直接依赖；go.sum 不变。`backend/.env.example` 增加非秘密 AUTH_ORIGIN。
-- 当前状态及契约说明：AGENTS、README、TASKS、PLAN、ARCHITECTURE、DECISIONS、API/OpenAPI 与本记录；[实施计划](superpowers/plans/2026-11-08-t03-auth.md)。
+- 当前状态及契约说明：AGENTS、README、TASKS、PLAN、ARCHITECTURE、DECISIONS、API/OpenAPI 与本记录；[实施计划](../planning/2026-11-08-t03-auth.md)。
 
 复用 T02 的数据库、账户、连接配置、十份迁移和五条种子。未修改迁移/迁移执行器、基础设施、秘密或前端文件；没有服务启动自动迁移/播种。
 

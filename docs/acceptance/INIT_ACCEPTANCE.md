@@ -4,7 +4,7 @@
 
 ## 已批准规格与边界
 
-用户已批准聊天中的初始化方案，并指定模块路径 `github.com/bingqilin456/DebateForge/backend`、npm、Go 1.27.1 / Node 24.11.1 / npm 11.6.2、两个回环地址及 `/health/live` 契约。实现以本记录、[API](API.md) 和 [ARCHITECTURE](ARCHITECTURE.md) 为准。本任务是 T01、T02、T06 的前置拆分任务，完整 T02、T06 和 W1 不标完成。
+用户已批准聊天中的初始化方案，并指定模块路径 `github.com/bingqilin456/DebateForge/backend`、npm、Go 1.27.1 / Node 24.11.1 / npm 11.6.2、两个回环地址及 `/health/live` 契约。实现以本记录、[API](../api/API.md) 和 [ARCHITECTURE](../architecture/ARCHITECTURE.md) 为准。本任务是 T01、T02、T06 的前置拆分任务，完整 T02、T06 和 W1 不标完成。
 
 ## 实施计划
 
@@ -92,8 +92,8 @@ Windows amd64；实际命令输出 `go version go1.27.1 windows/amd64`、`node -
 | 新增 5 | backend/internal/platform/config.go、config_test.go、router.go、health.go、router_test.go | 回环配置校验、健康与错误契约、受控日志和测试 |
 | 新增 7 | frontend/package.json、package-lock.json、index.html、vite.config.ts、tsconfig.json、tsconfig.app.json、tsconfig.node.json | 精确依赖树、入口、开发代理、类型与测试/构建命令 |
 | 新增 7 | frontend/src/main.ts、env.d.ts、App.vue、api/client.ts、api/health.ts、api/health.test.ts、types/api.ts | Vue 入口、四种交互反馈（检查中/成功/失败/手动重试）、真实请求及契约类型/测试 |
-| 新增 2 | docs/API.md、docs/INIT_ACCEPTANCE.md | 固定本轮契约并保留实际验收证据 |
-| 修改 6 | AGENTS.md、README.md、docs/ARCHITECTURE.md、docs/PLAN.md、docs/TASKS.md、docs/DECISIONS.md | 同步当前授权、运行说明、阶段与 ADR；不改变 PRD 产品范围 |
+| 新增 2 | docs/api/API.md、docs/acceptance/INIT_ACCEPTANCE.md | 固定本轮契约并保留实际验收证据 |
+| 修改 6 | AGENTS.md、README.md、docs/architecture/ARCHITECTURE.md、docs/planning/PLAN.md、docs/planning/TASKS.md、docs/decisions/DECISIONS.md | 同步当前授权、运行说明、阶段与 ADR；不改变 PRD 产品范围 |
 
 ### 未完成事项与影响
 

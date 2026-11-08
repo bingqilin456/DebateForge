@@ -50,11 +50,11 @@ project/
 ├── AGENTS.md             # AI 协作总规则 / 文档索引
 ├── README.md             # 安装、配置、运行、测试、部署说明
 ├── docs/
-│   ├── PRD.md            # 做什么 / 不做什么（MVP 范围）
-│   ├── ARCHITECTURE.md   # 架构、模块边界、数据与接口
-│   ├── PLAN.md           # 里程碑及阶段计划
-│   ├── TASKS.md          # 可领取、可验收的任务清单
-│   └── DECISIONS.md      # 重要技术选型及原因
+│   ├── product/PRD.md            # 做什么 / 不做什么（MVP 范围）
+│   ├── architecture/ARCHITECTURE.md   # 架构、模块边界、数据与接口
+│   ├── planning/PLAN.md           # 里程碑及阶段计划
+│   ├── planning/TASKS.md          # 可领取、可验收的任务清单
+│   └── decisions/DECISIONS.md      # 重要技术选型及原因
 ├── backend/
 └── frontend/
 ```
@@ -80,10 +80,10 @@ project/
 按阶段验收交付可运行、可测试、可维护的 MVP；优先正确性、安全与稳定性。
 
 ## 项目文档
-- 产品范围：docs/PRD.md
-- 系统架构：docs/ARCHITECTURE.md
-- 计划与进度：docs/PLAN.md、docs/TASKS.md
-- 技术决策：docs/DECISIONS.md
+- 产品范围：docs/product/PRD.md
+- 系统架构：docs/architecture/ARCHITECTURE.md
+- 计划与进度：docs/planning/PLAN.md、docs/planning/TASKS.md
+- 技术决策：docs/decisions/DECISIONS.md
 - 使用说明：README.md
 只读取当前任务需要的文档，以仓库最新代码及已确认决策为准。
 
@@ -343,7 +343,7 @@ GET  /api/v1/debates/{id}/messages
 
 ### 思弈阁 Lite 的阶段推进示例
 
-项目阶段及依赖以 [PLAN](PLAN.md) 和 [TASKS](TASKS.md) 为准，不限定各阶段自然日数。本节是协作参考，不构成任务实施、提交、推送或部署授权。
+项目阶段及依赖以 [PLAN](../planning/PLAN.md) 和 [TASKS](../planning/TASKS.md) 为准，不限定各阶段自然日数。本节是协作参考，不构成任务实施、提交、推送或部署授权。
 
 准备工作是收敛需求、审查架构和明确权限；旧版“Phase 0 规划审查”属于历史准备活动，不是新版 PB 验收通过。
 
@@ -353,7 +353,7 @@ GET  /api/v1/debates/{id}/messages
 4. **Phase 3：安全、可靠性与 AI 质量（T13–T15）。** 安全故障回归及人工评估；SSE 仅为可取消 P1，不挤占 P0。
 5. **Phase 4：运维、交付与答辩准备（T16–T18）。** 备份恢复、告警、真实环境回归、使用/部署文档及答辩材料准备。
 
-阶段内按已满足的依赖分工并行，前端可用已确认契约的固定数据先准备，但最终验收必须用真实链路。自 T01 起，当前阶段必要 P0、Codex 技术审查、必要的自动化测试、相关高风险专项验证及项目负责人最终验收通过并留证，且明确下一阶段授权后才继续。成员在实施中理解各自模块，不强制 A/B 互审或正式契约讲解登记，见 [ADR-011](DECISIONS.md#adr-011-简化验收流程与-t01-结项)；不以“代码生成”替代完成，也不因超出人时估算降低标准。
+阶段内按已满足的依赖分工并行，前端可用已确认契约的固定数据先准备，但最终验收必须用真实链路。自 T01 起，当前阶段必要 P0、Codex 技术审查、必要的自动化测试、相关高风险专项验证及项目负责人最终验收通过并留证，且明确下一阶段授权后才继续。成员在实施中理解各自模块，不强制 A/B 互审或正式契约讲解登记，见 [ADR-011](../decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项)；不以“代码生成”替代完成，也不因超出人时估算降低标准。
 
 ## 11. PR 交付记录模板（每个任务都可复用）
 

@@ -1,6 +1,6 @@
 # T02 dotenv 配置优化验收记录
 
-本文保留首次实现的历史证据，包括当时的 `godotenv.Load()`、旧健康路径及测试结果。当前加载已改为 `godotenv.Read()` 配合 `os.LookupEnv()`；健康路径以 [ADR-012](DECISIONS.md#adr-012-健康端点统一为当前-gin-路径) 为准。本轮修复与实际复验结果见 [配置与 API 契约修复记录](T02_CONFIG_FIX_ACCEPTANCE.md)，不沿用下方历史结果代替本轮验收。
+本文保留首次实现的历史证据，包括当时的 `godotenv.Load()`、旧健康路径及测试结果。当前加载已改为 `godotenv.Read()` 配合 `os.LookupEnv()`；健康路径以 [ADR-012](../decisions/DECISIONS.md#adr-012-健康端点统一为当前-gin-路径) 为准。本轮修复与实际复验结果见 [配置与 API 契约修复记录](T02_CONFIG_FIX_ACCEPTANCE.md)，不沿用下方历史结果代替本轮验收。
 
 日期：2026 年 11 月 8 日（Asia/Shanghai）。状态：本次配置优化已完成实施与技术自查，待独立审查及项目负责人最终验收；完整 T02 仍进行中，不推进迁移、种子或后续任务。
 

@@ -20,7 +20,7 @@
 - `infra/mysql/README.md`：资源、启动、连接、停止、依赖和失败处置说明。
 - 本验收记录。
 
-修改 `AGENTS.md`、根 `README.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/PLAN.md`、`docs/TASKS.md`，仅同步本次授权、环境说明与准确进度。`docs/API.md`、`.gitignore`、`backend/`、`frontend/` 不变。
+修改 `AGENTS.md`、根 `README.md`、`docs/architecture/ARCHITECTURE.md`、`docs/decisions/DECISIONS.md`、`docs/planning/PLAN.md`、`docs/planning/TASKS.md`，仅同步本次授权、环境说明与准确进度。`docs/api/API.md`、`.gitignore`、`backend/`、`frontend/` 不变。
 
 本地生成但由既有 `.cache/` 忽略规则排除的文件：`.cache/t02-mysql/secrets/` 下六份秘密文件，`verification.txt`、`fresh-init-verification.txt`、前后容器元数据快照及临时验证脚本。秘密文件未输出、未进入 Git 暂存区或跟踪文件；不要清理秘密目录来重置已初始化数据库。
 
@@ -64,7 +64,7 @@ docker --context desktop-linux compose --project-name siyige-t02 -f infra/mysql/
 docker --context desktop-linux compose --project-name siyige-t02 -f infra/mysql/compose.yaml ps -a
 docker --context desktop-linux image inspect mysql:8.4.13 --format '{{json .RepoDigests}}'
 git diff --check
-git diff --exit-code HEAD -- backend frontend docs/API.md .gitignore
+git diff --exit-code HEAD -- backend frontend docs/api/API.md .gitignore
 git diff --cached --quiet
 ```
 

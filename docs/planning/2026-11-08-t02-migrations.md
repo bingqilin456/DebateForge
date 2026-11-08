@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.27.1、Goose v3.29.0、MySQL 8.4.13。
 
-**Spec:** [ARCHITECTURE](../../ARCHITECTURE.md#数据实体与关系)、[ADR-004](../../DECISIONS.md#adr-004-mysql-与-gorm-并使用版本化迁移) 及本轮用户授权。逻辑实体、字段、关系不变；物理类型选择记入迁移 README。
+**Spec:** [ARCHITECTURE](../architecture/ARCHITECTURE.md#数据实体与关系)、[ADR-004](../decisions/DECISIONS.md#adr-004-mysql-与-gorm-并使用版本化迁移) 及本轮用户授权。逻辑实体、字段、关系不变；物理类型选择记入迁移 README。
 
 ## Global Constraints
 
@@ -55,9 +55,9 @@ Files: 迁移 README、T02 迁移验收记录、AGENTS/README/PLAN/TASKS/ARCHITE
 - CodeGraph 索引可用但配置源已变化；依其输出读取当前实际文件，不重建索引。
 - 沙箱默认无法访问 Docker named pipe；获准的只读提升检查确认两套 T02 容器健康，未操作其他容器。
 - 取舍：使用 Goose Provider 构建独立 CLI，与标准 Goose 共用版本格式；独立 module 隔离新工具依赖，不改变服务依赖或 HTTP 行为。
-- 技术自查补充：改用 ApplyVersion 避免加锁前初始化；校验历史前缀并处理已执行信号与清理错误合并。相关 RED/修复/最终 GREEN 见 [验收记录](../../T02_MIGRATIONS_ACCEPTANCE.md)。
+- 技术自查补充：改用 ApplyVersion 避免加锁前初始化；校验历史前缀并处理已执行信号与清理错误合并。相关 RED/修复/最终 GREEN 见 [验收记录](../acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 - 工具最终含 MySQL 的 race 全量 8 测试、默认 test、vet/build/verify 均通过；服务回归及现有两个只读集成用例通过。独立审查与人工门槛保持待办。
 
 ## 验收与提交授权增量
 
-2026 年 11 月 8 日负责人接受有条件独立审查、验证边界及两个 P2/一个 P3 延期，授权本轮登记并核对后提交及推送。上文“等待独立审查”和“不创建提交”等为实施阶段历史边界。当前问题及关闭条件见 [TASKS](../../TASKS.md#t02-迁移延期问题登记)；学习讲解尚未登记，完整 T02 仍进行中。不创建 PR、不合并、不推进延期修复、种子或其他开发。
+2026 年 11 月 8 日负责人接受有条件独立审查、验证边界及两个 P2/一个 P3 延期，授权本轮登记并核对后提交及推送。上文“等待独立审查”和“不创建提交”等为实施阶段历史边界。当前问题及关闭条件见 [TASKS](TASKS.md#t02-迁移延期问题登记)；学习讲解尚未登记，完整 T02 仍进行中。不创建 PR、不合并、不推进延期修复、种子或其他开发。

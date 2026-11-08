@@ -1,8 +1,8 @@
 # T04 Eino 模型适配与预算验收记录
 
-日期：2026-11-08（Asia/Shanghai）。状态：**已完成，项目负责人最终人工验收通过，T04 正式结项**。既有无收费实现、最终集成验证及独立审查通过，原累计 5 项 P2 均已关闭；新增一次性执行器经 DSH 独立新会话只读审查 PASS 后，已直接执行唯一一次真实请求，HTTP 200、正常结束，授权已消耗，入口已停止。实际用量 250 输入 / 48 输出 Token，按实际用量计价 0.000442 元；精确结算费用仍未知，负责人已接受该残余风险，不能将前后显示余额未变记为免费。前次 BLOCKED、待人工验收及禁止提交等记录保留为各轮历史，以文末“最终人工验收与结项”及本次明确授权为准；其他 T04 文档中的旧状态同属历史快照。供应商硬预算缺失保留为 [T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失)，仍为未关闭的 P0 公网开放阻塞项，继续禁止公网真实模型入口。T05 保持未开始。
+日期：2026-11-08（Asia/Shanghai）。状态：**已完成，项目负责人最终人工验收通过，T04 正式结项**。既有无收费实现、最终集成验证及独立审查通过，原累计 5 项 P2 均已关闭；新增一次性执行器经 DSH 独立新会话只读审查 PASS 后，已直接执行唯一一次真实请求，HTTP 200、正常结束，授权已消耗，入口已停止。实际用量 250 输入 / 48 输出 Token，按实际用量计价 0.000442 元；精确结算费用仍未知，负责人已接受该残余风险，不能将前后显示余额未变记为免费。前次 BLOCKED、待人工验收及禁止提交等记录保留为各轮历史，以文末“最终人工验收与结项”及本次明确授权为准；其他 T04 文档中的旧状态同属历史快照。供应商硬预算缺失保留为 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失)，仍为未关闭的 P0 公网开放阻塞项，继续禁止公网真实模型入口。T05 保持未开始。
 
-负责人此前已批准一次本地受控 DeepSeek 冒烟的费用保护例外及四份文档调整，决策见 [ADR-017](DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。此前仅文档轮次未授权真实调用；本次明确的一次性调用授权已覆盖该历史限制，未覆盖任何未满足的执行条件。下文原实施、审查及文档轮次保留各自当时的语境，原验证与审查证据保持不变，不把本次执行前检查补记为业务测试或真实冒烟。
+负责人此前已批准一次本地受控 DeepSeek 冒烟的费用保护例外及四份文档调整，决策见 [ADR-017](../decisions/DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。此前仅文档轮次未授权真实调用；本次明确的一次性调用授权已覆盖该历史限制，未覆盖任何未满足的执行条件。下文原实施、审查及文档轮次保留各自当时的语境，原验证与审查证据保持不变，不把本次执行前检查补记为业务测试或真实冒烟。
 
 ## 范围与协作
 
@@ -167,7 +167,7 @@ T04 继续 BLOCKED，不进入“真实冒烟成功后待人工最终验收”�
 
 在线核对 [官方余额接口](https://api-docs.deepseek.com/api/get-user-balance/) 为只读 `GET /user/balance`，返回 `is_available` 及分币种余额；它不返回自动充值状态。[官方错误码](https://api-docs.deepseek.com/quick_start/error_codes/) 将 402 描述为余额不足，但没有据此证明负余额处理机制。负责人已明确将该不确定性记录为剩余风险，不擅自声称供应商能够金额封顶。
 
-本次由 Codex 直接实现独立本地命令 `backend/cmd/t04-smoke/`（`main.go`、`main_test.go`、中文 `README.md`），不修改既有 `internal/ai`、依赖、服务装配或业务路由。详细流程及验证计划见 [执行器说明](../backend/cmd/t04-smoke/README.md)。单次授权标识 `T04-20261108-local-once`；状态文件及二进制均位于现有 Git 忽略目录，不记录秘密。
+本次由 Codex 直接实现独立本地命令 `backend/cmd/t04-smoke/`（`main.go`、`main_test.go`、中文 `README.md`），不修改既有 `internal/ai`、依赖、服务装配或业务路由。详细流程及验证计划见 [执行器说明](../../backend/cmd/t04-smoke/README.md)。单次授权标识 `T04-20261108-local-once`；状态文件及二进制均位于现有 Git 忽略目录，不记录秘密。
 
 无收费验证证据：
 
@@ -238,11 +238,11 @@ Codex 执行前确认原 HEAD 未变，状态目录不存在，进程 `DEEPSEEK_
 
 | 文件 | 内容 / SHA-256 |
 | --- | --- |
-| [evidence.json](../backend/.cache/t04-smoke-20261108/evidence.json) | 回复、受控状态、用量、参数预算、前后余额与用量计价；`7f1c52c66adcbd2aa5c4a97dfd08ed306479f501878a03a7df7a8d37845b05be` |
-| [wire-request.json](../backend/.cache/t04-smoke-20261108/wire-request.json) | 匿名请求 body 白名单，无鉴权头；`1cbc3a09ff13360eb601e0563b8fccf7e3abe83e07a2e2a0244303139c734a3f` |
-| [consumed.json](../backend/.cache/t04-smoke-20261108/consumed.json) | 发送前持久化消耗；`ca4e224641a986ca23b401099bccf32e268f206d7ac4974dbf4a535a4e8fc536` |
-| [launched.json](../backend/.cache/t04-smoke-20261108/launched.json) | 永久启动排他记录；`8d2524f98627f140c3b536f1b1c181db6ea1cefc729cdcc959529c201026cbe5` |
-| [verification.json](../backend/.cache/t04-smoke-20261108/verification.json) | 调用后离线校验收据、源码/二进制/证据哈希、审查标识、费用与未知结算语义；没有再次运行模型 |
+| [evidence.json](../../backend/.cache/t04-smoke-20261108/evidence.json) | 回复、受控状态、用量、参数预算、前后余额与用量计价；`7f1c52c66adcbd2aa5c4a97dfd08ed306479f501878a03a7df7a8d37845b05be` |
+| [wire-request.json](../../backend/.cache/t04-smoke-20261108/wire-request.json) | 匿名请求 body 白名单，无鉴权头；`1cbc3a09ff13360eb601e0563b8fccf7e3abe83e07a2e2a0244303139c734a3f` |
+| [consumed.json](../../backend/.cache/t04-smoke-20261108/consumed.json) | 发送前持久化消耗；`ca4e224641a986ca23b401099bccf32e268f206d7ac4974dbf4a535a4e8fc536` |
+| [launched.json](../../backend/.cache/t04-smoke-20261108/launched.json) | 永久启动排他记录；`8d2524f98627f140c3b536f1b1c181db6ea1cefc729cdcc959529c201026cbe5` |
+| [verification.json](../../backend/.cache/t04-smoke-20261108/verification.json) | 调用后离线校验收据、源码/二进制/证据哈希、审查标识、费用与未知结算语义；没有再次运行模型 |
 
 调用后离线校验 **PASS**：核对实际 body 字段及匿名消息、完整输入字节预算、标记顺序、单次计数、时间、正常结束、Token 加总/上限、回复码点、Decimal 计价；没有访问供应商或读取 Key。最终检查 **PASS**：126 个 Git 可见文件中，仅本验收记录变化并新增三份命令文件，其余 122 个未变；既有 AI 源码及依赖共 15 个冻结文件哈希一致，原测试/独立审查段哈希一致。新命令 gofmt、本记录及新增文件的空白检查、本地链接目标存在性、`git diff --check`、所有五份本地收据/二进制/`.env` 的忽略规则检查通过；Git 仅提示既有跟踪文件的 LF/CRLF 转换警告，没有改写它们。所有既有在途改动保留。
 

@@ -1,24 +1,24 @@
 # 思弈阁 Lite 技术架构
 
-**T04 实施增量（2026 年 11 月 8 日）：新增独立 `internal/ai`，业务接口 `Generator.Generate(context.Context, Request)` 由 Eino 官方 OpenAI 协议适配器和 Fake 实现。** `debate-v1` 仅由服务端构建消息；45 秒模型 Context 和 60 秒请求辅助函数、显式 Token 上限、完整历史/窗口预检及响应校验已实现并通过最终集成检查与独立审查，5 项 P2 均已复验关闭。当前 main 不装配 AI、不增加业务路由；T05 仍须从 HTTP 入口落实并验证 60 秒总预算和既有 WriteTimeout。负责人已批准 DeepSeek `deepseek-flash` 的一次本地受控冒烟费用保护例外，但本轮仅改文档，真实调用仍待单独授权；供应商硬预算未落实，公网真实入口按 [T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失) 保持阻塞。T04 未完成，见 [T04 记录](T04_AI_ACCEPTANCE.md) 和 [ADR-017](DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。历史 T04 未启动表述不覆盖本增量。
+**T04 实施增量（2026 年 11 月 8 日）：新增独立 `internal/ai`，业务接口 `Generator.Generate(context.Context, Request)` 由 Eino 官方 OpenAI 协议适配器和 Fake 实现。** `debate-v1` 仅由服务端构建消息；45 秒模型 Context 和 60 秒请求辅助函数、显式 Token 上限、完整历史/窗口预检及响应校验已实现并通过最终集成检查与独立审查，5 项 P2 均已复验关闭。当前 main 不装配 AI、不增加业务路由；T05 仍须从 HTTP 入口落实并验证 60 秒总预算和既有 WriteTimeout。负责人已批准 DeepSeek `deepseek-flash` 的一次本地受控冒烟费用保护例外，但本轮仅改文档，真实调用仍待单独授权；供应商硬预算未落实，公网真实入口按 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失) 保持阻塞。T04 未完成，见 [T04 记录](../acceptance/T04_AI_ACCEPTANCE.md) 和 [ADR-017](../decisions/DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。历史 T04 未启动表述不覆盖本增量。
 
-**T03 实施增量（2026 年 11 月 8 日）：认证四接口、auth 分层、可复用认证/Origin/CSRF 中间件与 `current_user` 已实现并通过 Codex 技术验证，待独立审查和人工验收。** 复用 T02 连接与表；见 [认证记录](T03_AUTH_ACCEPTANCE.md) 和 [ADR-015](DECISIONS.md#adr-015-t03-认证实现与-cookie-名称)。Cookie 名已在 T03 具体化；历史“业务未实现”和不启动 T03 的表述不覆盖本增量，T04–T06 未启动。
+**T03 实施增量（2026 年 11 月 8 日）：认证四接口、auth 分层、可复用认证/Origin/CSRF 中间件与 `current_user` 已实现并通过 Codex 技术验证，待独立审查和人工验收。** 复用 T02 连接与表；见 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md) 和 [ADR-015](../decisions/DECISIONS.md#adr-015-t03-认证实现与-cookie-名称)。Cookie 名已在 T03 具体化；历史“业务未实现”和不启动 T03 的表述不覆盖本增量，T04–T06 未启动。
 
-**当前结项状态（2026 年 11 月 8 日）：T02 已通过最终独立技术审查及项目负责人人工验收，标记已完成。** M01/M02 按本次审查结论关闭；M03 及已接受的恢复/验证边界继续保留。验收依据见 [种子与持久化记录](T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。此前“进行中/待验收”等为各子任务当时状态，不覆盖本次结项。T03–T18 不因结项自动启动，Phase 1 尚未完成。
+**当前结项状态（2026 年 11 月 8 日）：T02 已通过最终独立技术审查及项目负责人人工验收，标记已完成。** M01/M02 按本次审查结论关闭；M03 及已接受的恢复/验证边界继续保留。验收依据见 [种子与持久化记录](../acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。此前“进行中/待验收”等为各子任务当时状态，不覆盖本次结项。T03–T18 不因结项自动启动，Phase 1 尚未完成。
 
-2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](TASKS.md) 交付。产品边界见 [PRD](PRD.md)，资源状态和方案依据见 [DECISIONS](DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](INIT_ACCEPTANCE.md)。
+2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](../api/API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](../planning/TASKS.md) 交付。产品边界见 [PRD](../product/PRD.md)，资源状态和方案依据见 [DECISIONS](../decisions/DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](../acceptance/INIT_ACCEPTANCE.md)。
 
 ## 架构与技术栈
 
 使用单仓库、单个 Go 服务和单个 MySQL 实例。按业务模块组织代码，在进程内调用，不引入 RPC、服务发现、Redis、消息队列或分布式事务。浏览器只访问同源站点，模型 Key 仅存在服务端。
 
-上述单实例描述为目标应用部署形态。T02 本地开发库与集成测试库按冻结要求使用独立 MySQL 容器、卷、账户与回环端口，环境配置见 [本地 MySQL](../infra/mysql/README.md)。本次只建立环境，后端连接、业务迁移和 readiness 留待 T02 后续获准实施。
+上述单实例描述为目标应用部署形态。T02 本地开发库与集成测试库按冻结要求使用独立 MySQL 容器、卷、账户与回环端口，环境配置见 [本地 MySQL](../../infra/mysql/README.md)。本次只建立环境，后端连接、业务迁移和 readiness 留待 T02 后续获准实施。
 
-后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](API.md)；此前 [后端接入记录](T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
+后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](../api/API.md)；此前 [后端接入记录](../acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
 
-2026 年 11 月 8 日迁移增量：六张 Phase 1 表的版本化 SQL 已在隔离测试库验证，工具为独立 Goose v3.29.0 CLI module，仅显式 up/status，使用迁移账户及会话锁。服务仍不自动迁移；逻辑实体及 API 不变，物理类型、执行与失败恢复见 [迁移说明](../backend/migrations/README.md)。上段“迁移未实施”保留为历史，种子仍未实施，总结表仍归 T10；当前闭环已获有条件独立审查，负责人已接受验证边界及延期项并授权提交/推送；学习讲解尚未登记，延期门槛见 [任务登记](TASKS.md#t02-迁移延期问题登记)。
+2026 年 11 月 8 日迁移增量：六张 Phase 1 表的版本化 SQL 已在隔离测试库验证，工具为独立 Goose v3.29.0 CLI module，仅显式 up/status，使用迁移账户及会话锁。服务仍不自动迁移；逻辑实体及 API 不变，物理类型、执行与失败恢复见 [迁移说明](../../backend/migrations/README.md)。上段“迁移未实施”保留为历史，种子仍未实施，总结表仍归 T10；当前闭环已获有条件独立审查，负责人已接受验证边界及延期项并授权提交/推送；学习讲解尚未登记，延期门槛见 [任务登记](../planning/TASKS.md#t02-迁移延期问题登记)。
 
-2026 年 11 月 8 日种子增量：新增 00007–00009 字节精确枚举 CHECK，保留原六份 SQL/冻结列类型；00010 在 Goose 事务中插入固定 ID 1–5，重复 up 不多写，ID 冲突失败且不覆盖。服务启动不迁移或播种。历史保护与重启持久化已技术验证，详见 [当前记录](T02_SEEDS_PERSISTENCE_ACCEPTANCE.md) 和 [ADR-014](DECISIONS.md#adr-014-t02-精确枚举与版本化种子)。待独立审查、辩题人工审阅及最终验收，完整 T02 未完成；上方“种子未实施”为历史状态。
+2026 年 11 月 8 日种子增量：新增 00007–00009 字节精确枚举 CHECK，保留原六份 SQL/冻结列类型；00010 在 Goose 事务中插入固定 ID 1–5，重复 up 不多写，ID 冲突失败且不覆盖。服务启动不迁移或播种。历史保护与重启持久化已技术验证，详见 [当前记录](../acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md) 和 [ADR-014](../decisions/DECISIONS.md#adr-014-t02-精确枚举与版本化种子)。待独立审查、辩题人工审阅及最终验收，完整 T02 未完成；上方“种子未实施”为历史状态。
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ flowchart LR
 | 部署 | Linux、Docker Compose、Nginx | 一个应用副本，TLS 终止，数据库内网，独立持久化卷 |
 | 观察与维护 | JSON 日志、健康端点、主机和容器检查 | 不新增 Prometheus/Grafana 集群；复用可用的主机告警能力 |
 
-Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2。后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、GORM、迁移工具候选与 Eino 版本确认节点见 [T01 资源登记](DECISIONS.md#t01-资源与版本登记)。对应任务验证后固定精确版本和镜像标签。
+Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2。后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、GORM、迁移工具候选与 Eino 版本确认节点见 [T01 资源登记](../decisions/DECISIONS.md#t01-资源与版本登记)。对应任务验证后固定精确版本和镜像标签。
 
 本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/api/` 原路径代理到后端，不增加宽泛 CORS。当前注册 `/api/health/live`、`/api/health/ready`，2026 年 11 月 8 日负责人已确认以这两个路径为准；历史无 `/api` 的健康路径不再适用，也不保留开发代理规则。单页面阶段暂不安装 Vue Router、Pinia、Axios，不预建业务空模块。
 
@@ -85,7 +85,7 @@ docs/                               # 本阶段共享规划与后续验收记录
 .env.example                        # 后续创建，不含真实凭据
 ```
 
-每个模块只创建当前任务需要的文件。测试文件优先靠近业务文件，集成测试集中存放。[API](API.md) 是 PB 健康检查及 Phase 1 业务 HTTP 契约的来源，本文保留数据和实现约束，以及 Phase 2 接口草案。
+每个模块只创建当前任务需要的文件。测试文件优先靠近业务文件，集成测试集中存放。[API](../api/API.md) 是 PB 健康检查及 Phase 1 业务 HTTP 契约的来源，本文保留数据和实现约束，以及 Phase 2 接口草案。
 
 ## 数据实体与关系
 
@@ -107,7 +107,7 @@ docs/                               # 本阶段共享规划与后续验收记录
 
 使用版本化 SQL 迁移及种子文件，由受控流程执行；GORM 执行 CRUD 与事务。生产启动不运行 `AutoMigrate`，不自动重置或重建表。服务账户仅有必要业务读写权限，迁移使用单独权限。GORM 支持显式事务，跨表业务仍需自行定义事务边界。[GORM 事务文档](https://gorm.io/docs/transactions.html)
 
-T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`、`debate_turns`、`messages`。总结表由 T10 使用版本化迁移加入。Phase 1 的会话详情按 [API](API.md) 返回固定的未开始总结状态。
+T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`、`debate_turns`、`messages`。总结表由 T10 使用版本化迁移加入。Phase 1 的会话详情按 [API](../api/API.md) 返回固定的未开始总结状态。
 
 ## 会话与轮次状态机
 
@@ -137,7 +137,7 @@ T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`
 
 ## Phase 2 API 草案
 
-Phase 1 的 8 个接口与健康路径见 [API](API.md)。以下为 Phase 2 新增接口的设计草案，路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则。
+Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。以下为 Phase 2 新增接口的设计草案，路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则。
 
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |
@@ -146,7 +146,7 @@ Phase 1 的 8 个接口与健康路径见 [API](API.md)。以下为 Phase 2 新�
 | `POST /debates/:id/summary` | `retry` 默认 false；为 true 时必填 expected_attempt_version | 仅 completed 辩论；首次成功 201，已完成重放 200，进行中 202；失败须 retry=true 且版本匹配才认领，版本冲突 409；not_started 时 retry=true 为 400 |
 | `GET /debates/:id/summary` | 本人会话 | 200，返回 status 和可选 content；未开始也返回 not_started |
 
-重试接口也校验 `turn_id` 属于 URL 会话及当前用户。GET 仅查询已存状态。202 表示查到 `generating`，前端沿用 [API](API.md#错误码与客户端恢复) 的查询规则。
+重试接口也校验 `turn_id` 属于 URL 会话及当前用户。GET 仅查询已存状态。202 表示查到 `generating`，前端沿用 [API](../api/API.md#错误码与客户端恢复) 的查询规则。
 
 总结查询及会话详情的 `summary_status` 同时返回 `status` 和 `attempt_version`（`not_started` 时为 `null`），成功总结另含 `schema_version` 和 `content`。轮次与总结重试版本冲突用 `409 attempt_version_conflict` 和受控 `error.details` 提供当前状态、版本及查询地址。总结失败提供总结查询地址。Phase 2 实施时补齐这些新增接口的 JSON 示例。
 
@@ -195,7 +195,7 @@ SSE 未通过直连、Nginx、中文分块及断线恢复验收时，关闭增�
 
 用户名假设为 3 至 32 位 ASCII 字母、数字及下划线，trim 后小写归一化；密码 12 至 128 个 Unicode 字符且不超过 512 字节，不 trim、不限制必须包含某类字符。注册/登录限制请求体与尝试频率，登录错误统一提示用户名或密码错误。
 
-Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回，浏览器仅在内存持有。按 [API](API.md#phase-1-业务接口) 校验配置中的完整 Origin，拒绝缺失、`null` 和不匹配值。需要 Session 的写路由同时校验 `X-CSRF-Token`。注册和登录即使携带旧 Cookie，也按匿名路由的规则校验 Origin。生产与 Vite 开发代理均使用浏览器同源请求。[OWASP Session 建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回，浏览器仅在内存持有。按 [API](../api/API.md#phase-1-业务接口) 校验配置中的完整 Origin，拒绝缺失、`null` 和不匹配值。需要 Session 的写路由同时校验 `X-CSRF-Token`。注册和登录即使携带旧 Cookie，也按匿名路由的规则校验 Origin。生产与 Vite 开发代理均使用浏览器同源请求。[OWASP Session 建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 
 前端默认纯文本渲染；不启用未净化 Markdown HTML。GORM 使用参数绑定并限制可写字段；所有资源读写检查 user_id。Nginx 与 Gin 配合限制请求体 32 KiB，普通列表 page_size 最大 50。可信代理只配置 Nginx 的已知地址，不能盲信外部 X-Forwarded-For。
 
@@ -203,13 +203,13 @@ Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回
 
 上述请求体/字符限制、注册与登录限流、生成次数与并发限制、超时及供应商硬预算均为 T07 首次公网开放的前置条件。认证、模型适配及生成准入分别在 T03、T04、T05 实现验证；供应商硬预算缺口由 A 按 T07-COST-01 在公网开放前验证关闭，不随 T04 本地验收自动关闭。T13 只做累计回归与参数调优，不能作为首次实现的时间点。总结与重试入口上线时即复用同一限额机制，只有成功认领的新尝试消耗每日生成额度，重复重放与版本冲突不消耗该额度；HTTP 防刷限流仍对请求生效。
 
-已批准的本地例外仅覆盖 T04 随后单独明确授权的一次人工模型生成尝试，执行条件以 [T04 例外记录](T04_AI_ACCEPTANCE.md#已批准的一次本地受控冒烟例外) 为准：固定匿名首轮输入，完整 Prompt 保守预检不超过 8192 输入 Token，本次输出上限 512 Token，关闭思考/工具/搜索/流式，模型最多 45 秒、总执行最多 60 秒、在途最多 1 次，不重试、不自动修复或故障切换；失败或结果不明也不补发。使用独立可撤销测试 Key，核对账户余额并停止共享余额的其他调用，按 0.10 元人工费用目标事前估算、事后核实结算。所有这些控制都是本地费用风险控制，不构成供应商金额硬封顶；超时/取消、撤销 Key 不保证已受理请求停止计费，独立 Key 不必然隔离余额。
+已批准的本地例外仅覆盖 T04 随后单独明确授权的一次人工模型生成尝试，执行条件以 [T04 例外记录](../acceptance/T04_AI_ACCEPTANCE.md#已批准的一次本地受控冒烟例外) 为准：固定匿名首轮输入，完整 Prompt 保守预检不超过 8192 输入 Token，本次输出上限 512 Token，关闭思考/工具/搜索/流式，模型最多 45 秒、总执行最多 60 秒、在途最多 1 次，不重试、不自动修复或故障切换；失败或结果不明也不补发。使用独立可撤销测试 Key，核对账户余额并停止共享余额的其他调用，按 0.10 元人工费用目标事前估算、事后核实结算。所有这些控制都是本地费用风险控制，不构成供应商金额硬封顶；超时/取消、撤销 Key 不保证已受理请求停止计费，独立 Key 不必然隔离余额。
 
 本轮仅授权上述文档契约调整，尚无真实调用授权，既有代码不因此新增一次性执行器或完成真实费用验证。该例外不自动适用于 T05 联调或任何其他真实模型请求，更不降低 T07 公网门槛。此前“仅保留本地或 SSH 隧道验收”只描述可用访问方式，不是持续收费调用授权；其他真实调用仍须另行明确授权。
 
 请求总预算 60 秒，模型 45 秒，数据库操作 3 秒；生成租约 90 秒，前端请求超时 70 秒，Nginx 代理读取超时暂定 75 秒。普通接口单独使用短超时；生成接口不套会截断 SSE 的通用短超时中间件。结果超长、空回复、非法结构或含供应商拒绝类型均转为受控失败，拒绝输出不伪装成成功训练。
 
-当前 PB 入口的 [HTTP `WriteTimeout`](../backend/cmd/server/main.go) 为 5 秒，短于首轮的模型和请求预算。T05 真实 HTTP 联调前调整写期限以覆盖请求预算，推荐 70 秒，普通接口仍用独立短预算。验收用耗时超过 5 秒的 Fake 走真实 HTTP 并读到成功 JSON，另验证模型超时、取消与查询结果。T07 验证 Nginx、Go 和前端的超时配合。T01 仅登记该要求。
+当前 PB 入口的 [HTTP `WriteTimeout`](../../backend/cmd/server/main.go) 为 5 秒，短于首轮的模型和请求预算。T05 真实 HTTP 联调前调整写期限以覆盖请求预算，推荐 70 秒，普通接口仍用独立短预算。验收用耗时超过 5 秒的 Fake 走真实 HTTP 并读到成功 JSON，另验证模型超时、取消与查询结果。T07 验证 Nginx、Go 和前端的超时配合。T01 仅登记该要求。
 
 ## 日志、错误与监控
 

@@ -50,7 +50,7 @@
 
 - [x] Codex 阅读实际 diff 和依赖源码，复核全量需求；DSH 实现回合结束并释放工作区后，由 Codex 直接完成定向小修。
 - [x] 执行 `go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./...`、`go mod verify`、gofmt 与 Git 变更范围核对。不启用写库集成测试。
-- [x] 更新 `docs/T04_AI_ACCEPTANCE.md`、TASKS、ARCHITECTURE、DECISIONS 与 AGENTS 的本轮授权增量；只记录实际命令和结果。
+- [x] 更新 `docs/acceptance/T04_AI_ACCEPTANCE.md`、TASKS、ARCHITECTURE、DECISIONS 与 AGENTS 的本轮授权增量；只记录实际命令和结果。
 - [x] 新对话独立只读审查及定向修复复验通过，累计 5 项 P2 关闭；当前会话技术自检不替代独立审查。收费资源未落实不标记 T04 完成。
 - [ ] 落实供应商硬预算、单次金额上限与一次受控真实冒烟，之后等待负责人人工验收；后续 Git 操作另行授权。
 

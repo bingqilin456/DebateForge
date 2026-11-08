@@ -8,7 +8,7 @@
 
 **技术栈：** Go 1.27.1、现有 Gin、GORM v1.31.2、gorm.io/driver/mysql v1.6.0、该驱动声明的 go-sql-driver/mysql v1.8.1。
 
-**依据：** [ARCHITECTURE](../../ARCHITECTURE.md)、[API](../../API.md#就绪检查与-pb-错误)、[TASKS](../../TASKS.md)。现有冻结设计与本轮明确开发授权作为实施依据，不新增架构或接口决策。
+**依据：** [ARCHITECTURE](../architecture/ARCHITECTURE.md)、[API](../api/API.md#就绪检查与-pb-错误)、[TASKS](TASKS.md)。现有冻结设计与本轮明确开发授权作为实施依据，不新增架构或接口决策。
 
 ## 全局约束
 
@@ -46,4 +46,4 @@
 - RED→GREEN：新增能力缺失导致编译失败；实现后修正端口变量重名；go test ./... 在允许回环连接的环境通过。真实测试库的两项只读集成测试通过；7 项入口防误连验证通过。
 - go vet/build、模块校验和 gofmt 通过；原始在途文档内容保留（仅 T02 表格状态增量修改），3 份环境文件字节不变，暂存区为空、HEAD 未变。本地文档 78 个文件链接及 25 个待审查文件的秘密值泄漏检查通过。
 - Final review: 独立只读审查完成，未发现阻塞性安全/正确性问题；无待修复或延期的小问题。恢复证据仅为关闭池后创建新池及新 HTTP 测试服务，未验证同一服务自动恢复或真实容器停启，已明确记录。
-- 完整命令、失败恢复、证据及未执行项见 [接入验收记录](../../T02_DATABASE_CONNECTION_ACCEPTANCE.md)。人工验收未发生，当前停止。
+- 完整命令、失败恢复、证据及未执行项见 [接入验收记录](../acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md)。人工验收未发生，当前停止。

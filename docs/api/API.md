@@ -1,14 +1,14 @@
 # 思弈阁 API 契约
 
-**T03 当前增量（2026 年 11 月 8 日）：四条认证接口已实现并通过 Codex 技术验证，待独立审查与人工验收。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
+**T03 当前增量（2026 年 11 月 8 日）：四条认证接口已实现并通过 Codex 技术验证，待独立审查与人工验收。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
 
-2026 年 11 月 6 日，T01 固定 Phase 1 的 8 个业务接口；11 月 7 日项目负责人确认契约设计通过人工验收，T01 已结项。仅代表接口契约设计完成，不代表业务代码已实现。业务实现按 [TASKS](TASKS.md) 分批交付。历史分页、完整三轮、显式重试与总结仍以 [架构草案](ARCHITECTURE.md#phase-2-api-草案) 为设计参考。
+2026 年 11 月 6 日，T01 固定 Phase 1 的 8 个业务接口；11 月 7 日项目负责人确认契约设计通过人工验收，T01 已结项。仅代表接口契约设计完成，不代表业务代码已实现。业务实现按 [TASKS](../planning/TASKS.md) 分批交付。历史分页、完整三轮、显式重试与总结仍以 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 为设计参考。
 
 2026 年 11 月 8 日（Asia/Shanghai）文档核对：请求中指定的 `backend/docs/api` 在当前工作区不存在，继续复用本文作为契约来源，机器规范见 [openapi.yaml](openapi.yaml)。项目负责人在本轮明确确认健康路径以当前 Gin 路由 `/api/health/live`、`/api/health/ready` 为准，并授权同步相关文档和代码。业务接口保持 T01 冻结设计；本次不表示接口已部署或 T02 已结项。
 
 ## 接口清单与实现状态
 
-以下按当前工作区源码核对。真实启动入口向 [NewRouter](../backend/internal/platform/router.go) 注入认证 Handler，注册 2 个健康接口和 4 个认证接口；4 个 T05 业务接口未实现。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewRouter](../../backend/internal/platform/router.go) 注入认证 Handler，注册 2 个健康接口和 4 个认证接口；4 个 T05 业务接口未实现。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -39,7 +39,7 @@
 
 `GET /api/health/ready` 归 T02。数据库短超时连通且必要配置就绪时返回 `200` 与 `{"status":"ready"}`，否则为 `503` 与 `{"status":"not_ready"}`。路径不带业务版本 `/v1`，无认证，固定 JSON，无模型调用。
 
-T02 当前已实现 [ready Handler](../backend/internal/platform/health.go)，最多使用 3 秒请求 Context 调用数据库 Ping，响应包含 `X-Request-ID` 和 `Cache-Control: no-store`。缺失或非法启动配置会直接启动失败；配置有效但数据库不可达时，live 返回 200、ready 返回 503。`503 {"status":"not_ready"}` 是健康响应，不套业务错误信封。此前 [接入记录](T02_DATABASE_CONNECTION_ACCEPTANCE.md) 和 [dotenv 记录](T02_DOTENV_ACCEPTANCE.md) 保留各自日期的历史证据，其中旧健康路径不再作为当前调用地址。
+T02 当前已实现 [ready Handler](../../backend/internal/platform/health.go)，最多使用 3 秒请求 Context 调用数据库 Ping，响应包含 `X-Request-ID` 和 `Cache-Control: no-store`。缺失或非法启动配置会直接启动失败；配置有效但数据库不可达时，live 返回 200、ready 返回 503。`503 {"status":"not_ready"}` 是健康响应，不套业务错误信封。此前 [接入记录](../acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md) 和 [dotenv 记录](../acceptance/T02_DOTENV_ACCEPTANCE.md) 保留各自日期的历史证据，其中旧健康路径不再作为当前调用地址。
 
 未知路由返回 404，已知路径不支持的方法返回 405，意外 panic 返回受控 500。错误 JSON：
 
@@ -63,7 +63,7 @@ T02 当前已实现 [ready Handler](../backend/internal/platform/health.go)，�
 
 实体 ID 是正整数十进制字符串，范围为 MySQL `BIGINT UNSIGNED`。轮号和轮次的 `attempt_version` 是 JSON 正整数，`completed_rounds` 是非负整数。未开始的总结以 `summary_status.attempt_version: null` 表示。时间字段用 UTC RFC 3339。列表为空时返回 `[]`。
 
-注册和登录可匿名调用，其余接口要求有效 Session Cookie。每个 POST 校验配置中的完整 Origin（协议、主机、端口），拒绝缺失、`null` 或不匹配的值。开发 Origin 为 `http://127.0.0.1:5173`，生产为配置的 HTTPS Origin。只有要求 Session 的 POST 才额外校验 `X-CSRF-Token`。注册和登录即使收到旧 Cookie，仍只做 Origin 校验作为 CSRF 防护。CSRF token 由登录或当前用户响应返回，客户端只保存在内存。Cookie 和口令细节见 [安全与资源控制](ARCHITECTURE.md#安全与资源控制)。
+注册和登录可匿名调用，其余接口要求有效 Session Cookie。每个 POST 校验配置中的完整 Origin（协议、主机、端口），拒绝缺失、`null` 或不匹配的值。开发 Origin 为 `http://127.0.0.1:5173`，生产为配置的 HTTPS Origin。只有要求 Session 的 POST 才额外校验 `X-CSRF-Token`。注册和登录即使收到旧 Cookie，仍只做 Origin 校验作为 CSRF 防护。CSRF token 由登录或当前用户响应返回，客户端只保存在内存。Cookie 和口令细节见 [安全与资源控制](../architecture/ARCHITECTURE.md#安全与资源控制)。
 
 ### 公共参数与安全方案
 
@@ -80,7 +80,7 @@ T02 当前已实现 [ready Handler](../backend/internal/platform/health.go)，�
 
 OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；要求二者的 POST 放在同一个安全要求对象中，语义为同时满足。T03 已替换 Cookie 名占位符：机器规范对应当前本地服务器，`SessionCookie.name` 为 `siyige_session_dev`，`x-https-cookie-name` 记录 `__Host-siyige_session`；HTTPS 客户端须按该名称替换，不能沿用开发 Cookie。不添加 JWT、Bearer 或 Authorization Header。
 
-`AUTH_ORIGIN` 默认为 `http://127.0.0.1:5173`，配置可规范化协议默认端口；请求中的 Origin 必须与规范形式精确匹配且只有一个头值。重复/合并 Origin 或 CSRF 头失败为 403；重复同名 Session Cookie 为 401。HTTP 配置仅回环 IP；HTTPS 可域名/IP，Cookie 自动开启 Secure。应用仍只支持本地 dev/test 数据库，不代表支持生产部署。所有参数、限流和验证证据见 [T03 记录](T03_AUTH_ACCEPTANCE.md)。
+`AUTH_ORIGIN` 默认为 `http://127.0.0.1:5173`，配置可规范化协议默认端口；请求中的 Origin 必须与规范形式精确匹配且只有一个头值。重复/合并 Origin 或 CSRF 头失败为 403；重复同名 Session Cookie 为 401。HTTP 配置仅回环 IP；HTTPS 可域名/IP，Cookie 自动开启 Secure。应用仍只支持本地 dev/test 数据库，不代表支持生产部署。所有参数、限流和验证证据见 [T03 记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。
 
 ### 请求字段
 
@@ -349,7 +349,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 ## Phase 2 草案索引
 
-下列 4 个操作均未实现，详细契约及 JSON 示例尚待对应任务完善；保持 [架构草案](ARCHITECTURE.md#phase-2-api-草案) 的权威位置，只在这里索引，不将草案加入 OpenAPI `paths` 或补造 Schema。
+下列 4 个操作均未实现，详细契约及 JSON 示例尚待对应任务完善；保持 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 的权威位置，只在这里索引，不将草案加入 OpenAPI `paths` 或补造 Schema。
 
 | 方法 | 完整路径 | 用途与现有草案约束 |
 | --- | --- | --- |
@@ -385,8 +385,8 @@ SSE 仍是可选设计，本次 OpenAPI 只描述冻结的 JSON 契约，不声�
 
 本次文件范围：
 
-- API 交付：`docs/API.md`、`docs/openapi.yaml`。
-- 路径说明与决定：`README.md`、`AGENTS.md`、`docs/ARCHITECTURE.md`、`docs/DECISIONS.md`、`docs/PLAN.md`、`docs/TASKS.md`。
+- API 交付：`docs/api/API.md`、`docs/api/openapi.yaml`。
+- 路径说明与决定：`README.md`、`AGENTS.md`、`docs/architecture/ARCHITECTURE.md`、`docs/decisions/DECISIONS.md`、`docs/planning/PLAN.md`、`docs/planning/TASKS.md`。
 - 相关调用和测试：`frontend/src/api/health.ts`、`frontend/src/api/health.test.ts`、`frontend/src/App.vue`、`backend/internal/platform/router_test.go`、`backend/internal/platform/health_test.go`、`backend/cmd/server/main_test.go`、`backend/tests/integration/database_test.go`。
 
 验证器仅安装在 Git 忽略的 `.cache/api-docs/python-deps`，没有加入 Go/npm 产品依赖。该工具是持续维护的开源 OpenAPI 验证 CLI，采用 Apache-2.0；替代方案是使用官方 OpenAPI Schema 配合 JSON Schema 验证器。本次选择和用法依据其 [官方文档](https://openapi-spec-validator.readthedocs.io/en/latest/)。临时生成、检查脚本和开始时的文件哈希保存在 `.cache/api-docs/`，不作为仓库交付文件。
@@ -395,7 +395,7 @@ SSE 仍是可选设计，本次 OpenAPI 只描述冻结的 JSON 契约，不声�
 
 ```powershell
 $env:PYTHONPATH = Join-Path (Get-Location) '.cache/api-docs/python-deps'
-python -m openapi_spec_validator docs/openapi.yaml
+python -m openapi_spec_validator docs/api/openapi.yaml
 ```
 
 路径修正遵循测试先行：新增前端默认请求用例在修正前因 HTTP 404 失败，修正后全套通过；旧后端路径用例在同步前也观测到 404。本机受限沙箱无法连接临时回环 HTTP 服务，最初前端测试因此出现网络失败；在允许回环访问的执行环境重跑通过，未把沙箱失败计为通过。

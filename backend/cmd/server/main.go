@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/bingqilin456/DebateForge/backend/internal/auth"
+	"github.com/bingqilin456/DebateForge/backend/internal/debate"
 	"github.com/bingqilin456/DebateForge/backend/internal/platform"
+	"github.com/bingqilin456/DebateForge/backend/internal/topic"
 	"github.com/joho/godotenv"
 )
 
@@ -75,16 +77,22 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("初始化认证失败: %w", err)
 	}
+	generator, err := configuredGenerator(ctx, logger)
+	if err != nil {
+		return err
+	}
+	topicHandler := topic.NewHandler(topic.NewService(topic.NewRepository(database.ORM)))
+	debateHandler := debate.NewHandler(debate.NewService(debate.NewRepository(database.ORM), generator, debate.NewGate(nil)))
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           platform.NewRouter(logger, database, authHandler),
+		Handler:           platform.NewBusinessRouter(logger, database, authHandler, topicHandler, debateHandler),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      5 * time.Second,
+		WriteTimeout:      platform.HTTPWriteTimeout,
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    16 << 10,
 		BaseContext:       func(net.Listener) context.Context { return ctx },

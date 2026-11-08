@@ -19,6 +19,7 @@ func NewRouter(logger *slog.Logger, database DatabasePinger, authHandler ...*aut
 	// 本地直连只信任 socket 对端，不接受外部伪造的代理地址头。
 	_ = router.SetTrustedProxies(nil)
 	router.HandleMethodNotAllowed = true
+	router.Use(requestBudget(logger))
 	router.Use(func(c *gin.Context) {
 		id := rand.Text()
 		c.Header("X-Request-ID", id)

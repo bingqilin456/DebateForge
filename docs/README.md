@@ -39,6 +39,7 @@
 - T02：[环境](acceptance/T02_MYSQL_ENV_ACCEPTANCE.md)、[后端连接](acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md)、[dotenv](acceptance/T02_DOTENV_ACCEPTANCE.md)、[配置修复](acceptance/T02_CONFIG_FIX_ACCEPTANCE.md)、[初始迁移](acceptance/T02_MIGRATIONS_ACCEPTANCE.md)、[种子与持久化](acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。
 - T03：[认证验收记录](acceptance/T03_AUTH_ACCEPTANCE.md)，后续结论在[独立审查与人工验收结果](acceptance/T03_AUTH_ACCEPTANCE.md#独立审查与人工验收结果)。
 - T04：[AI 验收记录](acceptance/T04_AI_ACCEPTANCE.md)、[实施交接](acceptance/T04_AI_IMPLEMENTATION.md)及[实施计划](planning/T04_AI_PLAN.md)。
+- T05：[首轮验收记录](acceptance/T05_FIRST_TURN_ACCEPTANCE.md)、[实施计划](planning/T05_FIRST_TURN_PLAN.md)及 [DSH 实施进度](planning/T05_DSH_PROGRESS.md)；结项范围限于无收费实现，真实模型链路未验收。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录不等于当前状态，也不构成新增操作授权。应按明确的后续授权、决策替代关系和验收结论核对，不能仅凭文件日期、文件存在或早期段落判断任务完成、阻塞解除或可执行某项操作。本次整理不新增业务验收结论。
@@ -50,7 +51,7 @@
 | 差异或保留项 | 查阅依据与处理 |
 | --- | --- |
 | 根 README、AGENTS、PLAN、ARCHITECTURE 及 TASKS 的部分 T03 说明仍写待独立审查或待人工验收 | [T03 后续验收章节](acceptance/T03_AUTH_ACCEPTANCE.md#独立审查与人工验收结果)已记载有条件独立审查通过、负责人人工验收及接受风险延期；接受延期不代表问题已修复。原说明保留，阅读时核对后续证据 |
-| AGENTS、PLAN、ARCHITECTURE 和部分 T04 计划、交接内容仍为未启动、阻塞或待验收快照 | [T04 最终人工验收与结项](acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项)及 [TASKS](planning/TASKS.md)已登记后续结论；本次仅指向既有证据，不重新判定结项 |
+| AGENTS、ARCHITECTURE 的 T04 未结项快照已在 2026-11-08 结项登记后修正；PLAN 与部分 T04 计划、交接内容仍含未启动、阻塞或待验收快照 | [T04 最终人工验收与结项](acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项)及 [TASKS](planning/TASKS.md)已登记后续结论；本次仅修正已过期描述并指向既有证据，不重新判定结项、不改写验收结论 |
 | T07-COST-01 的供应商硬预算缺口仍保留 | [风险登记与关闭条件](planning/TASKS.md#t07-cost-01-供应商硬预算缺失)明确其仍未关闭，T04 结项不解除公网开放阻塞 |
 | OpenAPI 的说明性来源字段仍使用原路径 | 按本次“OpenAPI 只移动、内容不变”的要求保留 `x-contract-source: docs/API.md` 与 4 处 `source: docs/ARCHITECTURE.md#phase-2-api-草案`。对应入口现为 [API](api/API.md) 与 [Phase 2 草案](architecture/ARCHITECTURE.md#phase-2-api-草案)；这些旧路径不作为有效文件链接，内部 `$ref` 不受移动影响 |
 

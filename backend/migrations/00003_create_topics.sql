@@ -1,0 +1,11 @@
+-- +goose NO TRANSACTION
+-- +goose Up
+CREATE TABLE topics (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (id),
+    CONSTRAINT ck_topics_enabled CHECK (enabled IN (0, 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

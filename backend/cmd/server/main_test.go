@@ -151,6 +151,16 @@ func TestRunRegistersAuthRoutes(t *testing.T) {
 	if response.Header.Get("Cache-Control") != "no-store" {
 		t.Fatal("认证响应缺少 no-store")
 	}
+	for _, path := range []string{"/api/v1/topics", "/api/v1/debates/1"} {
+		response, err := client.Get("http://" + httpAddr + path)
+		if err != nil {
+			t.Fatal("业务入口请求失败")
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatal("真实入口未注册受保护的 T05 路由")
+		}
+	}
 	cancel()
 	select {
 	case err := <-done:

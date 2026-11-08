@@ -356,7 +356,7 @@ func TestRegisterDuplicateUsernameIsConflict(t *testing.T) {
 }
 
 func TestLoginHTTPContract(t *testing.T) {
-	engine, _, _ := newHandlerEngine(t)
+	engine, _, service := newHandlerEngine(t)
 	registerUser(t, engine, httpUsername)
 	recorder := serve(engine, jsonRequest("POST", "/api/v1/auth/login",
 		`{"username":"Alice_01","password":"`+httpPassword+`"}`))
@@ -386,7 +386,8 @@ func TestLoginHTTPContract(t *testing.T) {
 	if cookie.MaxAge != int(DefaultSessionTTL/time.Second) {
 		t.Fatalf("Max-Age=%d", cookie.MaxAge)
 	}
-	if cookie.Expires.IsZero() || time.Until(cookie.Expires) < DefaultSessionTTL-time.Minute {
+	// Service 使用注入时钟，不能与运行测试时的墙钟比较。
+	if !cookie.Expires.Equal(service.clock().Add(DefaultSessionTTL).Truncate(time.Second)) {
 		t.Fatal("Expires 不是约 24 小时后")
 	}
 	// 只断言字段名白名单，不输出正文。

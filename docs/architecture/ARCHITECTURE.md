@@ -1,6 +1,10 @@
 # 思弈阁 Lite 技术架构
 
-**T04 实施增量（2026 年 11 月 8 日）：新增独立 `internal/ai`，业务接口 `Generator.Generate(context.Context, Request)` 由 Eino 官方 OpenAI 协议适配器和 Fake 实现。** `debate-v1` 仅由服务端构建消息；45 秒模型 Context 和 60 秒请求辅助函数、显式 Token 上限、完整历史/窗口预检及响应校验已实现并通过最终集成检查与独立审查，5 项 P2 均已复验关闭。当前 main 不装配 AI、不增加业务路由；T05 仍须从 HTTP 入口落实并验证 60 秒总预算和既有 WriteTimeout。负责人已批准 DeepSeek `deepseek-flash` 的一次本地受控冒烟费用保护例外，但本轮仅改文档，真实调用仍待单独授权；供应商硬预算未落实，公网真实入口按 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失) 保持阻塞。T04 未完成，见 [T04 记录](../acceptance/T04_AI_ACCEPTANCE.md) 和 [ADR-017](../decisions/DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。历史 T04 未启动表述不覆盖本增量。
+**T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。
+
+**T04 实施增量（2026 年 11 月 8 日）：新增独立 `internal/ai`，业务接口 `Generator.Generate(context.Context, Request)` 由 Eino 官方 OpenAI 协议适配器和 Fake 实现。** `debate-v1` 仅由服务端构建消息；45 秒模型 Context 和 60 秒请求辅助函数、显式 Token 上限、完整历史/窗口预检及响应校验已实现并通过最终集成检查与独立审查，5 项 P2 均已复验关闭。提交 T04 时 main 尚未装配 AI、未增加业务路由，该装配由 T05 完成。供应商硬预算未落实，公网真实入口按 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失) 保持阻塞。历史 T04 未启动表述不覆盖本增量。
+
+**T04 结项（2026 年 11 月 8 日，覆盖上段的历史快照）：项目负责人已正式通过最终人工验收，T04 标记已完成并正式结项。** 上段“真实调用仍待单独授权”“T04 未完成”为结项前的历史状态，不再代表当前结论。经负责人批准的一次本地受控冒烟例外已执行唯一一次真实请求，HTTP 200、正常结束，授权已消耗、入口已停止；实际用量 250 输入 / 48 输出 Token，按实际用量计价 0.000442 元，**精确结算费用仍为未知**，负责人已接受该残余风险。**T07-COST-01 继续未关闭，保持 P0 公网开放阻塞**，不得据此开放公网真实模型入口或再次发起真实调用。依据见 [T04 最终人工验收与结项](../acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项) 和 [ADR-017](../decisions/DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。
 
 **T03 实施增量（2026 年 11 月 8 日）：认证四接口、auth 分层、可复用认证/Origin/CSRF 中间件与 `current_user` 已实现并通过 Codex 技术验证，待独立审查和人工验收。** 复用 T02 连接与表；见 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md) 和 [ADR-015](../decisions/DECISIONS.md#adr-015-t03-认证实现与-cookie-名称)。Cookie 名已在 T03 具体化；历史“业务未实现”和不启动 T03 的表述不覆盖本增量，T04–T06 未启动。
 

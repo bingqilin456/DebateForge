@@ -1,11 +1,11 @@
-# T03 实现核对快照；契约不变，独立审查/人工验收尚未完成，详见 API.md。
+# T05 实现核对快照；冻结契约不变，无收费范围独立复审 PASS、人工验收通过并结项，真实模型待授权验证，详见 API.md。
 openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
   version: t01-frozen-2026-11-08
-  description: 文档快照日期 2026-11-08（Asia/Shanghai）。T01 契约不变；共 10 个操作，2 个健康接口与 4 个 T03 认证接口已实现并技术验证，待独立审查与人工验收，不代表部署。
-    4 个 T05 业务接口仍未注册、返回 404；Phase 2 四个草案只保留扩展索引，不进入 paths。健康路径为 /api/health/live、/api/health/ready。
+  description: 文档快照日期 2026-11-08（Asia/Shanghai）。T01 契约不变；共 10 个操作，10 个接口已实现；T03 有条件独立审查和人工验收通过，T05 无收费范围独立复审 PASS、三关人工验收通过并结项，真实模型链路仍待另行授权验证，未部署。
+    T05 默认关闭真实模型，可显式启用 Fake；Phase 2 四个草案只保留扩展索引，不进入 paths。健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
   description: 本地后端默认地址；不代表当前进程已启动或生产已部署。
@@ -15,11 +15,11 @@ tags:
 - name: 健康检查
   description: 当前已实现 /api/health/，已由项目负责人确认。
 - name: 认证
-  description: T03 已实现并技术验证，待独立审查及人工验收。
+  description: T03 已通过有条件独立审查和人工验收，原延期风险保留。
 - name: 辩题
-  description: T05 未实施。
+  description: T05 无收费范围独立复审 PASS、人工验收通过并结项，真实模型链路待另行授权验证。
 - name: 辩论
-  description: T05 未实施。
+  description: T05 无收费范围独立复审 PASS、人工验收通过并结项，真实模型链路待另行授权验证。
 security: []
 x-contract-source: docs/API.md
 x-cookie-name-status: resolved-in-t03; local HTTP cookie and HTTPS cookie use separate names
@@ -300,11 +300,11 @@ paths:
   /api/v1/topics:
     get:
       operationId: listTopics
-      summary: 列出启用的预设辩题（未实现）
+      summary: 列出启用的预设辩题
       description: 无查询参数，仅 enabled=true，按 id 升序；空列表为 items=[]。读取真实 MySQL，由 T06/T08 复用。
       tags:
       - 辩题
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T05
       security:
       - SessionCookie: []
@@ -336,11 +336,11 @@ paths:
   /api/v1/debates:
     post:
       operationId: createDebate
-      summary: 创建辩论会话（未实现）
+      summary: 创建辩论会话
       description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T05
       security:
       - SessionCookie: []
@@ -400,13 +400,13 @@ paths:
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
-      summary: 提交首轮发言或重放结果（未实现）
+      summary: 提交首轮发言或重放结果
       description: 校验会话所有权，T05 只接受第 1 轮。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
         round_conflict。新尝试短事务认领、保存原文及 attempt_version=1，事务外调用模型，按状态和版本写回。每用户每分钟 6 次、每天最多 20 次尝试（失败也计入）；单用户并发 1、全局
         2。请求预算 60 秒、模型 45 秒；前端超时 70 秒。202、丢失响应或状态不明先 GET 详情，每 2 秒查询，最多 120 秒，不自动生成或换键重试。显式重试和第 2/3 轮归 T09。
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T05
       security:
       - SessionCookie: []
@@ -571,12 +571,12 @@ paths:
   /api/v1/debates/{id}:
     get:
       operationId: getDebate
-      summary: 查询本人会话详情（未实现）
+      summary: 查询本人会话详情
       description: 无查询参数。按当前用户与路径 id 同时匹配，不存在和越权返回相同 404。turns 按 round_no 排序，同轮先 user 后 assistant；保留已保存失败原因及原文。Phase
         1 summary_status 固定为 not_started/null。
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T05
       security:
       - SessionCookie: []

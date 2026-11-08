@@ -1,5 +1,7 @@
 # 思弈阁 Lite / DebateForge
 
+**当前集成状态（2026-11-09）：T02–T05 累积成果、文档重组与 T06-B 在 `feat/integration-t05-t06-b` 集成，准备面向 `develop` 的 PR。** T02 已验收、T03 有条件验收及 P2/P3 延期保留、T04 已结项、T05 无收费范围已结项；真实模型链路未验收，T07-COST-01 仍阻塞公网真实入口。T06-B 的统一 client、认证 API/内存状态、独立表单和本地模拟预览已交付，见 [交接](docs/acceptance/T06_B_HANDOFF.md)；尚未接入 App.vue 或完成真实 T03/T05 浏览器联调，T06 整体进行中、未验收。本轮仅 Git 集成与必要验证，PR 创建后停止，等待全新会话独立只读审查及负责人决定；下方旧状态均保留当时语境。
+
 **T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](docs/acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。
 
 **T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
@@ -83,7 +85,7 @@ Invoke-RestMethod http://127.0.0.1:5173/api/health/live
 
 `AUTH_ORIGIN` 默认 `http://127.0.0.1:5173`，表示浏览器页面来源；所有认证 POST 必须携带该精确 Origin，退出另需当前 Session 的 `X-CSRF-Token`。注册不自动登录，登录和 me 返回 CSRF，Session 原值只通过 HttpOnly Cookie 传输。HTTP 开发 Cookie 为 `siyige_session_dev`；HTTPS 策略使用独立的 `__Host-siyige_session` 并开启 Secure；不使用 localStorage/JWT。
 
-当前 APP_ENV 仍只允许 dev/test，开发库未迁移；T03 实际验收使用固定隔离测试库，命令见下节。开发库显式迁移须按相应授权执行，不在本轮自动运行。配置、安全边界和独立审查状态见 [T03 记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。前端认证页面属于 T06，本轮未实现。
+当前 APP_ENV 仍只允许 dev/test，开发库未迁移；T03 实际验收使用固定隔离测试库，命令见下节。开发库显式迁移须按相应授权执行，不在本轮自动运行。配置、安全边界和独立审查状态见 [T03 记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。T06-B 已提供独立认证表单与本地模拟预览，见 [交接](docs/acceptance/T06_B_HANDOFF.md)；正式入口与首轮面板尚未接入。
 
 ## 测试与构建
 
@@ -164,6 +166,8 @@ npm run build
 | [T03 认证记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
 | [PLAN](docs/planning/PLAN.md) / [TASKS](docs/planning/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
 | [DECISIONS](docs/decisions/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
+| [T05 / T06-B 集成](docs/acceptance/T05_T06_B_GIT_INTEGRATION.md) | Git 基线、合并关系、冲突处理与本轮验证边界 |
+| [T06-B 交接](docs/acceptance/T06_B_HANDOFF.md) | 统一 client、认证状态/独立表单、本地预览与 A 接线；不代表 T06 整体验收 |
 | [INIT_ACCEPTANCE](docs/acceptance/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 
 A 负责后端与集成，B 负责明确的前端与测试任务，后续独立完成并理解辩题与历史页面。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。

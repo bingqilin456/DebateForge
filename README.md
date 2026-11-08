@@ -4,6 +4,8 @@
 
 **Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md)。T02 进行中，已有隔离 MySQL 环境，本轮新增后端连接、Readiness 和测试目标保护，技术验证后待人工验收；业务迁移/种子未实施，完整 T02 未完成，T03–T18 尚未开始。前端仍为本地联通页面。阶段计划及暂停恢复规则见 [PLAN](docs/PLAN.md)。
 
+2026 年 11 月 8 日迁移进展：六表版本化迁移已完成技术验证及有条件独立审查，负责人已接受验证边界和延期项，授权本轮提交及推送；学习讲解尚未登记，见 [迁移记录](docs/T02_MIGRATIONS_ACCEPTANCE.md)。上段“迁移未实施”保留为前次子任务状态；5 条种子尚未实施，完整 T02 仍进行中。
+
 ## 环境
 
 首轮实际环境为 Windows amd64、Go **1.27.1**、Node.js **24.11.1**、npm **11.6.2**。先通过 `go version`、`node --version`、`npm --version` 核对版本。PB 应用仍无需 MySQL、Docker、模型 Key 或环境文件。
@@ -12,9 +14,11 @@ T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker D
 
 后端为独立模块 `github.com/bingqilin456/DebateForge/backend`。前端只使用 npm，保留 package-lock.json；不要混用其他包管理器或锁文件。
 
+版本化迁移使用独立工具 module `backend/tools/migrate/`，锁定 Goose v3.29.0，通过显式 up/status 执行；服务启动不建表。六个 SQL 文件、固定目标保护、测试方法及 MySQL 部分 DDL 失败恢复见 [迁移说明](backend/migrations/README.md)。本轮只迁移测试库，开发库未迁移，也未写入种子；下方早期接入记录中的“迁移未实施”属于历史状态。工具需在其自身目录运行 test/vet/build，服务目录的 `go test ./...` 不会覆盖独立 module。
+
 ## 获取与启动
 
-以下示例为 PowerShell。克隆步骤只在本次文件经人工审查并另行获准提交、推送到远程后才能取得这些改动；本任务没有执行提交或推送。已经位于本地工作区时跳过克隆，直接打开两个终端。
+以下示例为 PowerShell。迁移子任务已于 2026 年 11 月 8 日获负责人有条件验收及提交、推送授权；原实施阶段未提交的说明保留在历史验收记录中。已经位于本地工作区时跳过克隆，直接打开两个终端。
 
 ```powershell
 git clone https://github.com/bingqilin456/DebateForge.git
@@ -132,7 +136,7 @@ npm run build
 | @types/node 24.10.1            | Node 24 API 类型，供配置与测试使用          | MIT        | 不应以 any 替代类型             |
 
 
-依据：[Gin 官方入门](https://gin-gonic.com/en/docs/quickstart/)、[Vite 官方文档](https://vite.dev/guide/)、[Vue TypeScript 指南](https://vuejs.org/guide/typescript/overview.html)、[Arco 官方仓库](https://github.com/arco-design/arco-design-vue)、[Vitest 官方指南](https://vitest.dev/guide/)、[GORM 连接](https://gorm.io/docs/connecting_to_the_database.html)、[MySQL Go 驱动](https://github.com/go-sql-driver/mysql/tree/v1.8.1)、[godotenv 官方说明](https://github.com/joho/godotenv/tree/v1.5.1)。许可证与版本同时核对本地已安装包的元数据；传递依赖版本以模块/锁文件为准。暂不引入 Vue Router、Pinia、Axios、Goose、Eino 或浏览器测试依赖。Go mod tidy 会下载 GORM 自身测试引用的 SQLite 模块元数据；本项目未导入 SQLite，也不以其替代 MySQL 集成测试。
+依据：[Gin 官方入门](https://gin-gonic.com/en/docs/quickstart/)、[Vite 官方文档](https://vite.dev/guide/)、[Vue TypeScript 指南](https://vuejs.org/guide/typescript/overview.html)、[Arco 官方仓库](https://github.com/arco-design/arco-design-vue)、[Vitest 官方指南](https://vitest.dev/guide/)、[GORM 连接](https://gorm.io/docs/connecting_to_the_database.html)、[MySQL Go 驱动](https://github.com/go-sql-driver/mysql/tree/v1.8.1)、[godotenv 官方说明](https://github.com/joho/godotenv/tree/v1.5.1)。许可证与版本同时核对本地已安装包的元数据；传递依赖版本以模块/锁文件为准。服务及前端暂不引入 Vue Router、Pinia、Axios、Eino 或浏览器测试依赖；Goose 仅在独立迁移工具 module 使用，依赖说明见迁移 README。Go mod tidy 会下载 GORM 自身测试引用的 SQLite 模块元数据；本项目未导入 SQLite，也不以其替代 MySQL 集成测试。
 
 ## 文档与下一步
 
@@ -143,7 +147,7 @@ npm run build
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
 | [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约，业务尚未实现 |
 | [OpenAPI 3.1](docs/openapi.yaml) | 与 API 文档对应的机器规范，区分 2 个已实现健康接口及 8 个规划业务接口 |
-| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 连接子任务待人工验收，迁移/种子未实施 |
+| [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 迁移有条件验收、延期项已接受，学习讲解尚未登记，种子未实施 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 

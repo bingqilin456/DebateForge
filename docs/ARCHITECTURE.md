@@ -10,6 +10,8 @@
 
 后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](API.md)；此前 [后端接入记录](T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
 
+2026 年 11 月 8 日迁移增量：六张 Phase 1 表的版本化 SQL 已在隔离测试库验证，工具为独立 Goose v3.29.0 CLI module，仅显式 up/status，使用迁移账户及会话锁。服务仍不自动迁移；逻辑实体及 API 不变，物理类型、执行与失败恢复见 [迁移说明](../backend/migrations/README.md)。上段“迁移未实施”保留为历史，种子仍未实施，总结表仍归 T10；当前闭环已获有条件独立审查，负责人已接受验证边界及延期项并授权提交/推送；学习讲解尚未登记，延期门槛见 [任务登记](TASKS.md#t02-迁移延期问题登记)。
+
 ```mermaid
 flowchart LR
     U[浏览器 Vue 3 与 Arco Design] -->|HTTPS 页面及 API| N[Nginx]

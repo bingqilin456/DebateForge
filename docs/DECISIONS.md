@@ -69,6 +69,8 @@ B 主责辩题与历史页面，A 主导复杂聊天和流式交互。收益是�
 
 实体为 users、auth_sessions、topics、debates、debate_turns、messages、debate_summaries。独立轮次表用于失败、幂等和恢复，使状态与消息可独立验证。数据库设计见 [ARCHITECTURE](ARCHITECTURE.md)，首批 HTTP 契约见 [API](API.md)。
 
+2026 年 11 月 8 日落地增量见 ADR-013：仅六张 Phase 1 表的初始迁移已在隔离测试库技术验证，总结表仍留 T10，种子尚未实施。资源表及历史接入记录中的“迁移未实施”是当时状态。
+
 ## ADR-005 同源 Session 认证
 
 状态：规划采纳，待对应任务实施前人工审查。
@@ -217,3 +219,17 @@ PB 结项后，下一阶段实施及提交、推送、部署或破坏性操作�
 决定：以当前 Gin `/api` 路由组为准，健康接口统一使用 `/api/health/*`，当前为 `GET /api/health/live`、`GET /api/health/ready`；业务接口统一使用 `/api/v1/*`，保持 T01 冻结契约。同步 API/OpenAPI、前端请求、页面提示、相关测试与当前运行说明。原 `/health/live`、`/health/ready` 不再是当前契约，不增加兼容别名。历史 PB/T02 验收、原 ADR 和学习笔记保留当时内容，以本条及 [API](API.md) 为当前依据。
 
 边界：不改变健康 JSON、认证要求或 Handler 逻辑，不修改 T01 的 8 个业务接口设计，不进入 T03 或迁移/种子，不提交、推送或部署。本次生成 OpenAPI 不代表规划中的业务接口已实现。
+
+## ADR-013 T02 独立 Goose 迁移入口与失败保护
+
+状态：2026 年 11 月 8 日用户明确授权本迁移子任务，已完成技术验证及有条件独立审查；负责人已接受验证边界及延期项并授权提交/推送，学习讲解尚未登记。不是完整 T02 结项。
+
+沿用已选 Goose `v3.29.0`，在 `backend/tools/migrate/` 建立独立 Go module 的 CLI，调用官方 Provider 管理 SQL/版本；与标准 Goose 共用 `goose_db_version` 格式。选择独立 module 是为了避免 Goose 要求的 MySQL 驱动 `v1.10.1` 和传递依赖升级服务已锁定的驱动 `v1.8.1`。仅工具新增 Goose（MIT）和成熟 MySQL 驱动（MPL-2.0），版本、用途及替代方案见 [迁移说明](../backend/migrations/README.md#依赖依据)。服务继续使用 GORM，不引用迁移库，也不在启动时迁移。
+
+保留逻辑实体、HTTP 契约和阶段分工，仅具体化物理类型。每表一个非事务 SQL 版本，六表按依赖建成；总结表留 T10，种子留下一授权闭环。显式 up/status，目标固定为现有 dev/test 回环端口、库和迁移账户；先校验配置再读取秘密，在同一执行连接验证实际身份/MySQL 版本并取得命名锁，按前向版本前缀校验历史。
+
+替代方案与取舍：直接裸用标准 Goose CLI 缺少本项目的同会话目标校验；把 Goose 加到服务 module 会扩大服务依赖变更；手工 SQL 和版本账本易漏记。采用官方 Provider `ApplyVersion`，逐版本加锁和登记，避开 `Up/HasPending` 在加锁前初始化元数据的路径；允许进程在版本边界交替执行。只跳过纯 `ErrAlreadyApplied`，合并的解锁/关闭错误仍失败。
+
+MySQL 单条原子 DDL 仍不与版本登记构成原子事务。不使用 IF NOT EXISTS、Down 或自动修复掩盖故障；部分 DDL 和登记不一致必须核对实际结构，补记版本/数据修复另行审批。Goose 无 SQL 校验和，已执行文件必须保持不可变，后续变更新增版本。失败测试使用独立随机历史/探针表并保留，业务夹具事务回滚；只在测试库执行，开发库未迁移。未实施生产入口、种子、业务 Repository 或其他 T02 子任务，未提交、推送、合并或部署。证据见 [迁移记录](T02_MIGRATIONS_ACCEPTANCE.md)。
+
+2026 年 11 月 8 日验收增量：独立审查未发现 P0/P1；负责人接受两个 P2 和一个 P3 延期，登记于 [TASKS](TASKS.md#t02-迁移延期问题登记)。枚举 CHECK 必须在业务状态写入前通过新增迁移收紧，不能修改六份已执行 SQL。本轮仅允许将本迁移闭环及验收/风险文档提交并推送到 `origin/feat/t02-database`，不创建 PR、不合并、不推进后续任务。上述“未提交、推送”是实施阶段状态。

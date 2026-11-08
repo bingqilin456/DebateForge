@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bingqilin456/DebateForge/backend/internal/auth"
 	"github.com/bingqilin456/DebateForge/backend/internal/platform"
 	"github.com/joho/godotenv"
 )
@@ -68,13 +69,19 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 	defer database.Close()
+	// 认证依赖单例限流器与 Service：进程内计数需要跨请求累计，不能用 per-request 实例。
+	authService := auth.NewService(auth.NewRepository(database.ORM), auth.WithLimiter(auth.NewLimiter(nil, 0)))
+	authHandler, err := auth.NewHandler(authService, auth.HandlerConfig{Origin: cfg.AuthOrigin, Logger: logger})
+	if err != nil {
+		return fmt.Errorf("初始化认证失败: %w", err)
+	}
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           platform.NewRouter(logger, database),
+		Handler:           platform.NewRouter(logger, database, authHandler),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,

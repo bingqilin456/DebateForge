@@ -1,5 +1,7 @@
 # 思弈阁 Lite / DebateForge
 
+**T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
+
 **当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
 
 面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
@@ -39,7 +41,7 @@ go mod download
 go run ./cmd/server
 ```
 
-先按 MySQL 环境说明准备并启动已有开发库；秘密文件路径为绝对路径，不把口令放进 `.env`、环境变量或命令参数。`.env.example` 提供 APP_ENV、HTTP_ADDR、DB_ADDR、DB_NAME、DB_USER、DB_PASSWORD_FILE；Windows 路径建议使用正斜杠并保留单引号。首次配置后，每次只需在 `backend/` 执行 `go run ./cmd/server`。本地 `.env` 已被 Git 忽略，`.env.example` 可提交且不含真实秘密或个人路径。
+先按 MySQL 环境说明准备并启动已有开发库；秘密文件路径为绝对路径，不把口令放进 `.env`、环境变量或命令参数。`.env.example` 提供 APP_ENV、HTTP_ADDR、AUTH_ORIGIN、DB_ADDR、DB_NAME、DB_USER、DB_PASSWORD_FILE；Windows 路径建议使用正斜杠并保留单引号。首次配置后，每次只需在 `backend/` 执行 `go run ./cmd/server`。本地 `.env` 已被 Git 忽略，`.env.example` 可提交且不含真实秘密或个人路径。
 
 服务启动先用 `godotenv.Read()` 解析**当前工作目录**的 `.env`，逐项通过 `os.LookupEnv()` 判断是否补充，再执行原有 `LoadConfig()`。优先级为：**已有进程环境变量（含显式空值） > `.env` > 原有默认值**；Windows 按系统规则识别大小写不同的同名变量。只加载这一份文件，不自动读取 `.env.test` 或父目录。缺少 `.env` 时继续使用环境变量和默认值，CI 无需创建环境文件，但必填的 `DB_PASSWORD_FILE` 及原有校验仍生效。文件不可读、解析失败或 `os.Setenv()` 拒绝非法变量时启动失败，错误不回显文件内容。`LoadConfig()` 和集成测试入口不自行加载 `.env`，默认测试流程不读取本地开发配置。
 
@@ -73,7 +75,13 @@ Invoke-RestMethod http://127.0.0.1:5173/api/health/live
 
 在终端 A 按 Ctrl+C 停止后端，保持前端运行，在页面点击“重新检查”：应显示失败，并出现“重试连接”。重新运行后端，点击“重试连接”：应恢复成功。客户端总超时 3 秒，校验 HTTP 状态、JSON Content-Type 和响应结构，HTML 200 不能判为健康。
 
-`GET /api/health/ready` 在数据库连通时返回 HTTP 200 和 `{"status":"ready"}`，不可达或 3 秒预算内未响应则为 HTTP 503 和 `{"status":"not_ready"}`。健康响应不缓存；live 不访问 DB 或模型。ready 不证明业务表/种子就绪，当前没有业务 API。前端开发服务器仅用于本地开发，不是生产部署方式。
+`GET /api/health/ready` 在数据库连通时返回 HTTP 200 和 `{"status":"ready"}`，不可达或 3 秒预算内未响应则为 HTTP 503 和 `{"status":"not_ready"}`。健康响应不缓存；live 不访问 DB 或模型。ready 不证明业务表/种子就绪；当前已实现的业务为四条认证接口，见 API。前端开发服务器仅用于本地开发，不是生产部署方式。
+
+## T03 认证配置
+
+`AUTH_ORIGIN` 默认 `http://127.0.0.1:5173`，表示浏览器页面来源；所有认证 POST 必须携带该精确 Origin，退出另需当前 Session 的 `X-CSRF-Token`。注册不自动登录，登录和 me 返回 CSRF，Session 原值只通过 HttpOnly Cookie 传输。HTTP 开发 Cookie 为 `siyige_session_dev`；HTTPS 策略使用独立的 `__Host-siyige_session` 并开启 Secure；不使用 localStorage/JWT。
+
+当前 APP_ENV 仍只允许 dev/test，开发库未迁移；T03 实际验收使用固定隔离测试库，命令见下节。开发库显式迁移须按相应授权执行，不在本轮自动运行。配置、安全边界和独立审查状态见 [T03 记录](docs/T03_AUTH_ACCEPTANCE.md)。前端认证页面属于 T06，本轮未实现。
 
 ## 测试与构建
 
@@ -89,7 +97,7 @@ gofmt -l cmd internal tests
 
 test/vet/build/verify 应退出 0，gofmt 应无输出。默认测试不连接真实 MySQL 或模型，覆盖配置/目标保护、健康 JSON、超时/取消、404/405、request_id、脱敏、真实本地 HTTP 入口与退出。连接测试用临时回环端口模拟拒绝连接和握手停滞；集成测试默认跳过。
 
-在 backend 目录显式启用只读集成测试（需现有测试容器运行）：
+在 backend 目录显式启用真实隔离 MySQL 集成测试（需现有测试容器运行）：
 
 ```powershell
 $env:SIYIGE_INTEGRATION = '1'
@@ -101,7 +109,7 @@ $env:DB_PASSWORD_FILE = (Resolve-Path '../.cache/t02-mysql/secrets/test-app.txt'
 go test -count=1 -v ./tests/integration
 ```
 
-测试入口在读取秘密和联网前校验固定测试目标，并在连接后核对实际库/账户，任何不符均失败。测试只执行 SELECT 和 Ping，不清理、迁移或重置数据。默认单测前清除 `SIYIGE_INTEGRATION`，避免沿用显式集成模式。切回开发时可新开终端，或清除当前终端的覆盖值后再从 `backend/` 启动，让本地 `.env` 生效：
+测试入口在读取秘密和联网前校验固定测试目标，并在连接后核对实际库/账户，任何不符均失败。T03 新增真实 HTTP/Argon2id/GORM 认证测试，会写本轮随机用户和 Session、验证过期/恢复/并发并按确切 ID 清理；不迁移、重置数据或操作容器。旧连接与健康用例仍只读。默认单测前清除 `SIYIGE_INTEGRATION`，避免沿用显式集成模式。切回开发时可新开终端，或清除当前终端的覆盖值后再从 `backend/` 启动，让本地 `.env` 生效：
 
 ```powershell
 'SIYIGE_INTEGRATION', 'APP_ENV', 'HTTP_ADDR', 'DB_ADDR', 'DB_NAME', 'DB_USER', 'DB_PASSWORD_FILE' |
@@ -129,6 +137,7 @@ npm run build
 | GORM 1.31.2 / driver/mysql 1.6.0 | 冻结的成熟数据访问方案，当前验证连接，后续用于 CRUD/短事务 | MIT | database/sql 需手工维护映射；本轮沿用 ADR-004 |
 | go-sql-driver/mysql 1.8.1 | GORM 驱动声明的成熟 MySQL 连接器，提供连接参数与 Context 支持 | MPL-2.0 | 直接拼接 DSN 易误配；使用结构化 Config 和秘密文件 |
 | godotenv 1.5.1 | 成熟的 Go dotenv 库，仅在服务启动时补充本地环境变量，保留已有环境优先级 | MIT | 手动设置系统变量步骤多；自写解析器增加格式与转义维护成本 |
+| golang.org/x/crypto 0.48.0 | 已锁定的 Go 官方扩展库，T03 直接使用 Argon2id；仅调整直接依赖标记，未升级版本 | BSD-3-Clause | 第三方封装增加依赖；不自写密码算法 |
 | Vue 3.5.44                     | 已批准的 Composition API 与单文件组件      | MIT        | 原生 DOM；不另换框架             |
 | Arco Design 2.59.0             | 已批准的成熟 Vue 组件库，复用按钮、提示和标签        | MIT        | 原生 HTML/CSS；暂不另建组件体系     |
 | Vite 8.3.5 / plugin-vue 6.0.10 | 官方 Vue 插件、开发代理与构建                | MIT        | 手工 Rollup 配置增加维护成本       |
@@ -147,8 +156,9 @@ npm run build
 | [AGENTS.md](AGENTS.md) | 协作规范、当前授权、安全及验收边界 |
 | [PRD](docs/PRD.md) | 完整 MVP 产品范围与验收标准 |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | 架构与后续业务设计，区分已实现和草案 |
-| [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约，业务尚未实现 |
-| [OpenAPI 3.1](docs/openapi.yaml) | 与 API 文档对应的机器规范，区分 2 个已实现健康接口及 8 个规划业务接口 |
+| [API](docs/API.md) | 健康检查与 Phase 1 业务接口契约；4 个认证接口已实现，其余业务待实施 |
+| [OpenAPI 3.1](docs/openapi.yaml) | 6 个已实现接口、4 个 T05 规划接口；本地与 HTTPS Cookie 名已明确 |
+| [T03 认证记录](docs/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
 | [PLAN](docs/PLAN.md) / [TASKS](docs/TASKS.md) | 阶段依赖与独立任务，PB 与 T01 已完成，T02 已完成最终独立审查及人工验收，M03 等已接受风险继续延期 |
 | [DECISIONS](docs/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [INIT_ACCEPTANCE](docs/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |

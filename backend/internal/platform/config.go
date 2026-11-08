@@ -7,12 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/bingqilin456/DebateForge/backend/internal/auth"
 )
 
-// Config 只包含当前已接入的 HTTP 与本地数据库配置。
+// Config 只包含当前已接入的 HTTP、认证与本地数据库配置。
 type Config struct {
 	HTTPAddr string
-	Database DatabaseConfig
+	// AuthOrigin 是所有业务 POST 精确匹配的完整 Origin；默认本地开发同源地址。
+	AuthOrigin string
+	Database   DatabaseConfig
 }
 
 // DatabaseConfig 不保存口令或任意 DSN，当前只允许隔离的本地应用账户。
@@ -51,7 +55,13 @@ func LoadConfig() (Config, error) {
 	if err := database.validate(); err != nil {
 		return Config{}, err
 	}
-	return Config{HTTPAddr: addr, Database: database}, nil
+	// Origin 校验与 auth.Handler 使用同一规则；配置错误在启动期失败，
+	// 不以“看起来同源”的值放行运行期请求。
+	authOrigin, _, err := auth.ParseOrigin(envOrDefault("AUTH_ORIGIN", auth.DefaultAuthOrigin))
+	if err != nil {
+		return Config{}, fmt.Errorf("AUTH_ORIGIN 无效: %w", err)
+	}
+	return Config{HTTPAddr: addr, AuthOrigin: authOrigin, Database: database}, nil
 }
 
 func envOrDefault(key, fallback string) string {

@@ -1,12 +1,11 @@
-# 文档核对快照；规划接口、安全占位符及健康路径裁定详见 API.md。
+# T03 实现核对快照；契约不变，独立审查/人工验收尚未完成，详见 API.md。
 openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
   version: t01-frozen-2026-11-08
-  description: 文档快照日期 2026-11-08（Asia/Shanghai）。依据 docs/API.md 已冻结 T01 契约和当前工作区代码；不是发布版本。共 10 个操作：2 个已实现健康接口、8 个未实现业务契约。健康路径依
-    2026-11-08 用户裁定统一为 /api/health/live、/api/health/ready，业务契约保持 T01 设计。所有 /api/v1 业务接口当前均未注册，真实请求为 404；其状态、Schema、安全、限流均为规划，不能视为已实现。Phase
-    2 四个草案只保留扩展索引，不进入 paths。字段未冻结的行为不自行补全。
+  description: 文档快照日期 2026-11-08（Asia/Shanghai）。T01 契约不变；共 10 个操作，2 个健康接口与 4 个 T03 认证接口已实现并技术验证，待独立审查与人工验收，不代表部署。
+    4 个 T05 业务接口仍未注册、返回 404；Phase 2 四个草案只保留扩展索引，不进入 paths。健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
   description: 本地后端默认地址；不代表当前进程已启动或生产已部署。
@@ -16,15 +15,14 @@ tags:
 - name: 健康检查
   description: 当前已实现 /api/health/，已由项目负责人确认。
 - name: 认证
-  description: T03 未实施。
+  description: T03 已实现并技术验证，待独立审查及人工验收。
 - name: 辩题
   description: T05 未实施。
 - name: 辩论
   description: T05 未实施。
 security: []
 x-contract-source: docs/API.md
-x-cookie-name-status: unresolved; SESSION_COOKIE_NAME_TBD is a documentation placeholder, not a frozen or implemented
-  Cookie name
+x-cookie-name-status: resolved-in-t03; local HTTP cookie and HTTPS cookie use separate names
 x-router-errors:
   '404': not_found：未注册路径；所有规划业务接口当前均走此分支。
   '405': method_not_allowed：仅已注册路径上的不支持方法。
@@ -120,11 +118,11 @@ paths:
   /api/v1/auth/register:
     post:
       operationId: registerUser
-      summary: 注册用户（未实现）
+      summary: 注册用户（已实现，待独立审查）
       description: 用户名 trim 后小写并检查唯一；注册不自动登录。同 IP 每小时最多 5 次，限流先于 Argon2id 哈希；只校验 Origin，即使请求带旧 Cookie。
       tags:
       - 认证
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T03
       security: []
       responses:
@@ -173,12 +171,12 @@ paths:
   /api/v1/auth/login:
     post:
       operationId: loginUser
-      summary: 登录（未实现）
+      summary: 登录（已实现，待独立审查）
       description: 按 IP、归一化用户名分别每分钟最多 10 次；限流先于密码校验。凭据错误统一 401 invalid_credentials。只校验 Origin；Session 原值仅通过 Cookie
         传输。
       tags:
       - 认证
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T03
       security: []
       responses:
@@ -231,11 +229,11 @@ paths:
   /api/v1/auth/logout:
     post:
       operationId: logoutUser
-      summary: 退出当前 Session（未实现）
+      summary: 退出当前 Session（已实现，待独立审查）
       description: 无请求体。删除当前 Session 并以同名、同路径 Cookie 清除；Session 已失效为 401。
       tags:
       - 认证
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T03
       security:
       - SessionCookie: []
@@ -266,11 +264,11 @@ paths:
   /api/v1/auth/me:
     get:
       operationId: getCurrentUser
-      summary: 查询当前用户（未实现）
+      summary: 查询当前用户（已实现，待独立审查）
       description: 无请求参数，恢复当前用户及当前 Session 的 CSRF token。
       tags:
       - 认证
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T03
       security:
       - SessionCookie: []
@@ -641,9 +639,9 @@ components:
     SessionCookie:
       type: apiKey
       in: cookie
-      name: SESSION_COOKIE_NAME_TBD
-      description: 规划的服务器端 Session。冻结契约未指定 Cookie 具体名称；本 name 仅为满足 OpenAPI 必填项的显式占位符，不能直接作为客户端 Cookie 名。T03 确认真实名称后替换。
-      x-name-unresolved: true
+      name: siyige_session_dev
+      description: 当前本地 HTTP 服务器的 Session Cookie。HTTPS 策略使用 __Host-siyige_session，客户端须切换对应名称；不使用 JWT/Bearer。
+      x-https-cookie-name: __Host-siyige_session
     CsrfToken:
       type: apiKey
       in: header
@@ -682,8 +680,7 @@ components:
         type: integer
         minimum: 0
     SessionCookie:
-      description: 规划：签发或清除配置的 Session Cookie，具体名称尚未冻结。生产 Secure、HttpOnly、SameSite=Lax、Path=/，不设 Domain；有效期暂定 24
-        小时。退出使用同名、同路径 Cookie。
+      description: 登录签发、退出清除。HTTP 开发为 siyige_session_dev；HTTPS 为 __Host-siyige_session 且 Secure。均 HttpOnly、SameSite=Lax、Path=/、无 Domain，固定 24 小时。退出使用同名同路径。
       schema:
         type: string
   schemas:

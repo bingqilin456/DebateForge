@@ -1,27 +1,29 @@
 # 思弈阁 API 契约
 
+**T03 当前增量（2026 年 11 月 8 日）：四条认证接口已实现并通过 Codex 技术验证，待独立审查与人工验收。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
+
 2026 年 11 月 6 日，T01 固定 Phase 1 的 8 个业务接口；11 月 7 日项目负责人确认契约设计通过人工验收，T01 已结项。仅代表接口契约设计完成，不代表业务代码已实现。业务实现按 [TASKS](TASKS.md) 分批交付。历史分页、完整三轮、显式重试与总结仍以 [架构草案](ARCHITECTURE.md#phase-2-api-草案) 为设计参考。
 
 2026 年 11 月 8 日（Asia/Shanghai）文档核对：请求中指定的 `backend/docs/api` 在当前工作区不存在，继续复用本文作为契约来源，机器规范见 [openapi.yaml](openapi.yaml)。项目负责人在本轮明确确认健康路径以当前 Gin 路由 `/api/health/live`、`/api/health/ready` 为准，并授权同步相关文档和代码。业务接口保持 T01 冻结设计；本次不表示接口已部署或 T02 已结项。
 
 ## 接口清单与实现状态
 
-以下按当前工作区源码核对，而非沿用历史验收结果。当前 [NewRouter](../backend/internal/platform/router.go) 通过 `/api` 路由组注册 2 个健康接口，8 个业务接口均未实现。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 已由本轮负责人裁定替代，当前未注册，返回 `404 not_found`，不提供兼容别名。
+以下按当前工作区源码核对。真实启动入口向 [NewRouter](../backend/internal/platform/router.go) 注入认证 Handler，注册 2 个健康接口和 4 个认证接口；4 个 T05 业务接口未实现。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
 | GET | `/api/health/live` | 存活检查 | 已实现 | 200 |
 | GET | `/api/health/ready` | 就绪检查 | 已实现 | 200；依赖失败 503 |
-| POST | `/api/v1/auth/register` | 注册 | T03 未实现 | 201 |
-| POST | `/api/v1/auth/login` | 登录 | T03 未实现 | 200 |
-| POST | `/api/v1/auth/logout` | 退出当前 Session | T03 未实现 | 204，无正文 |
-| GET | `/api/v1/auth/me` | 查询当前用户 | T03 未实现 | 200 |
+| POST | `/api/v1/auth/register` | 注册 | 已实现，待独立审查/人工验收 | 201 |
+| POST | `/api/v1/auth/login` | 登录 | 已实现，待独立审查/人工验收 | 200 |
+| POST | `/api/v1/auth/logout` | 退出当前 Session | 已实现，待独立审查/人工验收 | 204，无正文 |
+| GET | `/api/v1/auth/me` | 查询当前用户 | 已实现，待独立审查/人工验收 | 200 |
 | GET | `/api/v1/topics` | 查询启用辩题 | T05 未实现 | 200 |
 | POST | `/api/v1/debates` | 创建会话 | T05 未实现 | 201 |
 | POST | `/api/v1/debates/{id}/turns` | 提交首轮、幂等重放 | T05 未实现 | 201、200、202 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | T05 未实现 | 200 |
 
-本文与 OpenAPI `paths` 均为 **10 个接口（2 个已实现健康接口 + 8 个尚未实现的业务契约）**。所有业务节中的请求、响应、安全和限额均为冻结的目标契约，当前访问这些业务路径实际返回路由层 404。
+本文与 OpenAPI `paths` 均为 **10 个接口（6 个已实现，4 个 T05 规划契约）**。认证已实现，其余业务节仍为冻结目标契约，访问尚未注册的路径返回路由层 404。实现不代表正式人工验收或部署完成。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -45,7 +47,7 @@ T02 当前已实现 [ready Handler](../backend/internal/platform/health.go)，�
 {"error":{"code":"not_found","message":"接口不存在"},"request_id":"服务端生成的标识"}
 ```
 
-错误码分别为 `not_found`、`method_not_allowed`、`internal_error`；不包含堆栈、请求正文或内部错误细节。路由层错误包含 `X-Request-ID`，当前未统一设置 `Cache-Control: no-store`；不能把健康 Handler 的缓存头保证套用到这些错误。405 只适用于已注册路径的不支持方法，例如 `POST /api/health/live`；当前 `POST /health/live` 为 404。当前没有业务接口，不借此声称认证、权限或限流已实现。
+错误码分别为 `not_found`、`method_not_allowed`、`internal_error`；不包含堆栈、请求正文或内部错误细节。T03 已将路由层错误统一设为 `Cache-Control: no-store`，并包含 `X-Request-ID`。405 适用于已注册路径的不支持方法，例如 `GET /api/v1/auth/login`；当前 `POST /health/live` 为 404。
 
 ## 本地请求链路
 
@@ -70,13 +72,15 @@ T02 当前已实现 [ready Handler](../backend/internal/platform/health.go)，�
 | 路径 | `id` | 发送轮次、读取详情必填；会话 ID，类型见下表。非法值 400，不存在或非本人会话同为 404。 |
 | Header | `Content-Type` | 有 JSON 请求体时为 `application/json`；非法媒体类型按冻结契约为 400，不擅自改为 415。 |
 | Header | `Origin` | 全部业务 POST 必须与配置的完整 Origin 一致；GET 不要求。浏览器同源请求自然携带，非浏览器调用也须显式提供合法值。 |
-| Cookie | 配置的 Session Cookie | 除注册、登录外的业务接口必需；当前未实现。具体 Cookie 名尚未冻结。 |
+| Cookie | 配置的 Session Cookie | 除注册、登录外的业务接口必需；HTTP 开发为 `siyige_session_dev`，HTTPS 安全策略为 `__Host-siyige_session`。 |
 | Header | `X-CSRF-Token` | 退出、创建会话、发送轮次必需，与 Session 同时校验；注册、登录不要求。 |
 | 响应头 | `Set-Cookie` | 登录签发、退出清除；生产 `Secure; HttpOnly; SameSite=Lax; Path=/`，不设 Domain，有效期暂定 24 小时。开发可单独命名并关闭 Secure。 |
 | 响应头 | `X-Request-ID` | 所有服务端契约响应的关联标识；JSON 信封中 `request_id` 与其一致，204 仅有响应头。 |
 | 响应头 | `Retry-After` | 429 必须携带等待秒数。 |
 
-OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；要求二者的 POST 放在同一个安全要求对象中，语义为同时满足。**`SessionCookie.name: SESSION_COOKIE_NAME_TBD` 是显式文档占位符，不是已冻结的 Cookie 名或实现配置。** 由于 [OpenAPI 3.1.1 安全方案](https://spec.openapis.org/oas/v3.1.1.html#security-scheme-object) 要求 Cookie 方案填写 `name`，先标记 `x-name-unresolved: true`，待 T03 确认后替换；确认前不能直接据此生成可用的认证客户端。不添加 JWT、Bearer 或 Authorization Header。
+OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；要求二者的 POST 放在同一个安全要求对象中，语义为同时满足。T03 已替换 Cookie 名占位符：机器规范对应当前本地服务器，`SessionCookie.name` 为 `siyige_session_dev`，`x-https-cookie-name` 记录 `__Host-siyige_session`；HTTPS 客户端须按该名称替换，不能沿用开发 Cookie。不添加 JWT、Bearer 或 Authorization Header。
+
+`AUTH_ORIGIN` 默认为 `http://127.0.0.1:5173`，配置可规范化协议默认端口；请求中的 Origin 必须与规范形式精确匹配且只有一个头值。重复/合并 Origin 或 CSRF 头失败为 403；重复同名 Session Cookie 为 401。HTTP 配置仅回环 IP；HTTPS 可域名/IP，Cookie 自动开启 Secure。应用仍只支持本地 dev/test 数据库，不代表支持生产部署。所有参数、限流和验证证据见 [T03 记录](T03_AUTH_ACCEPTANCE.md)。
 
 ### 请求字段
 
@@ -359,10 +363,10 @@ SSE 仍是可选设计，本次 OpenAPI 只描述冻结的 JSON 契约，不声�
 ## 核对差异与待确认问题
 
 1. **健康路径差异已裁定**：2026 年 11 月 8 日负责人明确以 `/api/health/live`、`/api/health/ready` 为准；本轮同步前端、测试和当前运行文档。历史验收及学习笔记中的旧路径保留历史语境，不作为新契约，也不提供兼容别名。
-2. **Session Cookie 名未冻结**：生产/开发具体名称待 T03 确认；OpenAPI 显式占位，未将候选 `__Host-` 前缀变成指定名称。
+2. **Session Cookie 名已在 T03 具体化**：HTTP 开发为 `siyige_session_dev`，HTTPS 策略为 `__Host-siyige_session`；OpenAPI 占位符已替换，安全属性与 T01 一致。
 3. **后续契约范围**：Phase 2 仍为草案，不在本次机器规范的冻结范围中；完整三轮、显式重试、总结和分页不作为已实现交付。
 
-## 本次文档验证
+## T01 文档任务的历史验证记录
 
 2026 年 11 月 8 日完成技术自查，待项目负责人最终验收；不替代完整 T02、T03 或 T05 的业务验收。
 

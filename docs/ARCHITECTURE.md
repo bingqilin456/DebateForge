@@ -1,5 +1,7 @@
 # 思弈阁 Lite 技术架构
 
+**T03 实施增量（2026 年 11 月 8 日）：认证四接口、auth 分层、可复用认证/Origin/CSRF 中间件与 `current_user` 已实现并通过 Codex 技术验证，待独立审查和人工验收。** 复用 T02 连接与表；见 [认证记录](T03_AUTH_ACCEPTANCE.md) 和 [ADR-015](DECISIONS.md#adr-015-t03-认证实现与-cookie-名称)。Cookie 名已在 T03 具体化；历史“业务未实现”和不启动 T03 的表述不覆盖本增量，T04–T06 未启动。
+
 **当前结项状态（2026 年 11 月 8 日）：T02 已通过最终独立技术审查及项目负责人人工验收，标记已完成。** M01/M02 按本次审查结论关闭；M03 及已接受的恢复/验证边界继续保留。验收依据见 [种子与持久化记录](T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。此前“进行中/待验收”等为各子任务当时状态，不覆盖本次结项。T03–T18 不因结项自动启动，Phase 1 尚未完成。
 
 2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](TASKS.md) 交付。产品边界见 [PRD](PRD.md)，资源状态和方案依据见 [DECISIONS](DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](INIT_ACCEPTANCE.md)。

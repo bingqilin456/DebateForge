@@ -71,3 +71,27 @@ func TestTargetCannotBeRedirected(t *testing.T) {
 		}
 	}
 }
+
+func TestDeployTargetIsFixed(t *testing.T) {
+	secret := filepath.Join(t.TempDir(), "missing-secret")
+	t.Setenv("DB_ADDR", "127.0.0.1:13307")
+	t.Setenv("DB_NAME", "siyige_test")
+	cfg, err := parseConfig([]string{"-env", "deploy", "-password-file", secret, "up"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Addr != "mysql:3306" || cfg.Name != "siyige_deploy" || cfg.User != "siyige_deploy_migrator" {
+		t.Fatal("部署迁移未固定到内部库和专用账户")
+	}
+	for _, mutate := range []func(*config){
+		func(c *config) { c.Addr = "127.0.0.1:13307" },
+		func(c *config) { c.Name = "siyige_test" },
+		func(c *config) { c.User = "siyige_deploy_app" },
+	} {
+		invalid := cfg
+		mutate(&invalid)
+		if invalid.validate() == nil {
+			t.Fatal("接受了错误的部署迁移目标")
+		}
+	}
+}

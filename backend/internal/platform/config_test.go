@@ -85,3 +85,37 @@ func TestDatabaseConfigRejectsUnsafeValues(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadDeployConfig(t *testing.T) {
+	setDatabaseEnv(t)
+	t.Setenv("APP_ENV", "deploy")
+	t.Setenv("HTTP_ADDR", "0.0.0.0:8080")
+	t.Setenv("DB_ADDR", "mysql:3306")
+	t.Setenv("DB_NAME", "siyige_deploy")
+	t.Setenv("DB_USER", "siyige_deploy_app")
+	t.Setenv("AUTH_ORIGIN", "https://debate.example.invalid")
+	t.Setenv("AI_MODE", "fake")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Database.ValidateTestTarget() == nil {
+		t.Fatal("部署库被接受为集成测试目标")
+	}
+	for _, tc := range []struct{ key, value string }{
+		{"HTTP_ADDR", "0.0.0.0:8081"},
+		{"DB_ADDR", "127.0.0.1:13307"},
+		{"DB_ADDR", "other-mysql:3306"},
+		{"DB_NAME", "siyige_test"},
+		{"DB_USER", "siyige_deploy_migrator"},
+		{"AUTH_ORIGIN", "http://127.0.0.1:5173"},
+		{"AI_MODE", "deepseek"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := LoadConfig(); err == nil {
+				t.Fatal("接受了不安全的部署配置")
+			}
+		})
+	}
+}

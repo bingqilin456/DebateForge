@@ -227,7 +227,7 @@ T07 即经 Nginx 验证 `/api/health/live`、`/api/health/ready` 返回约定 JS
 
 ## 部署、持久化与恢复方案
 
-以下为后续获准后的实施顺序，本阶段不生成配置或连接服务器：
+T07 配置、隔离验收与发布步骤见 [部署准备](../../deploy/README.md)，实跑及资源操作各需明确授权。以下为阶段实施顺序：
 
 1. 单台 Linux 主机，先确认资源预算、域名和网络要求；Nginx 提供静态 Vue 构建产物和 `/api/` 反向代理。另为 `/api/health/live`、`/api/health/ready` 配置精确匹配，原路径转发到 Go，保留上游状态码与 JSON Content-Type；其他 `/health/` 路径返回 404。SPA 回退仅用于前端页面，API 与健康端点均不得回退为 HTML，健康端点不得用 Nginx 固定 200 代替后端检查。[Nginx 请求路由文档](https://nginx.org/en/docs/http/request_processing.html)
 2. Compose 管理 Nginx、Go、MySQL；公网仅开放 80/443，SSH 按管理来源限制，应用与 MySQL 端口只在内部网络可达。MySQL 使用命名卷或受控目录，重建容器不得删除卷。

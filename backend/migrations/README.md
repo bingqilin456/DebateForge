@@ -6,16 +6,17 @@
 
 ## 入口与执行顺序
 
-独立 CLI 位于 `backend/tools/migrate/`，使用 Goose **v3.29.0 Provider**，与标准 Goose 共用 `goose_db_version` 格式；不是手写版本管理器。工具有独立 `go.mod/go.sum`，不进入服务依赖图，不升级服务现有驱动，也不在服务启动时执行。生产目标、自动迁移和 GORM AutoMigrate 均未接入。
+独立 CLI 位于 `backend/tools/migrate/`，使用 Goose **v3.29.0 Provider**，与标准 Goose 共用 `goose_db_version` 格式。工具有独立 `go.mod/go.sum`，不进入服务依赖图，也不在服务启动时执行。T07 增加显式容器部署目标，执行前须取得目标库授权，见 [T07 部署清单](../../deploy/README.md#2-显式受审迁移)。
 
-仅接受 `up`、`status`。必须显式传 `-env dev|test`、迁移账户秘密文件的绝对路径；地址、库名和账户按环境固定，不接受 DSN/root/应用账户。入口不加载 `.env`，不采用 `APP_ENV`、`DB_*`、`GOOSE_*` 的目标或口令。`-dir` 只能交给已审阅的版本化 SQL 目录，不把不可信来源的 SQL 交给迁移账户执行。
+仅接受 `up`、`status`。必须显式传 `-env dev|test|deploy`、迁移账户秘密文件的绝对路径；地址、库名和账户按环境固定，不接受 DSN/root/应用账户。入口不加载 `.env`，不采用 `APP_ENV`、`DB_*`、`GOOSE_*` 的目标或口令。`-dir` 只接收已审阅的版本化 SQL 目录。
 
 | 环境 | 固定地址/库 | 固定账户 | 本地秘密文件 |
 | --- | --- | --- | --- |
 | test | `127.0.0.1:13307/siyige_test` | `siyige_test_migrator@%` | `.cache/t02-mysql/secrets/test-migrator.txt` |
 | dev | `127.0.0.1:13306/siyige_dev` | `siyige_dev_migrator@%` | `.cache/t02-mysql/secrets/dev-migrator.txt` |
+| deploy | `mysql:3306/siyige_deploy` | `siyige_deploy_migrator@%` | 容器的 `/run/secrets/migrator_password` |
 
-迁移账户权限沿用 [现有隔离环境](../../infra/mysql/README.md)，应用账户仍只有业务 CRUD 权限。先校验配置再读取秘密；口令只在进程内组装连接，不进入命令参数、环境变量、输出或仓库。连接后在 **同一个 SQL 会话** 验证实际数据库、`CURRENT_USER()` 及 MySQL `8.4.13`，再执行 `GET_LOCK('siyige:migrate:<库名>', 0)`，冲突立即失败。每个版本依次完成历史完整性检查、Goose 元数据初始化、DDL 和成功登记，最后解锁；不同进程可在版本边界交替执行，但同一版本不会并行执行。
+dev/test 迁移账户权限见 [现有隔离环境](../../infra/mysql/README.md)，deploy 权限见 [部署初始化脚本](../../deploy/init-accounts.sh)。部署应用账户在迁移完成后显式取得业务表权限，范围见 [授权 SQL](../../deploy/grant-app.sql)。先校验配置再读取秘密；口令只在进程内组装连接，不进入命令参数、环境变量、输出或仓库。连接后在 **同一个 SQL 会话** 验证实际数据库、`CURRENT_USER()` 及 MySQL `8.4.13`，再执行 `GET_LOCK('siyige:migrate:<库名>', 0)`，冲突立即失败。每个版本依次完成历史完整性检查、Goose 元数据初始化、DDL 和成功登记，最后解锁；不同进程可在版本边界交替执行，但同一版本不会并行执行。
 
 工具逐版本调用 `ApplyVersion(..., true)`，已执行版本作为空操作跳过。未调用会在加锁前初始化元数据的 `Up/HasPending` 路径。历史只接受完整的前向版本前缀；缺失本地已执行文件、历史间隙、重复记录和非前向记录均拒绝。未知数据库版本不能被低版本工具静默忽略。
 

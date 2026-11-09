@@ -80,7 +80,7 @@ T02 当前已实现 [ready Handler](../../backend/internal/platform/health.go)�
 
 OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；要求二者的 POST 放在同一个安全要求对象中，语义为同时满足。T03 已替换 Cookie 名占位符：机器规范对应当前本地服务器，`SessionCookie.name` 为 `siyige_session_dev`，`x-https-cookie-name` 记录 `__Host-siyige_session`；HTTPS 客户端须按该名称替换，不能沿用开发 Cookie。不添加 JWT、Bearer 或 Authorization Header。
 
-`AUTH_ORIGIN` 默认为 `http://127.0.0.1:5173`，配置可规范化协议默认端口；请求中的 Origin 必须与规范形式精确匹配且只有一个头值。重复/合并 Origin 或 CSRF 头失败为 403；重复同名 Session Cookie 为 401。HTTP 配置仅回环 IP；HTTPS 可域名/IP，Cookie 自动开启 Secure。应用仍只支持本地 dev/test 数据库，不代表支持生产部署。所有参数、限流和验证证据见 [T03 记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。
+`AUTH_ORIGIN` 默认为 `http://127.0.0.1:5173`，配置可规范化协议默认端口；请求中的 Origin 必须与规范形式精确匹配且只有一个头值。重复/合并 Origin 或 CSRF 头失败为 403；重复同名 Session Cookie 为 401。HTTP 配置仅回环 IP；HTTPS 可域名/IP，Cookie 自动开启 Secure。本机 dev/test 保持回环，T07 的 deploy 模式要求 HTTPS Origin 和固定内部数据库，隔离实跑及部署待另行授权。 [T03 记录](../acceptance/T03_AUTH_ACCEPTANCE.md) · [T07 部署准备](../../deploy/README.md)
 
 ### 请求字段
 

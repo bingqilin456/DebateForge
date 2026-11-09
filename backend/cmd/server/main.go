@@ -73,7 +73,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer database.Close()
 	// 认证依赖单例限流器与 Service：进程内计数需要跨请求累计，不能用 per-request 实例。
 	authService := auth.NewService(auth.NewRepository(database.ORM), auth.WithLimiter(auth.NewLimiter(nil, 0)))
-	authHandler, err := auth.NewHandler(authService, auth.HandlerConfig{Origin: cfg.AuthOrigin, Logger: logger})
+	authHandler, err := auth.NewHandler(authService, auth.HandlerConfig{
+		Origin: cfg.AuthOrigin, Logger: logger, TrustedProxy: cfg.TrustedProxy,
+	})
 	if err != nil {
 		return fmt.Errorf("初始化认证失败: %w", err)
 	}

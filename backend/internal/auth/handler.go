@@ -39,19 +39,22 @@ const (
 	originHeader   = "Origin"
 )
 
-// HandlerConfig 只需要精确 Origin；Cookie 策略由 Origin 的 scheme 决定，
+// HandlerConfig 使用精确 Origin；Cookie 策略由 Origin 的 scheme 决定，
 // 使开发（HTTP 回环）与 HTTPS 使用不同名称，避免复用同一 Cookie。
 type HandlerConfig struct {
 	Origin string
 	Logger *slog.Logger
+	// TrustedProxy 为唯一允许传入客户端地址的 TCP 对端。零值保留直连策略。
+	TrustedProxy netip.Addr
 }
 
 // Handler 承载四条认证路由与可复用中间件；不直接访问数据库。
 type Handler struct {
-	service *Service
-	origin  string
-	secure  bool
-	logger  *slog.Logger
+	service      *Service
+	origin       string
+	secure       bool
+	logger       *slog.Logger
+	trustedProxy netip.Addr
 }
 
 // CurrentUser 是认证中间件写入 Gin Context 的 typed 身份。
@@ -75,7 +78,7 @@ func NewHandler(service *Service, config HandlerConfig) (*Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return &Handler{service: service, origin: origin, secure: secure, logger: logger}, nil
+	return &Handler{service: service, origin: origin, secure: secure, logger: logger, trustedProxy: config.TrustedProxy}, nil
 }
 
 // ParseOrigin 校验并规范化配置中的完整 Origin，返回用于精确比较的规范形式。
@@ -243,7 +246,7 @@ func (h *Handler) register(c *gin.Context) {
 	if !ok {
 		return
 	}
-	user, err := h.service.Register(c.Request.Context(), clientIP(c), request.username, request.password)
+	user, err := h.service.Register(c.Request.Context(), h.clientIP(c), request.username, request.password)
 	if err != nil {
 		h.writeServiceError(c, err)
 		return
@@ -261,7 +264,7 @@ func (h *Handler) login(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.service.Login(c.Request.Context(), clientIP(c), request.username, request.password)
+	result, err := h.service.Login(c.Request.Context(), h.clientIP(c), request.username, request.password)
 	if err != nil {
 		h.writeServiceError(c, err)
 		return
@@ -424,13 +427,21 @@ func (h *Handler) clearSessionCookie(c *gin.Context) {
 	})
 }
 
-// clientIP 只使用 TCP 对端地址；不信任 X-Forwarded-For / X-Real-IP。
-func clientIP(c *gin.Context) string {
+// clientIP 只接受专用 Nginx 对端重写的单一 X-Real-IP；其它请求使用 TCP 地址。
+func (h *Handler) clientIP(c *gin.Context) string {
 	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
 	if err != nil {
 		host = c.Request.RemoteAddr
 	}
 	if address, addrErr := netip.ParseAddr(host); addrErr == nil {
+		if address.Unmap() == h.trustedProxy {
+			values := c.Request.Header.Values("X-Real-IP")
+			if len(values) == 1 {
+				if client, err := netip.ParseAddr(values[0]); err == nil && client.Zone() == "" {
+					return client.Unmap().String()
+				}
+			}
+		}
 		return address.String()
 	}
 	return "unknown"

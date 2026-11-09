@@ -1,5 +1,7 @@
 # 思弈阁 Lite 协作规则
 
+**T06 已完成（2026-11-09）。** 项目负责人确认人工验收通过，并授权在 `feat/t06-completion` 独立 Worktree 登记结果、创建一个本地 Git commit。技术验证、独立复审及 T06-R01 关闭记录见 [T06 验收记录](docs/acceptance/T06_COMPLETION_ACCEPTANCE.md)。推送、创建 PR、修改或合并 PR #5、变更 main/develop、Rebase、Reset 和部署均须另行授权。T07-COST-01 继续阻塞公网真实 AI 入口。下方集成和早期任务状态为当时记录。
+
 **T05 / T06-B Git 集成授权（2026-11-09）：本轮从最新 `origin/develop` 创建 `feat/integration-t05-t06-b`，依次以 merge commit 合入已包含 PR #4 的 `origin/codex/docs-reorganization` 与 `origin/feat/t06-b-auth`，允许解决冲突、必要提交、推送并创建面向 `develop` 的 PR。** PR #4 已由负责人合并，不重复合并。T02–T05 的既有验收结论和延期风险保持；T06-B 已交付统一 API client、前端认证 API/内存状态、独立表单和本地模拟预览，见 [T06-B 交接](docs/acceptance/T06_B_HANDOFF.md)。T06 整体仍为进行中，A 的正式入口/首轮面板与真实 T03/T05 浏览器联调未执行，本轮不实施。禁止收费模型、数据库写入、部署、自动合并新 PR、修改本地或远程 main/develop 分支引用、删除原分支、Rebase、Reset 或强制推送；T07-COST-01 继续未关闭。集成 PR 创建后停止，由全新 Codex 会话独立只读审查，再由负责人决定是否合入。以下旧授权和状态保留各轮语境，以本段及最新验收记录为准。
 
 **T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](docs/acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。

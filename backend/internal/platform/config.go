@@ -45,6 +45,10 @@ func LoadConfig() (Config, error) {
 		trustedProxy = netip.MustParseAddr("172.30.70.2")
 		switch os.Getenv("AI_MODE") {
 		case "", "disabled", "fake":
+		case "deepseek":
+			if !filepath.IsAbs(os.Getenv("T07_TRIAL_LEDGER")) {
+				return Config{}, fmt.Errorf("真实试运行要求显式配置持久账本路径")
+			}
 		default:
 			return Config{}, fmt.Errorf("部署准备仅允许关闭模型或使用 Fake")
 		}

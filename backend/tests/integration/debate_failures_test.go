@@ -287,3 +287,43 @@ func TestT05LateVersionCannotOverwrite(t *testing.T) {
 		t.Fatal("stale version wrote assistant")
 	}
 }
+
+func TestT07FakeFailureAndTimeoutPersistWithoutCountingRound(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		code   ai.ErrorCode
+		status int
+	}{
+		{"failure", ai.CodeModelUnavailable, 503},
+		{"timeout", ai.CodeModelTimeout, 504},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := ai.NewFake(ai.FakeStep{Err: &ai.Error{Code: tc.code}})
+			f := newDebateFixture(t, fake)
+			id := f.create(t)
+			path := "/api/v1/debates/" + id
+			const content = "本地合成失败原文"
+			body := submit(content, uuid.NewString(), 1)
+			if r := f.request(t, "POST", path+"/turns", body); r.status != tc.status || r.errorCode() != string(tc.code) {
+				t.Fatalf("initial status=%d code=%s", r.status, r.errorCode())
+			}
+			if r := f.request(t, "POST", path+"/turns", body); r.status != 409 || r.errorCode() != "turn_failed" {
+				t.Fatalf("replay status=%d code=%s", r.status, r.errorCode())
+			}
+			r := f.request(t, "GET", path, nil)
+			var turns []debate.TurnDTO
+			if err := json.Unmarshal(r.data()["turns"], &turns); err != nil {
+				t.Fatal(err)
+			}
+			if r.status != 200 || len(turns) != 1 || turns[0].Status != "failed" ||
+				turns[0].ErrorCode == nil || *turns[0].ErrorCode != string(tc.code) ||
+				len(turns[0].Messages) != 1 || turns[0].Messages[0].Content != content || len(fake.Records()) != 1 {
+				t.Fatal("failed turn, original content, or generation count changed")
+			}
+			var rounds []int
+			if err := f.db.ORM.Table("debates").Where("id = ?", id).Pluck("completed_rounds", &rounds).Error; err != nil || len(rounds) != 1 || rounds[0] != 0 {
+				t.Fatalf("completed rounds=%v, err=%v", rounds, err)
+			}
+		})
+	}
+}

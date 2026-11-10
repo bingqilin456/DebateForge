@@ -76,7 +76,7 @@ func (s *Service) submit(ctx context.Context, uid, id uint64, in SubmitInput) (T
 		return TurnData{}, 0, dependency(nil, false)
 	}
 	consumed = true
-	result, genErr := s.generate(ctx, ai.Request{Topic: ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.Debate.UserStance), RoundNo: turn.RoundNo, UserContent: turn.Messages[0].Content})
+	result, genErr := s.generate(ctx, ai.Request{UserID: uid, Topic: ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.Debate.UserStance), RoundNo: turn.RoundNo, UserContent: turn.Messages[0].Content})
 	if genErr == nil {
 		genErr = ai.ValidateReply(result.Content)
 		if failure, ok := genErr.(*ai.Error); ok {
@@ -91,7 +91,7 @@ func (s *Service) submit(ctx context.Context, uid, id uint64, in SubmitInput) (T
 	}
 	if genErr != nil {
 		code, status, usage, meta := classifyFailure(ctx, genErr)
-		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, usage, meta)
+		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, usage, meta, genErr)
 	}
 	completed, e := s.store.Complete(ctx, uid, d.Debate, turn, result)
 	if e != nil {
@@ -104,7 +104,7 @@ func (s *Service) submit(ctx context.Context, uid, id uint64, in SubmitInput) (T
 		if ctx.Err() != nil {
 			code, status, _, _ = classifyFailure(ctx, generationContextError(nil, result, ctx.Err()))
 		}
-		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, result.Usage, result.Metadata)
+		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, result.Usage, result.Metadata, e)
 	}
 	return turnData(completed, completed.Turns[0]), 201, nil
 }
@@ -138,17 +138,17 @@ func generationContextError(err error, result ai.Result, reason error) error {
 	if errors.Is(reason, context.DeadlineExceeded) {
 		code = ai.CodeModelTimeout
 	}
-	return (&ai.Error{Code: code, Message: "生成请求已中断", Usage: usage, Metadata: meta}).WithCause(reason)
+	return (&ai.Error{Code: code, Message: "生成请求已中断", Usage: usage, Metadata: meta}).WithCause(errors.Join(reason, err))
 }
-func (s *Service) saveFailure(ctx context.Context, uid uint64, d Debate, t Turn, code string, status int, usage ai.Usage, meta ai.Metadata) error {
+func (s *Service) saveFailure(ctx context.Context, uid uint64, d Debate, t Turn, code string, status int, usage ai.Usage, meta ai.Metadata, cause error) error {
 	// 生成阶段和确定回滚的最终写回都在取消后尽力落库，仍由状态/版本保护。
 	cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer stop()
 	saved, err := s.store.Fail(cleanup, uid, d, t, code, usage, meta)
 	if err != nil {
-		return dependency(err, false)
+		return dependency(errors.Join(err, cause), false)
 	}
-	return &Failure{Code: codeForHTTP(code), Status: status, Details: failedDetails(d, saved)}
+	return &Failure{Code: codeForHTTP(code), Status: status, Cause: cause, Details: failedDetails(d, saved)}
 }
 func classifyFailure(ctx context.Context, err error) (string, int, ai.Usage, ai.Metadata) {
 	code, status := "model_error", 502

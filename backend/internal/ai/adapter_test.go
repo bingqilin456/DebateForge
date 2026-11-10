@@ -341,6 +341,22 @@ func TestOpenAIGeneratorHTTPErrorClassification(t *testing.T) {
 	}
 }
 
+func TestOpenAIGeneratorDoesNotFollowRedirect(t *testing.T) {
+	transport := newScriptedTransport(func(req *http.Request, attempt int) (*http.Response, error) {
+		if attempt == 1 {
+			response := jsonResponse(http.StatusTemporaryRedirect, "")
+			response.Header.Set("Location", "/redirect-target")
+			return response, nil
+		}
+		return jsonResponse(http.StatusInternalServerError, ""), nil
+	})
+	_, err := newTestGenerator(t, transport).Generate(context.Background(), validRequest())
+	if calls := transport.attempts(); calls != 1 {
+		t.Fatalf("重定向不得再次发送模型请求，实际请求 %d 次", calls)
+	}
+	assertCode(t, err, CodeProviderError)
+}
+
 func TestOpenAIGeneratorConnectionFailureIsSingleAttempt(t *testing.T) {
 	sentinel := errors.New("dial tcp: connection refused secret-connect")
 	transport := newScriptedTransport(func(req *http.Request, attempt int) (*http.Response, error) {
@@ -681,5 +697,31 @@ func TestOpenAIGeneratorLoopbackHTTP(t *testing.T) {
 	}
 	if server.hits() != 1 {
 		t.Fatalf("回环服务应收到 1 次请求，实际 %d", server.hits())
+	}
+}
+
+func TestClassifyModelErrorPreservesCauseAfterContextEnds(t *testing.T) {
+	ledgerErr := errors.New("synthetic ledger write failure")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, stop := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer stop()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		code ErrorCode
+	}{
+		{"cancel", cancelled, CodeModelCanceled},
+		{"timeout", expired, CodeModelTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyModelError(tc.ctx, ledgerErr, Usage{}, Metadata{})
+			if got.Code != tc.code || !errors.Is(got, tc.ctx.Err()) || !errors.Is(got, ledgerErr) {
+				t.Fatalf("code=%v, context=%v, ledger=%v", got.Code, errors.Is(got, tc.ctx.Err()), errors.Is(got, ledgerErr))
+			}
+			if strings.Contains(got.Error(), ledgerErr.Error()) {
+				t.Fatal("controlled message exposes the underlying error")
+			}
+		})
 	}
 }

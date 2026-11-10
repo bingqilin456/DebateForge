@@ -35,6 +35,8 @@ server {
         include /etc/nginx/siyige/proxy.conf;
     }
     location @api_body_too_large {
+        # 与本地响应头和 JSON 信封使用同一个 Nginx 请求 ID。
+        access_log /dev/stdout api_413;
         default_type application/json;
         add_header X-Request-ID $request_id always;
         add_header Cache-Control "no-store" always;

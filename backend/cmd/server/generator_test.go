@@ -30,17 +30,9 @@ func TestGeneratorExplicitModes(t *testing.T) {
 		t.Fatal("fake not selected")
 	}
 	t.Setenv("AI_MODE", "deepseek")
+	t.Setenv("APP_ENV", "dev")
 	t.Setenv("DEEPSEEK_API_KEY", "synthetic-unused-key")
-	t.Setenv("AI_MAX_OUTPUT_TOKENS", "512")
-	g, e = configuredGenerator(context.Background(), nil)
-	if e != nil {
-		t.Fatal("construct adapter without network")
-	}
-	if _, ok := g.(*ai.OpenAIAdapter); !ok {
-		t.Fatal("T04 adapter not wired")
-	}
-	t.Setenv("AI_MAX_OUTPUT_TOKENS", "")
 	if _, e = configuredGenerator(context.Background(), nil); e == nil {
-		t.Fatal("output budget must be explicit")
+		t.Fatal("local DeepSeek mode must stay disabled")
 	}
 }

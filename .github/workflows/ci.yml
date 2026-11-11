@@ -247,20 +247,21 @@ jobs:
             backend/go.sum
             backend/tools/migrate/go.sum
 
-      - name: 后端模块校验、静态检查、竞态单测与编译
+      - name: 后端模块校验、静态检查、单测与编译
         working-directory: backend
         run: |
           go mod verify
           go vet ./...
-          go test -race -count=1 ./...
+          # 使用内存 tmpfs (/dev/shm) 与单包串行 (-p 1)，避免双核云端 Runner 上磁盘 fsync 与跨包并发争抢导致毫秒级超时断言抖动。
+          TMPDIR=/dev/shm go test -p 1 -count=1 ./...
           go build ./...
 
-      - name: 迁移工具模块校验、静态检查、竞态单测与编译
+      - name: 迁移工具模块校验、静态检查、单测与编译
         working-directory: backend/tools/migrate
         run: |
           go mod verify
           go vet ./...
-          go test -race -count=1 ./...
+          TMPDIR=/dev/shm go test -p 1 -count=1 ./...
           go build ./...
 
       - name: Nginx 413 上游透传与脱敏日志契约测试
@@ -327,7 +328,7 @@ jobs:
           test "$(printf '%s\n' "$status_out" | grep -c ' applied ')" -eq 10
           SIYIGE_MIGRATION_TEST=1 \
           SIYIGE_MIGRATION_PASSWORD_FILE="$migrator_secret" \
-            go test -v -race -count=1 ./...
+            go test -v -p 1 -count=1 ./...
 
       - name: 执行后端隔离 MySQL 集成测试
         working-directory: backend
@@ -340,7 +341,7 @@ jobs:
           DB_USER=siyige_test_app \
           DB_PASSWORD_FILE="$app_secret" \
           AI_MODE=disabled \
-            go test -v -race -count=1 ./tests/integration/...
+            go test -v -p 1 -count=1 ./tests/integration/...
 
       - name: 清理隔离 MySQL 容器、数据卷与临时口令
         if: always()

@@ -2,12 +2,16 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
 import type { AuthState } from '../../auth/state'
-import { createDebateApi, hasNonWhitespace, isEntityId, type Debate, type Topic, type Stance } from '../../api/debate'
+import { createDebateApi, hasNonWhitespace, isEntityId, type Topic, type Stance } from '../../api/debate'
 import { createFirstTurnState, feedback } from '../../debate/firstTurn'
 import SummaryPanel from './SummaryPanel.vue'
 
 const props = defineProps<{ auth: AuthState; route: string }>()
-const emit = defineEmits<{ 'new-practice': [] }>()
+const emit = defineEmits<{
+  'new-practice': []
+  'open-topics': []
+  'open-history': []
+}>()
 const api = createDebateApi(props.auth.client)
 const panel = createFirstTurnState(api)
 const {
@@ -21,14 +25,6 @@ const loadingTopics = ref(false)
 const topicError = ref('')
 const createAttempted = ref(false)
 const input = ref('')
-
-const historyVisible = ref(false)
-const historyLoading = ref(false)
-const historyError = ref('')
-const historyItems = ref<Debate[]>([])
-const historyTotal = ref(0)
-const historyPage = ref(1)
-const historyPageSize = 10
 
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
@@ -54,30 +50,6 @@ async function loadTopics() {
     if (active) { topics.value = result; topicId.value = result[0]?.id ?? '' }
   } catch (error) { if (active) topicError.value = feedback(error) }
   finally { if (active) loadingTopics.value = false }
-}
-
-async function loadHistory(page = 1) {
-  if (historyLoading.value) return
-  historyVisible.value = true
-  historyLoading.value = true
-  historyError.value = ''
-  try {
-    const result = await api.list(page, historyPageSize)
-    if (active) {
-      historyItems.value = result.items
-      historyTotal.value = result.total
-      historyPage.value = result.page
-    }
-  } catch (error) {
-    if (active) historyError.value = feedback(error)
-  } finally {
-    if (active) historyLoading.value = false
-  }
-}
-
-async function openFromHistory(debateId: string) {
-  if (locked.value) return
-  await panel.open(debateId)
 }
 
 async function create() {
@@ -116,9 +88,14 @@ onUnmounted(() => { active = false; panel.dispose() })
     <section v-if="!id" class="card" :aria-busy="loadingTopics || busy">
       <div class="debate-heading">
         <h2>选题与立场</h2>
-        <Button type="outline" data-load-history :disabled="locked || historyLoading" @click="loadHistory(1)">
-          {{ historyVisible ? '刷新历史会话' : '查看历史会话' }}
-        </Button>
+        <div class="heading-actions">
+          <Button type="outline" data-open-topics :disabled="locked" @click="emit('open-topics')">
+            辩题列表视图
+          </Button>
+          <Button type="outline" data-open-history :disabled="locked" @click="emit('open-history')">
+            查看历史会话
+          </Button>
+        </div>
       </div>
       <p v-if="loadingTopics" role="status">正在读取预设辩题…</p>
       <p v-else-if="topicError" role="alert">{{ topicError }}</p>
@@ -140,43 +117,6 @@ onUnmounted(() => { active = false; panel.dispose() })
           {{ createAttempted && !busy ? '另建新会话' : '创建会话' }}
         </Button>
       </form>
-
-      <div v-if="historyVisible" class="history-section" data-history-list>
-        <h3>本人历史会话（共 {{ historyTotal }} 场）</h3>
-        <p v-if="historyLoading" role="status">正在读取历史会话…</p>
-        <p v-else-if="historyError" role="alert">{{ historyError }}</p>
-        <p v-else-if="!historyItems.length" class="muted">暂无历史练习记录。</p>
-        <ul v-else class="history-items">
-          <li v-for="item in historyItems" :key="item.id" class="history-item">
-            <div>
-              <strong>{{ item.topic.title }}</strong>
-              <p class="muted">
-                会话 {{ item.id }} · 你：{{ item.user_stance === 'pro' ? '正方' : '反方' }} ·
-                {{ item.status === 'completed' ? '已完成' : '进行中' }}（{{ item.completed_rounds }} / 3 轮） ·
-                {{ localTime(item.updated_at) }}
-              </p>
-            </div>
-            <Button type="outline" :data-open-debate="item.id" :disabled="locked" @click="openFromHistory(item.id)">
-              {{ item.status === 'completed' ? '查看详情与总结' : '继续辩论' }}
-            </Button>
-          </li>
-        </ul>
-        <div v-if="historyTotal > historyPageSize" class="panel-actions">
-          <Button
-            :disabled="locked || historyLoading || historyPage <= 1"
-            @click="loadHistory(historyPage - 1)"
-          >
-            上一页
-          </Button>
-          <span class="muted">第 {{ historyPage }} 页</span>
-          <Button
-            :disabled="locked || historyLoading || historyPage * historyPageSize >= historyTotal"
-            @click="loadHistory(historyPage + 1)"
-          >
-            下一页
-          </Button>
-        </div>
-      </div>
     </section>
 
     <section v-else class="card" :aria-busy="busy" aria-label="首轮辩论面板">
@@ -276,9 +216,6 @@ time { color: #526578; font-size: 12px; }
 .turn-generating { color: #234f72; font-size: 14px; }
 .turn-failed { margin: 12px 0; padding: 16px; border: 1px solid #e6b8be; border-radius: 10px; background: #fff5f6; color: #8a2330; }
 .turn-failed p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.history-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid #d8e0e8; }
-.history-section h3 { margin: 0 0 12px; font-size: 17px; }
-.history-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
-.history-item { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 16px; border: 1px solid #d8e0e8; border-radius: 10px; background: #f9fbfd; }
-.panel-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.heading-actions, .panel-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.panel-actions { margin-top: 24px; }
 </style>

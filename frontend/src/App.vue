@@ -6,6 +6,15 @@ import LoginForm from './components/auth/LoginForm.vue'
 import RegisterForm from './components/auth/RegisterForm.vue'
 import FirstTurnPanel from './components/debate/FirstTurnPanel.vue'
 import { feedback } from './debate/firstTurn'
+import type { Debate, TopLevelView } from './types/api'
+import HistoryView from './views/HistoryView.vue'
+import TopicsView from './views/TopicsView.vue'
+
+function viewFromHash(hash: string): TopLevelView {
+  if (hash === '#topics') return 'topics'
+  if (hash === '#history') return 'history'
+  return 'debate'
+}
 
 const props = defineProps<{ auth?: AuthState }>()
 const auth = props.auth ?? authState
@@ -13,28 +22,74 @@ const mode = ref<'login' | 'register'>('login')
 const restoring = ref(false)
 const message = ref('')
 const route = ref(location.hash)
+const currentView = ref<TopLevelView>(viewFromHash(location.hash))
+const lastDebateRoute = ref(location.hash.startsWith('#debate=') ? location.hash : '')
 const panelVersion = ref(0)
 let active = true
-function routeChanged() { route.value = location.hash }
-function newPractice() {
-  history.replaceState(null, '', location.pathname + location.search)
-  route.value = ''
+
+function routeChanged() {
+  const hash = location.hash
+  if (hash.startsWith('#debate=')) lastDebateRoute.value = hash
+  route.value = hash
+  currentView.value = viewFromHash(hash)
+}
+
+function switchView(view: TopLevelView) {
+  if (location.hash.startsWith('#debate=')) {
+    lastDebateRoute.value = location.hash
+  }
+  if (view === 'topics') {
+    history.replaceState(null, '', `${location.pathname}${location.search}#topics`)
+    route.value = '#topics'
+    currentView.value = 'topics'
+    return
+  }
+  if (view === 'history') {
+    history.replaceState(null, '', `${location.pathname}${location.search}#history`)
+    route.value = '#history'
+    currentView.value = 'history'
+    return
+  }
+  const nextHash = lastDebateRoute.value
+  history.replaceState(null, '', `${location.pathname}${location.search}${nextHash}`)
+  route.value = nextHash
+  currentView.value = 'debate'
+}
+
+function openDebate(debateOrId: string | Debate) {
+  const debateId = typeof debateOrId === 'string' ? debateOrId : debateOrId.id
+  const nextHash = `#debate=${debateId}`
+  lastDebateRoute.value = nextHash
+  history.replaceState(null, '', `${location.pathname}${location.search}${nextHash}`)
+  route.value = nextHash
+  currentView.value = 'debate'
   panelVersion.value++
 }
+
+function newPractice() {
+  lastDebateRoute.value = ''
+  history.replaceState(null, '', location.pathname + location.search)
+  route.value = ''
+  currentView.value = 'debate'
+  panelVersion.value++
+}
+
 watch(() => [auth.state.status, auth.state.user?.id] as const, ([status, id], [previous, previousId]) => {
   // 认证成功会先卸载表单，再轮到其完成事件；由共享状态清除旧失效提示。
   if (status === 'authenticated' && previous !== 'authenticated') message.value = ''
   if (previous === 'authenticated' && (status !== 'authenticated' || id !== previousId)) {
+    lastDebateRoute.value = ''
     history.replaceState(null, '', location.pathname + location.search)
     route.value = ''
+    currentView.value = 'debate'
     mode.value = 'login'
     message.value = status === 'anonymous' ? '登录已结束，请重新登录。' : ''
   }
 })
 async function restore() {
   if (restoring.value || auth.state.pending) return
-  // 创建会话使用 replaceState，不触发 hashchange；重新挂载前读取当前地址。
-  route.value = location.hash
+  // 创建会话或视图切换使用 replaceState，不触发 hashchange；重新挂载前同步当前地址。
+  routeChanged()
   restoring.value = true
   message.value = ''
   try { await auth.restore() } catch (error) { if (active) message.value = feedback(error) }
@@ -76,7 +131,64 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
       </template>
       <template v-else>
         <Button v-if="message" class="restore-button" :disabled="auth.state.pending" @click="restore">恢复登录状态</Button>
-        <FirstTurnPanel :key="`${auth.state.user?.id}:${route}:${panelVersion}`" :auth="auth" :route="route" @new-practice="newPractice" />
+        <nav class="view-nav" aria-label="主视图导航" data-view-nav>
+          <Button
+            :type="currentView === 'debate' ? 'primary' : 'outline'"
+            data-view-tab="debate"
+            :aria-current="currentView === 'debate' ? 'page' : undefined"
+            :disabled="auth.state.pending || restoring"
+            @click="switchView('debate')"
+          >
+            辩论主视图
+          </Button>
+          <Button
+            :type="currentView === 'topics' ? 'primary' : 'outline'"
+            data-view-tab="topics"
+            :aria-current="currentView === 'topics' ? 'page' : undefined"
+            :disabled="auth.state.pending || restoring"
+            @click="switchView('topics')"
+          >
+            辩题列表
+          </Button>
+          <Button
+            :type="currentView === 'history' ? 'primary' : 'outline'"
+            data-view-tab="history"
+            :aria-current="currentView === 'history' ? 'page' : undefined"
+            :disabled="auth.state.pending || restoring"
+            @click="switchView('history')"
+          >
+            历史会话
+          </Button>
+        </nav>
+        <TopicsView
+          v-if="currentView === 'topics'"
+          :key="`topics:${auth.state.user?.id}`"
+          :auth="auth"
+          :disabled="auth.state.pending || restoring"
+          @created="openDebate"
+          @open-debate="openDebate"
+          @open-history="switchView('history')"
+          @back-to-debate="switchView('debate')"
+        />
+        <HistoryView
+          v-else-if="currentView === 'history'"
+          :key="`history:${auth.state.user?.id}`"
+          :auth="auth"
+          :disabled="auth.state.pending || restoring"
+          @select-debate="openDebate"
+          @open-debate="openDebate"
+          @open-topics="switchView('topics')"
+          @back-to-debate="switchView('debate')"
+        />
+        <FirstTurnPanel
+          v-else
+          :key="`${auth.state.user?.id}:${route}:${panelVersion}`"
+          :auth="auth"
+          :route="route"
+          @new-practice="newPractice"
+          @open-topics="switchView('topics')"
+          @open-history="switchView('history')"
+        />
       </template>
       <p class="scope-note">AI 生成内容仅供练习参考，请勿输入个人敏感信息。支持三轮文字辩论与结构化复盘总结。</p>
     </main>
@@ -103,6 +215,7 @@ p { line-height: 1.8; }
 .page-feedback { color: #9f2936; padding: 12px 16px; background: #fff0f0; border-radius: 8px; overflow-wrap: anywhere; }
 .scope-note { font-size: 13px; margin-top: 24px; }
 .restore-button { margin-bottom: 16px; }
+.view-nav { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 button, select, textarea { font: inherit; }
 .arco-btn, select { min-height: 44px; }
 button, select { cursor: pointer; }

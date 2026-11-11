@@ -1,34 +1,53 @@
+import { authState } from '../auth/state'
+import type {
+  CreateDebateRequest,
+  Debate,
+  DebateDetail,
+  DebateListResult,
+  DebateStatus,
+  Message,
+  MessageRole,
+  Stance,
+  SummaryContent,
+  SummaryPoint,
+  SummaryStatus,
+  SummarySuggestion,
+  Topic,
+  Turn,
+  TurnErrorCode,
+  TurnResult,
+  TurnStatus,
+} from '../types/api'
 import { ApiError, GENERATION_TIMEOUT_MS, isRecord, type ApiClient } from './client'
 
-export type Stance = 'pro' | 'con'
-export interface Topic { id: string; title: string; description: string }
-export interface Debate {
-  id: string; topic: Topic; user_stance: Stance; ai_stance: Stance
-  status: 'active' | 'completed'; completed_rounds: number; created_at: string; updated_at: string
+export type {
+  CreateDebateRequest,
+  Debate,
+  DebateDetail,
+  DebateListResult,
+  DebateStatus,
+  Message,
+  MessageRole,
+  Stance,
+  SummaryContent,
+  SummaryPoint,
+  SummaryStatus,
+  SummarySuggestion,
+  Topic,
+  Turn,
+  TurnErrorCode,
+  TurnResult,
+  TurnStatus,
 }
-export interface Message { id: string; role: 'user' | 'assistant'; content: string; created_at: string }
-export interface Turn {
-  id: string; round_no: number; client_request_id: string; status: 'generating' | 'completed' | 'failed'
-  attempt_version: number; error_code: string | null; messages: Message[]
-}
-export interface SummaryPoint { round_no: number; point: string; reason: string }
-export interface SummarySuggestion { round_no: number; action: string; example: string }
-export interface SummaryContent {
-  strengths: SummaryPoint[]
-  issues: SummaryPoint[]
-  suggestions: SummarySuggestion[]
-}
-export type SummaryStatus =
-  | { status: 'not_started'; attempt_version: null }
-  | { status: 'generating'; attempt_version: number }
-  | { status: 'failed'; attempt_version: number; error_code: string }
-  | { status: 'completed'; attempt_version: number; schema_version: number; content: SummaryContent }
-export interface DebateDetail { debate: Debate; turns: Turn[]; summary_status: SummaryStatus }
-export interface TurnResult { turn: Turn; completed_rounds: number; query_url: string }
-export interface DebateListResult { items: Debate[]; total: number; page: number; page_size: number }
 
 const errorCodes = ['model_error', 'model_timeout', 'model_unavailable', 'dependency_unavailable', 'generation_cancelled']
 
+export function isStance(value: unknown): value is Stance {
+  return value === 'pro' || value === 'con'
+}
+function isApiClient(value: unknown): value is ApiClient {
+  return isRecord(value) && typeof value.request === 'function'
+}
 export function isEntityId(value: unknown): value is string {
   return typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value) && BigInt(value) <= 18446744073709551615n
 }
@@ -110,32 +129,67 @@ function isDetail(value: unknown): value is DebateDetail {
     && (value.debate.status === 'active' ? value.summary_status.status === 'not_started' : true)
 }
 
-export function createDebateApi(client: ApiClient) {
+export function createDebateApi(client: ApiClient = authState.client) {
+  async function listTopics(): Promise<Topic[]> {
+    const data = await client.request('/api/v1/topics', {
+      expectedStatus: 200, validate: (v): v is { items: Topic[] } => isRecord(v) && Array.isArray(v.items) && v.items.every(isTopic),
+    })
+    return data.items
+  }
+
+  async function listDebates(page = 1, pageSize = 20): Promise<DebateListResult> {
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) {
+      throw new ApiError('format', '历史分页参数无效。')
+    }
+    return client.request(`/api/v1/debates?page=${page}&page_size=${pageSize}`, {
+      expectedStatus: 200,
+      validate: (v): v is DebateListResult => isRecord(v) && Array.isArray(v.items) && v.items.every(isDebate)
+        && Number.isSafeInteger(v.total) && Number(v.total) >= 0 && v.page === page && v.page_size === pageSize,
+    })
+  }
+
+  function createDebate(topicId: string, stance: Stance): Promise<Debate>
+  function createDebate(request: CreateDebateRequest): Promise<Debate>
+  async function createDebate(topicOrRequest: string | CreateDebateRequest, stance?: Stance): Promise<Debate> {
+    const topicId = typeof topicOrRequest === 'string'
+      ? topicOrRequest
+      : isRecord(topicOrRequest) && typeof topicOrRequest.topic_id === 'string'
+        ? topicOrRequest.topic_id
+        : ''
+    const resolvedStance = typeof topicOrRequest === 'string'
+      ? stance
+      : isRecord(topicOrRequest)
+        ? topicOrRequest.user_stance
+        : undefined
+    const validTopicId = entityId(topicId)
+    if (!isStance(resolvedStance)) {
+      throw new ApiError('format', '立场参数无效。')
+    }
+    return client.request('/api/v1/debates', {
+      method: 'POST',
+      expectedStatus: 201,
+      body: { topic_id: validTopicId, user_stance: resolvedStance },
+      validate: isDebate,
+    })
+  }
+
+  async function getDebateDetail(id: string): Promise<DebateDetail> {
+    const result = await client.request(`/api/v1/debates/${entityId(id)}`, { expectedStatus: 200, validate: isDetail })
+    if (result.debate.id !== id) throw new ApiError('format', '会话响应与请求不一致。')
+    return result
+  }
+
   return {
-    async topics(): Promise<Topic[]> {
-      const data = await client.request('/api/v1/topics', {
-        expectedStatus: 200, validate: (v): v is { items: Topic[] } => isRecord(v) && Array.isArray(v.items) && v.items.every(isTopic),
-      })
-      return data.items
+    topics: listTopics,
+    listTopics,
+    list: listDebates,
+    listDebates,
+    create(topicId: string, stance: Stance): Promise<Debate> {
+      return createDebate(topicId, stance)
     },
-    async list(page = 1, pageSize = 20): Promise<DebateListResult> {
-      if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 50) {
-        throw new ApiError('format', '历史分页参数无效。')
-      }
-      return client.request(`/api/v1/debates?page=${page}&page_size=${pageSize}`, {
-        expectedStatus: 200,
-        validate: (v): v is DebateListResult => isRecord(v) && Array.isArray(v.items) && v.items.every(isDebate)
-          && Number.isSafeInteger(v.total) && Number(v.total) >= 0 && v.page === page && v.page_size === pageSize,
-      })
-    },
-    async create(topicId: string, stance: Stance): Promise<Debate> {
-      return client.request('/api/v1/debates', { method: 'POST', expectedStatus: 201, body: { topic_id: entityId(topicId), user_stance: stance }, validate: isDebate })
-    },
-    async detail(id: string): Promise<DebateDetail> {
-      const result = await client.request(`/api/v1/debates/${entityId(id)}`, { expectedStatus: 200, validate: isDetail })
-      if (result.debate.id !== id) throw new ApiError('format', '会话响应与请求不一致。')
-      return result
-    },
+    createDebate,
+    detail: getDebateDetail,
+    getDebateDetail,
     async send(id: string, content: string, requestId: string, roundNo = 1): Promise<TurnResult> {
       if (!Number.isInteger(roundNo) || roundNo < 1 || roundNo > 3) {
         throw new ApiError('format', '轮次编号无效。')
@@ -182,4 +236,46 @@ export function createDebateApi(client: ApiClient) {
     },
   }
 }
-export type DebateApi = ReturnType<typeof createDebateApi>
+
+// 供成员 B 在 TopicsView（T08）与 HistoryView（T11）中直接按函数名调用；默认复用共享 authState.client。
+export async function listTopics(client: ApiClient = authState.client): Promise<Topic[]> {
+  return createDebateApi(client).listTopics()
+}
+
+export function createDebate(topicId: string, userStance: Stance, client?: ApiClient): Promise<Debate>
+export function createDebate(request: CreateDebateRequest, client?: ApiClient): Promise<Debate>
+export async function createDebate(
+  topicOrRequest: string | CreateDebateRequest,
+  stanceOrClient?: Stance | ApiClient,
+  maybeClient?: ApiClient,
+): Promise<Debate> {
+  if (typeof topicOrRequest === 'string') {
+    const client = maybeClient ?? authState.client
+    return createDebateApi(client).createDebate(topicOrRequest, stanceOrClient as Stance)
+  }
+  const client = isApiClient(stanceOrClient) ? stanceOrClient : authState.client
+  return createDebateApi(client).createDebate(topicOrRequest)
+}
+
+export async function listDebates(
+  page = 1,
+  pageSize = 20,
+  client: ApiClient = authState.client,
+): Promise<DebateListResult> {
+  return createDebateApi(client).listDebates(page, pageSize)
+}
+
+export async function getDebateDetail(
+  id: string,
+  client: ApiClient = authState.client,
+): Promise<DebateDetail> {
+  return createDebateApi(client).getDebateDetail(id)
+}
+
+export type DebateApi = Pick<
+  ReturnType<typeof createDebateApi>,
+  'topics' | 'list' | 'create' | 'detail' | 'send' | 'retryTurn' | 'summary' | 'requestSummary'
+> & Partial<Pick<
+  ReturnType<typeof createDebateApi>,
+  'listTopics' | 'listDebates' | 'createDebate' | 'getDebateDetail'
+>>

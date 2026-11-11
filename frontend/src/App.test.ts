@@ -262,3 +262,59 @@ it('表单登录刚成功时即使 pending 尚在收尾，也必须读取辩题'
   host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
 })
+
+it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占位入口之间无缝切换并保留当前会话', async () => {
+  const debate = {
+    id: '123',
+    topic: { id: '1', title: '开放考核', description: '讨论学习' },
+    user_stance: 'pro',
+    ai_stance: 'con',
+    status: 'active',
+    completed_rounds: 0,
+    created_at: '2026-11-09T00:00:00Z',
+    updated_at: '2026-11-09T00:00:00Z',
+  }
+  fetchMock.mockImplementation(async url => {
+    const u = String(url)
+    if (u.endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
+    if (u.endsWith('/topics')) return response({ items: [debate.topic] })
+    if (u.endsWith('/debates/123')) {
+      return response({ debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
+    }
+    return response(debate, 201)
+  })
+
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
+
+  // 从主视图切换到 TopicsView 占位页
+  host.querySelector<HTMLButtonElement>('[data-view-tab="topics"]')!.click()
+  await nextTick()
+  expect(location.hash).toBe('#topics')
+  expect(host.querySelector('[data-view="topics"]')).not.toBeNull()
+  expect(host.textContent).toContain('T08 页面占位')
+
+  // 从 TopicsView 内部按钮切换到 HistoryView 占位页
+  host.querySelector<HTMLButtonElement>('[data-nav-history]')!.click()
+  await nextTick()
+  expect(location.hash).toBe('#history')
+  expect(host.querySelector('[data-view="history"]')).not.toBeNull()
+  expect(host.textContent).toContain('T11 页面占位')
+
+  // 从 HistoryView 返回辩论主视图并创建会话 123
+  host.querySelector<HTMLButtonElement>('[data-nav-debate]')!.click()
+  await vi.waitFor(() => expect(host.querySelector('select[name="topic"]')).not.toBeNull())
+  click('创建会话')
+  await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
+  expect(location.hash).toBe('#debate=123')
+
+  // 在已打开会话 123 时切到历史占位页，再切回辩论主视图时自动恢复 #debate=123
+  host.querySelector<HTMLButtonElement>('[data-view-tab="history"]')!.click()
+  await nextTick()
+  expect(location.hash).toBe('#history')
+  expect(host.querySelector('[data-view="history"]')).not.toBeNull()
+
+  host.querySelector<HTMLButtonElement>('[data-view-tab="debate"]')!.click()
+  await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
+  expect(location.hash).toBe('#debate=123')
+})

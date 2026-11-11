@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDebateApi, type SummaryContent } from './debate'
+import {
+  createDebate,
+  createDebateApi,
+  getDebateDetail,
+  listDebates,
+  listTopics,
+  type SummaryContent,
+} from './debate'
 import { createApiClient } from './client'
 
 const time = '2026-11-09T00:00:00Z'
@@ -142,5 +149,71 @@ describe('辩论与总结 API 边界', () => {
       expect(list.items).toHaveLength(1)
       expect(list.total).toBe(1)
     } finally { fetcher.mockRestore() }
+  })
+
+  it('提供供成员 B 直接调用的 listTopics、createDebate、listDebates(page, pageSize)、getDebateDetail 函数与契约校验', async () => {
+    const debateItem = {
+      id: '123',
+      topic,
+      user_stance: 'pro' as const,
+      ai_stance: 'con' as const,
+      status: 'active' as const,
+      completed_rounds: 0,
+      created_at: time,
+      updated_at: time,
+    }
+    const detailData = {
+      debate: debateItem,
+      turns: [],
+      summary_status: { status: 'not_started' as const, attempt_version: null },
+    }
+    const fetcher = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(reply({ items: [topic] }, 200))
+      .mockResolvedValueOnce(reply(debateItem, 201))
+      .mockResolvedValueOnce(reply({ ...debateItem, user_stance: 'con', ai_stance: 'pro' }, 201))
+      .mockResolvedValueOnce(reply({ items: [debateItem], total: 1, page: 1, page_size: 20 }, 200))
+      .mockResolvedValueOnce(reply({ items: [debateItem], total: 1, page: 2, page_size: 5 }, 200))
+      .mockResolvedValueOnce(reply(detailData, 200))
+    try {
+      const client = createApiClient({ getCsrfToken: () => 'test-csrf' })
+
+      const topics = await listTopics(client)
+      expect(topics).toEqual([topic])
+      expect(fetcher.mock.calls[0]?.[0]).toBe('/api/v1/topics')
+
+      const createdByArgs = await createDebate('1', 'pro', client)
+      expect(createdByArgs.id).toBe('123')
+      expect(fetcher.mock.calls[1]?.[0]).toBe('/api/v1/debates')
+      expect(fetcher.mock.calls[1]?.[1]?.body).toBe('{"topic_id":"1","user_stance":"pro"}')
+
+      const createdByObject = await createDebate({ topic_id: '1', user_stance: 'con' }, client)
+      expect(createdByObject.user_stance).toBe('con')
+      expect(fetcher.mock.calls[2]?.[1]?.body).toBe('{"topic_id":"1","user_stance":"con"}')
+
+      await expect(createDebate('0', 'pro', client)).rejects.toMatchObject({ kind: 'format' })
+      await expect(
+        createDebate({ topic_id: '1', user_stance: 'invalid' as 'pro' }, client),
+      ).rejects.toMatchObject({ kind: 'format' })
+
+      const defaultPage = await listDebates(undefined, undefined, client)
+      expect(defaultPage.page).toBe(1)
+      expect(defaultPage.page_size).toBe(20)
+      expect(fetcher.mock.calls[3]?.[0]).toBe('/api/v1/debates?page=1&page_size=20')
+
+      const customPage = await listDebates(2, 5, client)
+      expect(customPage.page).toBe(2)
+      expect(customPage.page_size).toBe(5)
+      expect(fetcher.mock.calls[4]?.[0]).toBe('/api/v1/debates?page=2&page_size=5')
+
+      await expect(listDebates(0, 20, client)).rejects.toMatchObject({ kind: 'format' })
+      await expect(listDebates(1, 51, client)).rejects.toMatchObject({ kind: 'format' })
+
+      const detail = await getDebateDetail('123', client)
+      expect(detail.debate.id).toBe('123')
+      expect(fetcher.mock.calls[5]?.[0]).toBe('/api/v1/debates/123')
+      await expect(getDebateDetail('0', client)).rejects.toMatchObject({ kind: 'format' })
+    } finally {
+      fetcher.mockRestore()
+    }
   })
 })

@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { getLiveHealth } from './health'
 import { requestJson } from './client'
 
@@ -25,9 +25,12 @@ const server = createServer((req, res: ServerResponse) => {
     res.write('{"status":')
     const timer = setTimeout(() => res.end('"alive"}'), 200)
     res.on('close', () => clearTimeout(timer))
-  } else {
+  } else if (req.url === '/api/health/live') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end('{"status":"alive"}')
+  } else {
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end('{"error":{"code":"not_found","message":"接口不存在"},"request_id":"test-request"}')
   }
 })
 let baseUrl: string
@@ -47,7 +50,19 @@ afterAll(async () => {
 
 describe('真实 HTTP 健康客户端', () => {
   it('只把有效 alive JSON 判为存活', async () => {
-    await expect(getLiveHealth(`${baseUrl}/health/live`)).resolves.toEqual({ status: 'alive' })
+    await expect(getLiveHealth(`${baseUrl}/api/health/live`)).resolves.toEqual({ status: 'alive' })
+  })
+
+  it('默认请求能访问当前注册的健康路径', async () => {
+    const realFetch = globalThis.fetch
+    // Node 没有页面 Origin；只补浏览器的相对 URL 解析，仍走真实 HTTP 和客户端。
+    vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      realFetch(typeof input === 'string' ? new URL(input, baseUrl) : input, init))
+    try {
+      await expect(getLiveHealth()).resolves.toEqual({ status: 'alive' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('HTTP 失败只暴露受控提示，不泄露服务端正文', async () => {
@@ -63,11 +78,11 @@ describe('真实 HTTP 健康客户端', () => {
   })
 
   it('网络不可达时返回受控失败', async () => {
-    await expect(requestJson('http://127.0.0.1:0/health/live')).rejects.toMatchObject({ kind: 'network' })
+    await expect(requestJson('http://127.0.0.1:0/api/health/live')).rejects.toMatchObject({ kind: 'network' })
   })
 
   it('失败后允许显式发起新的成功请求', async () => {
     await expect(getLiveHealth(`${baseUrl}/unavailable`)).rejects.toMatchObject({ kind: 'http' })
-    await expect(getLiveHealth(`${baseUrl}/health/live`)).resolves.toEqual({ status: 'alive' })
+    await expect(getLiveHealth(`${baseUrl}/api/health/live`)).resolves.toEqual({ status: 'alive' })
   })
 })

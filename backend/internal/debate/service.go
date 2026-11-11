@@ -3,6 +3,7 @@ package debate
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"github.com/bingqilin456/DebateForge/backend/internal/ai"
 	"sync"
@@ -131,11 +132,24 @@ func (s *Service) Detail(ctx context.Context, uid, id uint64) (Detail, error) {
 	}
 	return s.store.Detail(ctx, uid, id)
 }
+func (s *Service) GetSummary(ctx context.Context, uid, id uint64) (SummaryStatus, error) {
+	if err := s.waitStartupScan(ctx); err != nil {
+		return SummaryStatus{}, dependency(err, false)
+	}
+	summary, err := s.store.GetSummary(ctx, uid, id)
+	if err != nil {
+		return SummaryStatus{}, err
+	}
+	return summary.DTO(), nil
+}
 func turnData(d Detail, t Turn) TurnData {
 	return TurnData{t.DTO(), d.Debate.CompletedRounds, "/api/v1/debates/" + formatID(d.Debate.ID)}
 }
 func failedDetails(d Debate, t Turn) *FailureDetails {
-	return &FailureDetails{formatID(t.ID), "failed", t.AttemptVersion, "/api/v1/debates/" + formatID(d.ID)}
+	return &FailureDetails{TurnID: formatID(t.ID), Status: "failed", AttemptVersion: t.AttemptVersion, QueryURL: "/api/v1/debates/" + formatID(d.ID)}
+}
+func failedSummaryDetails(d Debate, sum Summary) *FailureDetails {
+	return &FailureDetails{Status: "failed", AttemptVersion: sum.AttemptVersion, QueryURL: "/api/v1/debates/" + formatID(d.ID) + "/summary"}
 }
 
 func (s *Service) Submit(ctx context.Context, uid, id uint64, in SubmitInput) (TurnData, int, error) {
@@ -150,6 +164,13 @@ func (s *Service) Retry(ctx context.Context, uid, debateID, turnID uint64, in Re
 		return TurnData{}, 0, err
 	}
 	return s.retry(ctx, uid, debateID, turnID, in)
+}
+
+func (s *Service) Summary(ctx context.Context, uid, debateID uint64, in SummaryInput) (SummaryStatus, int, error) {
+	if err := s.gate.Request(uid); err != nil {
+		return SummaryStatus{}, 0, err
+	}
+	return s.summary(ctx, uid, debateID, in)
 }
 
 // submit 由已完成 HTTP 防刷计数的 Handler 调用，避免有效请求被重复计数。
@@ -231,6 +252,124 @@ func (s *Service) retry(ctx context.Context, uid, debateID, turnID uint64, in Re
 	return s.runGeneration(ctx, uid, d, 200)
 }
 
+// summary 负责 completed 会话的结构化总结首次生成、幂等重放与显式重试。
+func (s *Service) summary(ctx context.Context, uid, debateID uint64, in SummaryInput) (SummaryStatus, int, error) {
+	in, err := ValidateSummaryInput(in)
+	if err != nil {
+		return SummaryStatus{}, 0, err
+	}
+	if err := s.waitStartupScan(ctx); err != nil {
+		return SummaryStatus{}, 0, dependency(err, false)
+	}
+	var permit *Permit
+	consumed := false
+	defer func() { permit.Finish(consumed) }()
+	d, fresh, err := s.store.ClaimSummary(ctx, uid, debateID, in, func() error { var e error; permit, e = s.gate.Acquire(uid); return e })
+	if err != nil {
+		var f *Failure
+		if errors.As(err, &f) && f.CommitUnknown {
+			consumed = true
+		}
+		return SummaryStatus{}, 0, err
+	}
+	if d.Summary == nil {
+		return SummaryStatus{}, 0, dependency(nil, false)
+	}
+	summary := *d.Summary
+	if !fresh {
+		switch summary.Status {
+		case "completed":
+			return summary.DTO(), 200, nil
+		case "generating":
+			return summary.DTO(), 202, nil
+		case "failed":
+			if in.Retry {
+				return SummaryStatus{}, 0, &Failure{Code: "attempt_version_conflict", Status: 409, Cause: ErrAttemptVersionConflict, Details: failedSummaryDetails(d.Debate, summary)}
+			}
+			return summary.DTO(), 200, nil
+		}
+		return SummaryStatus{}, 0, dependency(nil, false)
+	}
+	consumed = true
+	successStatus := 201
+	if in.Retry {
+		successStatus = 200
+	}
+	return s.runSummaryGeneration(ctx, uid, d, successStatus)
+}
+
+func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail, successStatus int) (SummaryStatus, int, error) {
+	if d.Summary == nil || len(d.Turns) != ai.TotalRounds {
+		return SummaryStatus{}, 0, dependency(nil, false)
+	}
+	summary := *d.Summary
+	completedTurns := make([]ai.CompletedTurn, 0, ai.TotalRounds)
+	for i := 0; i < ai.TotalRounds; i++ {
+		pt := d.Turns[i]
+		if pt.RoundNo != i+1 || len(pt.Messages) != 2 || pt.Messages[0].Role != "user" || pt.Messages[1].Role != "assistant" {
+			return SummaryStatus{}, 0, dependency(nil, false)
+		}
+		completedTurns = append(completedTurns, ai.CompletedTurn{
+			RoundNo:          pt.RoundNo,
+			UserContent:      pt.Messages[0].Content,
+			AssistantContent: pt.Messages[1].Content,
+		})
+	}
+	result, genErr := s.generateSummary(ctx, ai.SummaryRequest{
+		UserID:     uid,
+		Topic:      ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
+		UserStance: ai.Stance(d.Debate.UserStance),
+		Turns:      completedTurns,
+	})
+	if genErr == nil {
+		var parsed ai.Summary
+		if result.ContentJSON != "" {
+			parsed, genErr = ai.ParseSummary(result.ContentJSON)
+		} else {
+			genErr = ai.ValidateSummary(result.Summary)
+			parsed = result.Summary
+		}
+		if genErr == nil {
+			canonical, mErr := json.Marshal(parsed)
+			if mErr != nil || len(canonical) > ai.MaxSummaryJSONBytes {
+				genErr = &ai.Error{Code: ai.CodeModelError, Message: "总结 JSON 序列化无效或超过大小上限"}
+			} else {
+				result.Summary = parsed
+				result.ContentJSON = string(canonical)
+				if result.SchemaVersion <= 0 {
+					result.SchemaVersion = ai.SummarySchemaVersion
+				}
+			}
+		}
+		if failure, ok := genErr.(*ai.Error); ok {
+			clone := *failure
+			clone.Usage = result.Usage
+			clone.Metadata = result.Metadata
+			genErr = &clone
+		}
+	}
+	if ctx.Err() != nil {
+		genErr = summaryContextError(genErr, result, ctx.Err())
+	}
+	if genErr != nil {
+		code, status, usage, meta := classifyFailure(ctx, genErr)
+		return SummaryStatus{}, 0, s.saveSummaryFailure(ctx, uid, d.Debate, summary, code, status, usage, meta, genErr)
+	}
+	completed, e := s.store.CompleteSummary(ctx, uid, d.Debate, summary, result)
+	if e != nil {
+		var failure *Failure
+		if errors.As(e, &failure) && failure.CommitUnknown {
+			return SummaryStatus{}, 0, dependency(e, true)
+		}
+		code, status := "dependency_unavailable", 503
+		if ctx.Err() != nil {
+			code, status, _, _ = classifyFailure(ctx, summaryContextError(nil, result, ctx.Err()))
+		}
+		return SummaryStatus{}, 0, s.saveSummaryFailure(ctx, uid, d.Debate, summary, code, status, result.Usage, result.Metadata, e)
+	}
+	return completed.DTO(), successStatus, nil
+}
+
 func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, successStatus int) (TurnData, int, error) {
 	if len(d.Turns) == 0 {
 		return TurnData{}, 0, dependency(nil, false)
@@ -307,6 +446,52 @@ func (s *Service) generate(ctx context.Context, req ai.Request) (result ai.Resul
 		err = generationContextError(err, result, callCtx.Err())
 	}
 	return
+}
+
+func (s *Service) generateSummary(ctx context.Context, req ai.SummaryRequest) (result ai.SummaryResult, err error) {
+	callCtx, cancel := context.WithTimeout(ctx, ai.DefaultModelTimeout)
+	defer cancel()
+	defer func() {
+		if recover() != nil {
+			result = ai.SummaryResult{}
+			err = &ai.Error{Code: ai.CodeModelError, Message: "模型总结调用失败"}
+		}
+	}()
+	if s.generator == nil {
+		return result, &ai.Error{Code: ai.CodeModelUnavailable}
+	}
+	sg, ok := s.generator.(ai.SummaryGenerator)
+	if !ok {
+		return result, &ai.Error{Code: ai.CodeModelUnavailable}
+	}
+	result, err = sg.GenerateSummary(callCtx, req)
+	if callCtx.Err() != nil {
+		err = summaryContextError(err, result, callCtx.Err())
+	}
+	return
+}
+
+func summaryContextError(err error, result ai.SummaryResult, reason error) error {
+	usage, meta := result.Usage, result.Metadata
+	var original *ai.Error
+	if errors.As(err, &original) {
+		usage, meta = original.Usage, original.Metadata
+	}
+	code := ai.CodeModelCanceled
+	if errors.Is(reason, context.DeadlineExceeded) {
+		code = ai.CodeModelTimeout
+	}
+	return (&ai.Error{Code: code, Message: "生成请求已中断", Usage: usage, Metadata: meta}).WithCause(errors.Join(reason, err))
+}
+
+func (s *Service) saveSummaryFailure(ctx context.Context, uid uint64, d Debate, sum Summary, code string, status int, usage ai.Usage, meta ai.Metadata, cause error) error {
+	cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer stop()
+	saved, err := s.store.FailSummary(cleanup, uid, d, sum, code, usage, meta)
+	if err != nil {
+		return dependency(errors.Join(err, cause), false)
+	}
+	return &Failure{Code: codeForHTTP(code), Status: status, Cause: cause, Details: failedSummaryDetails(d, saved)}
 }
 
 // 分类不能覆盖已知计费用量；Error 与成功 Result 均可能携带供应商已返回的数据。

@@ -49,6 +49,18 @@ func (s *testStore) ClaimRetry(_ context.Context, _, _, _, _ uint64, admit func(
 	return sample(), !s.replay, nil
 }
 func (s *testStore) RecoverExpiredLeases(context.Context) (int, error) { return 0, nil }
+func (s *testStore) GetSummary(context.Context, uint64, uint64) (*Summary, error) {
+	return nil, nil
+}
+func (s *testStore) ClaimSummary(context.Context, uint64, uint64, SummaryInput, func() error) (Detail, bool, error) {
+	return Detail{}, false, nil
+}
+func (s *testStore) CompleteSummary(context.Context, uint64, Debate, Summary, ai.SummaryResult) (Summary, error) {
+	return Summary{}, nil
+}
+func (s *testStore) FailSummary(context.Context, uint64, Debate, Summary, string, ai.Usage, ai.Metadata) (Summary, error) {
+	return Summary{}, nil
+}
 func (s *testStore) Complete(_ context.Context, _ uint64, _ Debate, _ Turn, _ ai.Result) (Detail, error) {
 	s.completed = true
 	d := sample()
@@ -159,10 +171,11 @@ func TestGenerationTimeoutPreservesLedgerFailure(t *testing.T) {
 
 // memoryStore 在无数据库单测中模拟真实短事务状态机，用于验证三轮推进、显式重试、版本保护、租约恢复与分页隔离。
 type memoryStore struct {
-	now     func() time.Time
-	nextID  uint64
-	debates map[uint64]Debate
-	turns   map[uint64][]Turn
+	now       func() time.Time
+	nextID    uint64
+	debates   map[uint64]Debate
+	turns     map[uint64][]Turn
+	summaries map[uint64]Summary
 }
 
 func newMemoryStore(now func() time.Time) *memoryStore {
@@ -170,10 +183,11 @@ func newMemoryStore(now func() time.Time) *memoryStore {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &memoryStore{
-		now:     now,
-		nextID:  100,
-		debates: make(map[uint64]Debate),
-		turns:   make(map[uint64][]Turn),
+		now:       now,
+		nextID:    100,
+		debates:   make(map[uint64]Debate),
+		turns:     make(map[uint64][]Turn),
+		summaries: make(map[uint64]Summary),
 	}
 }
 
@@ -233,7 +247,12 @@ func (m *memoryStore) Detail(_ context.Context, uid, id uint64) (Detail, error) 
 		return Detail{}, ErrNotFound
 	}
 	turns := append([]Turn(nil), m.turns[id]...)
-	return Detail{Debate: d, Turns: turns}, nil
+	var sum *Summary
+	if s, exists := m.summaries[id]; exists {
+		copySum := s
+		sum = &copySum
+	}
+	return Detail{Debate: d, Turns: turns, Summary: sum}, nil
 }
 
 func (m *memoryStore) Claim(_ context.Context, uid, id uint64, in SubmitInput, admit func() error) (Detail, bool, error) {
@@ -378,6 +397,124 @@ func (m *memoryStore) Fail(_ context.Context, uid uint64, d Debate, t Turn, code
 	return Turn{}, ErrRoundConflict
 }
 
+func (m *memoryStore) GetSummary(_ context.Context, uid, id uint64) (*Summary, error) {
+	d, ok := m.debates[id]
+	if !ok || d.UserID != uid {
+		return nil, ErrNotFound
+	}
+	s, exists := m.summaries[id]
+	if !exists {
+		return nil, nil
+	}
+	copySum := s
+	return &copySum, nil
+}
+
+func (m *memoryStore) ClaimSummary(_ context.Context, uid, debateID uint64, in SummaryInput, admit func() error) (Detail, bool, error) {
+	d, ok := m.debates[debateID]
+	if !ok || d.UserID != uid {
+		return Detail{}, false, ErrNotFound
+	}
+	if d.Status != "completed" || d.CompletedRounds != ai.TotalRounds {
+		return Detail{}, false, ErrRoundConflict
+	}
+	turns := append([]Turn(nil), m.turns[debateID]...)
+	existing, hasExisting := m.summaries[debateID]
+	if !hasExisting {
+		if in.Retry {
+			return Detail{}, false, ErrInvalidRequest
+		}
+		if len(turns) != ai.TotalRounds {
+			return Detail{}, false, ErrRoundConflict
+		}
+		if err := admit(); err != nil {
+			return Detail{}, false, err
+		}
+		now := m.now().UTC()
+		lease := now.Add(LeaseDuration)
+		sum := Summary{
+			ID:             m.allocID(),
+			DebateID:       debateID,
+			Status:         "generating",
+			AttemptVersion: 1,
+			LeaseExpiresAt: &lease,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		m.summaries[debateID] = sum
+		return Detail{Debate: d, Turns: turns, Summary: &sum}, true, nil
+	}
+	if existing.Status == "completed" || existing.Status == "generating" {
+		copySum := existing
+		return Detail{Debate: d, Summary: &copySum}, false, nil
+	}
+	if !in.Retry || in.ExpectedAttemptVersion == nil || existing.AttemptVersion != *in.ExpectedAttemptVersion {
+		copySum := existing
+		return Detail{Debate: d, Summary: &copySum}, false, nil
+	}
+	if len(turns) != ai.TotalRounds {
+		return Detail{}, false, ErrRoundConflict
+	}
+	if err := admit(); err != nil {
+		return Detail{}, false, err
+	}
+	now := m.now().UTC()
+	lease := now.Add(LeaseDuration)
+	existing.Status = "generating"
+	existing.SchemaVersion = nil
+	existing.ContentJSON = nil
+	existing.AttemptVersion++
+	existing.LeaseExpiresAt = &lease
+	existing.ErrorCode = nil
+	existing.UpdatedAt = now
+	m.summaries[debateID] = existing
+	copySum := existing
+	return Detail{Debate: d, Turns: turns, Summary: &copySum}, true, nil
+}
+
+func (m *memoryStore) CompleteSummary(_ context.Context, uid uint64, d Debate, s Summary, result ai.SummaryResult) (Summary, error) {
+	curDebate, ok := m.debates[d.ID]
+	if !ok || curDebate.UserID != uid {
+		return Summary{}, ErrNotFound
+	}
+	cur, exists := m.summaries[d.ID]
+	if !exists || cur.ID != s.ID || cur.Status != "generating" || cur.AttemptVersion != s.AttemptVersion || curDebate.Status != "completed" {
+		return Summary{}, ErrRoundConflict
+	}
+	schemaVer := result.SchemaVersion
+	if schemaVer <= 0 {
+		schemaVer = ai.SummarySchemaVersion
+	}
+	contentJSON := result.ContentJSON
+	cur.Status = "completed"
+	cur.SchemaVersion = &schemaVer
+	cur.ContentJSON = &contentJSON
+	cur.ErrorCode = nil
+	cur.LeaseExpiresAt = nil
+	cur.UpdatedAt = m.now().UTC()
+	m.summaries[d.ID] = cur
+	return cur, nil
+}
+
+func (m *memoryStore) FailSummary(_ context.Context, uid uint64, d Debate, s Summary, code string, _ ai.Usage, _ ai.Metadata) (Summary, error) {
+	curDebate, ok := m.debates[d.ID]
+	if !ok || curDebate.UserID != uid {
+		return Summary{}, ErrNotFound
+	}
+	cur, exists := m.summaries[d.ID]
+	if !exists || cur.ID != s.ID || cur.Status != "generating" || cur.AttemptVersion != s.AttemptVersion {
+		return Summary{}, ErrRoundConflict
+	}
+	cur.Status = "failed"
+	cur.SchemaVersion = nil
+	cur.ContentJSON = nil
+	cur.ErrorCode = &code
+	cur.LeaseExpiresAt = nil
+	cur.UpdatedAt = m.now().UTC()
+	m.summaries[d.ID] = cur
+	return cur, nil
+}
+
 func (m *memoryStore) RecoverExpiredLeases(context.Context) (int, error) {
 	now := m.now().UTC()
 	recovered := 0
@@ -392,6 +529,16 @@ func (m *memoryStore) RecoverExpiredLeases(context.Context) (int, error) {
 			}
 		}
 		m.turns[dID] = turns
+	}
+	for dID, sum := range m.summaries {
+		if sum.Status == "generating" && sum.LeaseExpiresAt != nil && !sum.LeaseExpiresAt.After(now) {
+			sum.Status = "failed"
+			sum.ErrorCode = &code
+			sum.LeaseExpiresAt = nil
+			sum.UpdatedAt = now
+			m.summaries[dID] = sum
+			recovered++
+		}
 	}
 	return recovered, nil
 }
@@ -516,5 +663,149 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	list, err := service.List(context.Background(), 1, 1, 20)
 	if err != nil || list.Total != 2 || len(list.Items) != 2 || list.Items[0].ID != d2.ID || list.Items[1].ID != created.ID {
 		t.Fatalf("unexpected history list: %+v err=%v", list, err)
+	}
+}
+
+func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
+	clock := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+	store := newMemoryStore(func() time.Time { return clock })
+	fake := ai.NewFake()
+	gate := NewGate(func() time.Time { return clock })
+	service := NewService(store, fake, gate)
+
+	created, err := service.Create(context.Background(), 1, 1, "pro")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 未完成辩论拒绝生成总结（409 round_conflict），GET summary 返回 not_started
+	sumStatus, err := service.GetSummary(context.Background(), 1, created.ID)
+	if err != nil || sumStatus.Status != "not_started" || sumStatus.AttemptVersion != nil {
+		t.Fatalf("expected not_started summary status, got %+v err=%v", sumStatus, err)
+	}
+	if _, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{}); !errors.Is(err, ErrRoundConflict) {
+		t.Fatalf("expected ErrRoundConflict on unfinished debate, got %v", err)
+	}
+
+	// 完成 3 轮辩论
+	for r := 1; r <= 3; r++ {
+		clock = clock.Add(time.Minute)
+		_, status, err := service.Submit(context.Background(), 1, created.ID, SubmitInput{
+			RoundNo:         r,
+			Content:         "第" + string(rune('0'+r)) + "轮用户立论与反驳",
+			ClientRequestID: "550e8400-e29b-41d4-a716-44665544001" + string(rune('0'+r)),
+		})
+		if err != nil || status != 201 {
+			t.Fatalf("round %d failed: status=%d err=%v", r, status, err)
+		}
+	}
+
+	// completed 辩论在 not_started 时传 retry=true 返回 400
+	v1 := uint64(1)
+	clock = clock.Add(time.Minute)
+	if _, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: true, ExpectedAttemptVersion: &v1}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest when retry=true on not_started, got %v", err)
+	}
+	if _, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: true}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest when retry=true without version, got %v", err)
+	}
+
+	// 首次总结生成模拟非法 JSON（502 model_error，attempt_version=1），再来一次重试模拟超时（504 model_timeout，attempt_version=2），第三次成功
+	stepGen := ai.NewFake(
+		ai.FakeStep{Result: ai.Result{Content: `{"strengths":[],"issues":[],"suggestions":[]}`}},
+		ai.FakeStep{Err: &ai.Error{Code: ai.CodeModelTimeout}},
+	)
+	service.generator = stepGen
+	clock = clock.Add(time.Minute)
+	_, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: false})
+	var failErr *Failure
+	if !errors.As(err, &failErr) || failErr.Status != 502 || failErr.Code != "model_error" || failErr.Details == nil || failErr.Details.AttemptVersion != 1 || failErr.Details.QueryURL != "/api/v1/debates/"+formatID(created.ID)+"/summary" {
+		t.Fatalf("expected 502 model_error with version 1, got %+v", err)
+	}
+
+	// 失败后传 retry=false 不重调模型，返回已保存的 failed 状态
+	callsAfterFirstFail := stepGen.SummaryCalls()
+	clock = clock.Add(time.Minute)
+	failedStatus, status, err := service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: false})
+	if err != nil || status != 200 || failedStatus.Status != "failed" || failedStatus.AttemptVersion == nil || *failedStatus.AttemptVersion != 1 || stepGen.SummaryCalls() != callsAfterFirstFail {
+		t.Fatalf("retry=false on failed should not call model: status=%d sum=%+v err=%v calls=%d", status, failedStatus, err, stepGen.SummaryCalls())
+	}
+
+	// 详情接口同步反映 failed summary_status
+	detail, err := service.Detail(context.Background(), 1, created.ID)
+	if err != nil || detail.DTO().SummaryStatus.Status != "failed" || detail.DTO().SummaryStatus.AttemptVersion == nil || *detail.DTO().SummaryStatus.AttemptVersion != 1 {
+		t.Fatalf("detail summary_status mismatch: %+v err=%v", detail.DTO().SummaryStatus, err)
+	}
+
+	// 显式重试（expected_attempt_version=1）再次失败，attempt_version 变为 2
+	clock = clock.Add(time.Minute)
+	_, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: true, ExpectedAttemptVersion: &v1})
+	if !errors.As(err, &failErr) || failErr.Status != 504 || failErr.Details == nil || failErr.Details.AttemptVersion != 2 {
+		t.Fatalf("expected 504 with version 2, got %+v", err)
+	}
+	callsAfterSecondFail := stepGen.SummaryCalls()
+
+	// 重发旧版本 expected_attempt_version=1 返回 409 attempt_version_conflict，不调模型
+	clock = clock.Add(time.Minute)
+	_, _, err = service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: true, ExpectedAttemptVersion: &v1})
+	if !errors.As(err, &failErr) || failErr.Status != 409 || failErr.Code != "attempt_version_conflict" || failErr.Details == nil || failErr.Details.AttemptVersion != 2 || stepGen.SummaryCalls() != callsAfterSecondFail {
+		t.Fatalf("expected 409 attempt_version_conflict without model call, got %+v calls=%d", err, stepGen.SummaryCalls())
+	}
+
+	// 使用最新版本 expected_attempt_version=2 显式重试成功（返回 200，attempt_version=3）
+	v2 := uint64(2)
+	clock = clock.Add(time.Minute)
+	completedSum, status, err := service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: true, ExpectedAttemptVersion: &v2})
+	if err != nil || status != 200 || completedSum.Status != "completed" || completedSum.AttemptVersion == nil || *completedSum.AttemptVersion != 3 || completedSum.SchemaVersion == nil || *completedSum.SchemaVersion != 1 || completedSum.Content == nil || len(completedSum.Content.Strengths) == 0 {
+		t.Fatalf("expected retry summary success, got status=%d sum=%+v err=%v", status, completedSum, err)
+	}
+	callsAfterSuccess := stepGen.SummaryCalls()
+
+	// 已完成重放返回 200，不重调模型
+	clock = clock.Add(time.Minute)
+	replaySum, status, err := service.Summary(context.Background(), 1, created.ID, SummaryInput{Retry: false})
+	if err != nil || status != 200 || replaySum.Status != "completed" || stepGen.SummaryCalls() != callsAfterSuccess {
+		t.Fatalf("completed summary replay failed: status=%d calls=%d err=%v", status, stepGen.SummaryCalls(), err)
+	}
+
+	// 验证第二个完成会话首次生成成功返回 201，以及过期 generating 总结租约回收
+	d2, _ := service.Create(context.Background(), 1, 1, "con")
+	service.generator = ai.NewFake()
+	for r := 1; r <= 3; r++ {
+		clock = clock.Add(time.Minute)
+		_, _, err := service.Submit(context.Background(), 1, d2.ID, SubmitInput{
+			RoundNo:         r,
+			Content:         "第二场第" + string(rune('0'+r)) + "轮发言",
+			ClientRequestID: "550e8400-e29b-41d4-a716-44665544002" + string(rune('0'+r)),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	clock = clock.Add(time.Minute)
+	firstSuccess, status, err := service.Summary(context.Background(), 1, d2.ID, SummaryInput{Retry: false})
+	if err != nil || status != 201 || firstSuccess.Status != "completed" || firstSuccess.AttemptVersion == nil || *firstSuccess.AttemptVersion != 1 {
+		t.Fatalf("expected first summary generation 201, got status=%d sum=%+v err=%v", status, firstSuccess, err)
+	}
+
+	// 模拟第三个会话总结卡在 generating 且租约过期
+	d3, _ := service.Create(context.Background(), 1, 1, "pro")
+	expired := clock.Add(-time.Second)
+	store.summaries[d3.ID] = Summary{
+		ID:             store.allocID(),
+		DebateID:       d3.ID,
+		Status:         "generating",
+		AttemptVersion: 1,
+		LeaseExpiresAt: &expired,
+		CreatedAt:      clock,
+		UpdatedAt:      clock,
+	}
+	recovered, err := service.RecoverExpiredLeases(context.Background())
+	if err != nil || recovered != 1 {
+		t.Fatalf("expected 1 expired summary lease recovered, got %d err=%v", recovered, err)
+	}
+	d3Sum, err := service.GetSummary(context.Background(), 1, d3.ID)
+	if err != nil || d3Sum.Status != "failed" || d3Sum.ErrorCode == nil || *d3Sum.ErrorCode != "model_timeout" {
+		t.Fatalf("expired summary not marked failed: %+v err=%v", d3Sum, err)
 	}
 }

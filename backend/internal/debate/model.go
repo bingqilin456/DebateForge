@@ -48,7 +48,7 @@ func (e *Failure) Error() string { return e.Code }
 func (e *Failure) Unwrap() error { return e.Cause }
 
 type FailureDetails struct {
-	TurnID         string `json:"turn_id"`
+	TurnID         string `json:"turn_id,omitempty"`
 	Status         string `json:"status"`
 	AttemptVersion uint64 `json:"attempt_version"`
 	QueryURL       string `json:"query_url"`
@@ -151,9 +151,57 @@ func (t Turn) DTO() TurnDTO {
 	return TurnDTO{formatID(t.ID), t.RoundNo, t.ClientRequestID, t.Status, t.AttemptVersion, t.ErrorCode, messages}
 }
 
+type Summary struct {
+	ID             uint64     `json:"-" gorm:"primaryKey"`
+	DebateID       uint64     `json:"-"`
+	Status         string     `json:"-"`
+	SchemaVersion  *int       `json:"-"`
+	ContentJSON    *string    `json:"-"`
+	AttemptVersion uint64     `json:"-"`
+	LeaseExpiresAt *time.Time `json:"-"`
+	ErrorCode      *string    `json:"-"`
+	ModelName      *string    `json:"-"`
+	PromptVersion  *string    `json:"-"`
+	InputTokens    *uint64    `json:"-"`
+	OutputTokens   *uint64    `json:"-"`
+	LatencyMS      *uint64    `json:"-"`
+	CreatedAt      time.Time  `json:"-"`
+	UpdatedAt      time.Time  `json:"-"`
+}
+
+func (Summary) TableName() string { return "debate_summaries" }
+
+func (s *Summary) DTO() SummaryStatus {
+	if s == nil {
+		return SummaryStatus{Status: "not_started"}
+	}
+	v := s.AttemptVersion
+	out := SummaryStatus{
+		Status:         s.Status,
+		AttemptVersion: &v,
+	}
+	switch s.Status {
+	case "failed":
+		out.ErrorCode = s.ErrorCode
+	case "completed":
+		if s.ContentJSON != nil {
+			if parsed, err := ai.ParseSummary(*s.ContentJSON); err == nil {
+				schemaVer := ai.SummarySchemaVersion
+				if s.SchemaVersion != nil && *s.SchemaVersion > 0 {
+					schemaVer = *s.SchemaVersion
+				}
+				out.SchemaVersion = &schemaVer
+				out.Content = &parsed
+			}
+		}
+	}
+	return out
+}
+
 type Detail struct {
-	Debate Debate
-	Turns  []Turn
+	Debate  Debate
+	Turns   []Turn
+	Summary *Summary
 }
 type DetailDTO struct {
 	Debate        DebateDTO     `json:"debate"`
@@ -161,8 +209,11 @@ type DetailDTO struct {
 	SummaryStatus SummaryStatus `json:"summary_status"`
 }
 type SummaryStatus struct {
-	Status         string  `json:"status"`
-	AttemptVersion *uint64 `json:"attempt_version"`
+	Status         string      `json:"status"`
+	AttemptVersion *uint64     `json:"attempt_version"`
+	ErrorCode      *string     `json:"error_code,omitempty"`
+	SchemaVersion  *int        `json:"schema_version,omitempty"`
+	Content        *ai.Summary `json:"content,omitempty"`
 }
 
 func (d Detail) DTO() DetailDTO {
@@ -170,7 +221,7 @@ func (d Detail) DTO() DetailDTO {
 	for _, t := range d.Turns {
 		turns = append(turns, t.DTO())
 	}
-	return DetailDTO{d.Debate.DTO(), turns, SummaryStatus{Status: "not_started"}}
+	return DetailDTO{d.Debate.DTO(), turns, d.Summary.DTO()}
 }
 
 type TurnData struct {
@@ -185,6 +236,10 @@ type SubmitInput struct {
 }
 type RetryInput struct {
 	ExpectedAttemptVersion uint64 `json:"expected_attempt_version"`
+}
+type SummaryInput struct {
+	Retry                  bool    `json:"retry"`
+	ExpectedAttemptVersion *uint64 `json:"expected_attempt_version"`
 }
 type DebateList struct {
 	Items    []Debate
@@ -245,6 +300,16 @@ func ValidateRetry(in RetryInput) (RetryInput, error) {
 	}
 	return in, nil
 }
+func ValidateSummaryInput(in SummaryInput) (SummaryInput, error) {
+	if in.Retry {
+		if in.ExpectedAttemptVersion == nil || *in.ExpectedAttemptVersion < 1 || *in.ExpectedAttemptVersion == ^uint64(0) {
+			return in, ErrInvalidRequest
+		}
+	} else if in.ExpectedAttemptVersion != nil && (*in.ExpectedAttemptVersion < 1 || *in.ExpectedAttemptVersion == ^uint64(0)) {
+		return in, ErrInvalidRequest
+	}
+	return in, nil
+}
 func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
 	page := DefaultPage
 	if len(pageValues) > 1 {
@@ -280,5 +345,9 @@ type Store interface {
 	ClaimRetry(context.Context, uint64, uint64, uint64, uint64, func() error) (Detail, bool, error)
 	Complete(context.Context, uint64, Debate, Turn, ai.Result) (Detail, error)
 	Fail(context.Context, uint64, Debate, Turn, string, ai.Usage, ai.Metadata) (Turn, error)
+	GetSummary(context.Context, uint64, uint64) (*Summary, error)
+	ClaimSummary(context.Context, uint64, uint64, SummaryInput, func() error) (Detail, bool, error)
+	CompleteSummary(context.Context, uint64, Debate, Summary, ai.SummaryResult) (Summary, error)
+	FailSummary(context.Context, uint64, Debate, Summary, string, ai.Usage, ai.Metadata) (Summary, error)
 	RecoverExpiredLeases(context.Context) (int, error)
 }

@@ -432,6 +432,145 @@ func TestT09LeaseRecoveryOnStartupAndTicker(t *testing.T) {
 	}
 }
 
+type testCombinedGenerator struct {
+	genTurn    func(context.Context, ai.Request) (ai.Result, error)
+	genSummary func(context.Context, ai.SummaryRequest) (ai.SummaryResult, error)
+}
+
+func (g testCombinedGenerator) Generate(c context.Context, r ai.Request) (ai.Result, error) {
+	if g.genTurn != nil {
+		return g.genTurn(c, r)
+	}
+	return ai.NewFake().Generate(c, r)
+}
+
+func (g testCombinedGenerator) GenerateSummary(c context.Context, r ai.SummaryRequest) (ai.SummaryResult, error) {
+	if g.genSummary != nil {
+		return g.genSummary(c, r)
+	}
+	return ai.NewFake().GenerateSummary(c, r)
+}
+
+func TestT10SummaryRetryVersionConflictPendingAndLeaseRecovery(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var summaryCalls atomic.Int32
+	step := atomic.Int32{}
+
+	gen := testCombinedGenerator{
+		genSummary: func(c context.Context, r ai.SummaryRequest) (ai.SummaryResult, error) {
+			n := step.Add(1)
+			summaryCalls.Add(1)
+			switch n {
+			case 1:
+				close(started)
+				select {
+				case <-release:
+					return ai.NewFake().GenerateSummary(c, r)
+				case <-c.Done():
+					return ai.SummaryResult{}, c.Err()
+				}
+			case 2:
+				// 返回非法 Schema JSON（空数组），验证转受控 502 model_error
+				return ai.NewFake(ai.FakeStep{Result: ai.Result{Content: `{"strengths":[],"issues":[],"suggestions":[]}`}}).GenerateSummary(c, r)
+			default:
+				return ai.NewFake().GenerateSummary(c, r)
+			}
+		},
+	}
+
+	f := newDebateFixture(t, gen)
+	defer close(release)
+	var moment atomic.Int64
+	moment.Store(time.Date(2026, 11, 11, 4, 0, 0, 0, time.UTC).Unix())
+	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
+	f.mount(t, gen)
+
+	id := f.create(t)
+	path := "/api/v1/debates/" + id
+	for round := 1; round <= 3; round++ {
+		if r := f.request(t, "POST", path+"/turns", submit("第"+string(rune('0'+round))+"轮内容", uuid.NewString(), round)); r.status != 201 {
+			t.Fatalf("round %d status=%d", round, r.status)
+		}
+		moment.Add(15)
+	}
+
+	// 启动首次总结生成并挂起在途请求，验证进行中 202、之后租约过期扫描回收为 failed
+	done := make(chan apiResult, 1)
+	go func() {
+		done <- f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("summary generator did not start")
+	}
+
+	moment.Add(15)
+	r := f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	if r.status != 202 || summaryCalls.Load() != 1 {
+		t.Fatalf("expected 202 while generating, got status=%d calls=%d", r.status, summaryCalls.Load())
+	}
+
+	// 将 debate_summaries 的 lease_expires_at 设为已过期并运行扫描回收
+	expired := time.Now().UTC().Add(-2 * time.Second)
+	if err := f.db.ORM.Exec("UPDATE debate_summaries SET lease_expires_at = ? WHERE debate_id = ?", expired, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := f.service.RecoverExpiredLeases(context.Background())
+	if err != nil || recovered != 1 {
+		t.Fatalf("expected 1 recovered summary lease, got %d err=%v", recovered, err)
+	}
+
+	// 放行旧尝试，旧尝试不得覆盖已回收的 failed 状态
+	release <- struct{}{}
+	if (<-done).status != 503 {
+		t.Fatal("expired summary attempt reported success after lease recovery")
+	}
+
+	// 失败后传 retry=false 不重调模型，返回 failed 状态
+	callsBeforeNoRetry := summaryCalls.Load()
+	moment.Add(15)
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	var sumStatus debate.SummaryStatus
+	b, _ := json.Marshal(r.data())
+	_ = json.Unmarshal(b, &sumStatus)
+	if r.status != 200 || sumStatus.Status != "failed" || sumStatus.AttemptVersion == nil || *sumStatus.AttemptVersion != 1 || summaryCalls.Load() != callsBeforeNoRetry {
+		t.Fatalf("retry=false on failed summary unexpected: status=%d sum=%+v calls=%d", r.status, sumStatus, summaryCalls.Load())
+	}
+
+	// 第一次显式重试（expected_attempt_version=1）因非法 Schema JSON 再次失败（502 model_error，attempt_version=2）
+	moment.Add(15)
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": true, "expected_attempt_version": 1})
+	var failEnv struct {
+		Error struct {
+			Details *debate.FailureDetails `json:"details"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(r.body, &failEnv)
+	if r.status != 502 || r.errorCode() != "model_error" || failEnv.Error.Details == nil || failEnv.Error.Details.AttemptVersion != 2 || failEnv.Error.Details.QueryURL != path+"/summary" {
+		t.Fatalf("expected 502 model_error with version 2, got status=%d code=%s details=%+v", r.status, r.errorCode(), failEnv.Error.Details)
+	}
+	callsAfterSecondFail := summaryCalls.Load()
+
+	// 重发旧版本 expected_attempt_version=1 返回 409 attempt_version_conflict，不重调模型
+	moment.Add(15)
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": true, "expected_attempt_version": 1})
+	_ = json.Unmarshal(r.body, &failEnv)
+	if r.status != 409 || r.errorCode() != "attempt_version_conflict" || failEnv.Error.Details == nil || failEnv.Error.Details.AttemptVersion != 2 || summaryCalls.Load() != callsAfterSecondFail {
+		t.Fatalf("expected 409 attempt_version_conflict without model call, got status=%d code=%s calls=%d", r.status, r.errorCode(), summaryCalls.Load())
+	}
+
+	// 使用最新版本 expected_attempt_version=2 重试成功（200，attempt_version=3）
+	moment.Add(15)
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": true, "expected_attempt_version": 2})
+	b, _ = json.Marshal(r.data())
+	_ = json.Unmarshal(b, &sumStatus)
+	if r.status != 200 || sumStatus.Status != "completed" || sumStatus.AttemptVersion == nil || *sumStatus.AttemptVersion != 3 || sumStatus.SchemaVersion == nil || *sumStatus.SchemaVersion != 1 || sumStatus.Content == nil {
+		t.Fatalf("expected retry summary 200 completed, got status=%d sum=%+v", r.status, sumStatus)
+	}
+}
+
 func TestT07FakeFailureAndTimeoutPersistWithoutCountingRound(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

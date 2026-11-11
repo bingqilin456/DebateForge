@@ -118,6 +118,21 @@ func (r *Repository) List(ctx context.Context, uid uint64, page, pageSize int) (
 	})
 	return
 }
+func readSummary(tx *gorm.DB, debateID uint64, lock bool) (*Summary, error) {
+	var s Summary
+	q := tx.Where("debate_id = ?", debateID)
+	if lock {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	e := q.First(&s).Error
+	if errors.Is(e, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if e != nil {
+		return nil, dependency(e, false)
+	}
+	return &s, nil
+}
 func (r *Repository) Detail(ctx context.Context, uid, id uint64) (d Detail, err error) {
 	err = r.transaction(ctx, true, func(tx *gorm.DB) error {
 		row, e := owned(tx, uid, id, false)
@@ -125,6 +140,21 @@ func (r *Repository) Detail(ctx context.Context, uid, id uint64) (d Detail, err 
 			return e
 		}
 		d, e = readTurns(tx, row, "")
+		if e != nil {
+			return e
+		}
+		d.Summary, e = readSummary(tx, row.ID, false)
+		return e
+	})
+	return
+}
+func (r *Repository) GetSummary(ctx context.Context, uid, id uint64) (s *Summary, err error) {
+	err = r.transaction(ctx, true, func(tx *gorm.DB) error {
+		row, e := owned(tx, uid, id, false)
+		if e != nil {
+			return e
+		}
+		s, e = readSummary(tx, row.ID, false)
 		return e
 	})
 	return
@@ -371,7 +401,217 @@ func (r *Repository) Fail(ctx context.Context, uid uint64, d Debate, t Turn, cod
 	return
 }
 
-// RecoverExpiredLeases 扫描租约已过期的 generating 轮次，按状态和 attempt_version 条件标记为 failed。
+func currentSummary(tx *gorm.DB, d Debate, s Summary) (Summary, error) {
+	var current Summary
+	e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND debate_id = ?", s.ID, d.ID).First(&current).Error
+	if e != nil {
+		return current, dependency(e, false)
+	}
+	if current.Status != "generating" || current.AttemptVersion != s.AttemptVersion {
+		return current, ErrRoundConflict
+	}
+	return current, nil
+}
+func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in SummaryInput, admit func() error) (d Detail, fresh bool, err error) {
+	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
+		row, e := owned(tx, uid, debateID, true)
+		if e != nil {
+			return e
+		}
+		if row.Status != "completed" || row.CompletedRounds != ai.TotalRounds {
+			return ErrRoundConflict
+		}
+		existing, e := readSummary(tx, debateID, true)
+		if e != nil {
+			return e
+		}
+		if existing == nil {
+			if in.Retry {
+				return ErrInvalidRequest
+			}
+			history, e := readTurns(tx, row, "")
+			if e != nil {
+				return e
+			}
+			if len(history.Turns) != ai.TotalRounds {
+				return ErrRoundConflict
+			}
+			for i := range history.Turns {
+				if history.Turns[i].RoundNo != i+1 || history.Turns[i].Status != "completed" || len(history.Turns[i].Messages) != 2 {
+					return ErrRoundConflict
+				}
+			}
+			if e = admit(); e != nil {
+				return e
+			}
+			now := r.now()
+			lease := now.Add(LeaseDuration)
+			summary := Summary{
+				DebateID:       debateID,
+				Status:         "generating",
+				AttemptVersion: 1,
+				LeaseExpiresAt: &lease,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if e = tx.Create(&summary).Error; e != nil {
+				return dependency(e, false)
+			}
+			history.Summary = &summary
+			d = history
+			fresh = true
+			return nil
+		}
+		if existing.Status == "completed" || existing.Status == "generating" {
+			d = Detail{Debate: row, Summary: existing}
+			return nil
+		}
+		if existing.Status != "failed" {
+			return dependency(errors.New("unexpected summary status"), false)
+		}
+		if !in.Retry {
+			d = Detail{Debate: row, Summary: existing}
+			return nil
+		}
+		if in.ExpectedAttemptVersion == nil || existing.AttemptVersion != *in.ExpectedAttemptVersion {
+			d = Detail{Debate: row, Summary: existing}
+			return nil
+		}
+		history, e := readTurns(tx, row, "")
+		if e != nil {
+			return e
+		}
+		if len(history.Turns) != ai.TotalRounds {
+			return ErrRoundConflict
+		}
+		for i := range history.Turns {
+			if history.Turns[i].RoundNo != i+1 || history.Turns[i].Status != "completed" || len(history.Turns[i].Messages) != 2 {
+				return ErrRoundConflict
+			}
+		}
+		if e = admit(); e != nil {
+			return e
+		}
+		now := r.now()
+		lease := now.Add(LeaseDuration)
+		nextVersion := existing.AttemptVersion + 1
+		values := map[string]any{
+			"status":           "generating",
+			"schema_version":   nil,
+			"content_json":     nil,
+			"attempt_version":  nextVersion,
+			"lease_expires_at": lease,
+			"error_code":       nil,
+			"model_name":       nil,
+			"prompt_version":   nil,
+			"input_tokens":     nil,
+			"output_tokens":    nil,
+			"latency_ms":       nil,
+			"updated_at":       now,
+		}
+		update := tx.Model(&Summary{}).
+			Where("id = ? AND debate_id = ? AND status = ? AND attempt_version = ?",
+				existing.ID, debateID, "failed", *in.ExpectedAttemptVersion).
+			Updates(values)
+		if update.Error != nil {
+			return dependency(update.Error, false)
+		}
+		if update.RowsAffected != 1 {
+			return ErrAttemptVersionConflict
+		}
+		existing.Status = "generating"
+		existing.SchemaVersion = nil
+		existing.ContentJSON = nil
+		existing.AttemptVersion = nextVersion
+		existing.LeaseExpiresAt = &lease
+		existing.ErrorCode = nil
+		existing.UpdatedAt = now
+		history.Summary = existing
+		d = history
+		fresh = true
+		return nil
+	})
+	if err != nil {
+		fresh = false
+	}
+	return
+}
+func (r *Repository) CompleteSummary(ctx context.Context, uid uint64, d Debate, s Summary, result ai.SummaryResult) (saved Summary, err error) {
+	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
+		row, e := owned(tx, uid, d.ID, true)
+		if e != nil {
+			return e
+		}
+		if saved, e = currentSummary(tx, row, s); e != nil {
+			return e
+		}
+		if row.Status != "completed" || row.CompletedRounds != ai.TotalRounds {
+			return ErrRoundConflict
+		}
+		schemaVer := result.SchemaVersion
+		if schemaVer <= 0 {
+			schemaVer = ai.SummarySchemaVersion
+		}
+		contentJSON := result.ContentJSON
+		now := r.now()
+		values := metadata(result.Usage, result.Metadata)
+		values["status"] = "completed"
+		values["schema_version"] = schemaVer
+		values["content_json"] = contentJSON
+		values["error_code"] = nil
+		values["updated_at"] = now
+		update := tx.Model(&Summary{}).Where("id = ? AND status = ? AND attempt_version = ?", s.ID, "generating", s.AttemptVersion).Updates(values)
+		if update.Error != nil {
+			return dependency(update.Error, false)
+		}
+		if update.RowsAffected != 1 {
+			return ErrRoundConflict
+		}
+		saved.Status = "completed"
+		saved.SchemaVersion = &schemaVer
+		saved.ContentJSON = &contentJSON
+		saved.ErrorCode = nil
+		saved.LeaseExpiresAt = nil
+		saved.UpdatedAt = now
+		return nil
+	})
+	return
+}
+func (r *Repository) FailSummary(ctx context.Context, uid uint64, d Debate, s Summary, code string, usage ai.Usage, m ai.Metadata) (saved Summary, err error) {
+	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
+		row, e := owned(tx, uid, d.ID, true)
+		if e != nil {
+			return e
+		}
+		if saved, e = currentSummary(tx, row, s); e != nil {
+			return e
+		}
+		now := r.now()
+		values := metadata(usage, m)
+		values["status"] = "failed"
+		values["schema_version"] = nil
+		values["content_json"] = nil
+		values["error_code"] = code
+		values["updated_at"] = now
+		update := tx.Model(&Summary{}).Where("id = ? AND status = ? AND attempt_version = ?", s.ID, "generating", s.AttemptVersion).Updates(values)
+		if update.Error != nil {
+			return dependency(update.Error, false)
+		}
+		if update.RowsAffected != 1 {
+			return ErrRoundConflict
+		}
+		saved.Status = "failed"
+		saved.SchemaVersion = nil
+		saved.ContentJSON = nil
+		saved.ErrorCode = &code
+		saved.LeaseExpiresAt = nil
+		saved.UpdatedAt = now
+		return nil
+	})
+	return
+}
+
+// RecoverExpiredLeases 扫描租约已过期的 generating 轮次与总结，按状态和 attempt_version 条件标记为 failed。
 func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 	if r == nil || r.db == nil {
 		return 0, nil
@@ -395,6 +635,28 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 				"status":           "failed",
 				"error_code":       "model_timeout",
 				"lease_expires_at": nil,
+			})
+		if update.Error != nil {
+			return recovered, dependency(update.Error, false)
+		}
+		recovered += int(update.RowsAffected)
+	}
+	var expiredSummaries []Summary
+	if err := r.db.WithContext(ctx).
+		Select("id", "debate_id", "attempt_version").
+		Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?", "generating", now).
+		Find(&expiredSummaries).Error; err != nil {
+		return recovered, dependency(err, false)
+	}
+	for _, s := range expiredSummaries {
+		update := r.db.WithContext(ctx).Model(&Summary{}).
+			Where("id = ? AND status = ? AND attempt_version = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?",
+				s.ID, "generating", s.AttemptVersion, now).
+			Updates(map[string]any{
+				"status":           "failed",
+				"error_code":       "model_timeout",
+				"lease_expires_at": nil,
+				"updated_at":       now,
 			})
 		if update.Error != nil {
 			return recovered, dependency(update.Error, false)

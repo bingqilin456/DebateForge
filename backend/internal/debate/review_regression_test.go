@@ -181,6 +181,31 @@ func TestHTTPRetryAndPaginationRoutes(t *testing.T) {
 			t.Fatalf("retry body %s got %d want 400", body, rec.Code)
 		}
 	}
+
+	// 总结接口缺少 CSRF 返回 403，retry=true 缺少或非法 expected_attempt_version 返回 400
+	req = httptest.NewRequest("POST", "/api/v1/debates/101/summary", strings.NewReader(`{"retry":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
+	req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("summary missing csrf got %d want 403", rec.Code)
+	}
+
+	now = now.Add(2 * time.Minute)
+	for _, body := range []string{`{"retry":true}`, `{"retry":true,"expected_attempt_version":0}`, `{"retry":true,"expected_attempt_version":-1}`, `{"retry":false,"expected_attempt_version":0}`} {
+		req = httptest.NewRequest("POST", "/api/v1/debates/101/summary", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "http://127.0.0.1:5173")
+		req.Header.Set("X-CSRF-Token", csrf)
+		req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != 400 {
+			t.Fatalf("summary body %s got %d want 400", body, rec.Code)
+		}
+	}
 }
 func TestReviewInvalidHTTPRequestsAreRateLimited(t *testing.T) {
 	for _, tc := range []struct {

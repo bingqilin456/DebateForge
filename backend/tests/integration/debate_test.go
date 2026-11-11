@@ -269,7 +269,7 @@ func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
 			return
 		}
 		for _, uid := range f.userIDs {
-			for _, q := range []string{"DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
+			for _, q := range []string{"DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_summaries s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
 				if e := db.ORM.WithContext(ctx).Exec(q, uid).Error; e != nil {
 					t.Error("T05 fixture cleanup failed")
 				}
@@ -555,5 +555,98 @@ func TestT11HistoryPaginationAndIsolation(t *testing.T) {
 		if r = f.request(t, "GET", "/api/v1/debates?"+bad, nil); r.status != 400 || r.errorCode() != "invalid_request" {
 			t.Fatalf("bad query %s status=%d code=%s", bad, r.status, r.errorCode())
 		}
+	}
+}
+
+func TestT10SummaryCreationReplayAndOwnership(t *testing.T) {
+	fake := ai.NewFake()
+	f := newDebateFixture(t, fake)
+	var moment atomic.Int64
+	moment.Store(time.Date(2026, 11, 11, 3, 0, 0, 0, time.UTC).Unix())
+	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
+	f.mount(t, fake)
+
+	id := f.create(t)
+	path := "/api/v1/debates/" + id
+
+	// 未开始总结查询返回 not_started 和 null；未完成会话请求总结返回 409 round_conflict
+	r := f.request(t, "GET", path+"/summary", nil)
+	var sumStatus debate.SummaryStatus
+	b, _ := json.Marshal(r.data())
+	if err := json.Unmarshal(b, &sumStatus); err != nil || r.status != 200 || sumStatus.Status != "not_started" || sumStatus.AttemptVersion != nil {
+		t.Fatalf("initial summary status unexpected: status=%d sum=%+v", r.status, sumStatus)
+	}
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	if r.status != 409 || r.errorCode() != "round_conflict" {
+		t.Fatalf("unfinished debate summary status=%d code=%s", r.status, r.errorCode())
+	}
+	moment.Add(15)
+
+	// 完成 3 轮辩论
+	for round := 1; round <= 3; round++ {
+		r = f.request(t, "POST", path+"/turns", submit("第"+string(rune('0'+round))+"轮正式发言", uuid.NewString(), round))
+		if r.status != 201 {
+			t.Fatalf("round %d status=%d", round, r.status)
+		}
+		moment.Add(15)
+	}
+
+	// not_started 时传 retry=true 返回 400 invalid_request
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": true, "expected_attempt_version": 1})
+	if r.status != 400 || r.errorCode() != "invalid_request" {
+		t.Fatalf("not_started retry=true status=%d code=%s", r.status, r.errorCode())
+	}
+	moment.Add(15)
+
+	// 首次生成成功返回 201，持久化 schema_version=1 与结构化总结
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	if r.status != 201 {
+		t.Fatalf("first summary status=%d code=%s", r.status, r.errorCode())
+	}
+	b, _ = json.Marshal(r.data())
+	if err := json.Unmarshal(b, &sumStatus); err != nil || sumStatus.Status != "completed" || sumStatus.AttemptVersion == nil || *sumStatus.AttemptVersion != 1 || sumStatus.SchemaVersion == nil || *sumStatus.SchemaVersion != 1 || sumStatus.Content == nil || len(sumStatus.Content.Strengths) == 0 {
+		t.Fatalf("first summary body unexpected: %+v err=%v", sumStatus, err)
+	}
+	if fake.SummaryCalls() != 1 {
+		t.Fatalf("expected 1 summary call, got %d", fake.SummaryCalls())
+	}
+	moment.Add(15)
+
+	// 已完成重放返回 200，不重新调用模型
+	r = f.request(t, "POST", path+"/summary", map[string]any{"retry": false})
+	if r.status != 200 || fake.SummaryCalls() != 1 {
+		t.Fatalf("completed summary replay status=%d calls=%d", r.status, fake.SummaryCalls())
+	}
+	moment.Add(15)
+
+	// GET summary 与 GET debate 详情的 summary_status 均返回真实 completed 状态及内容
+	r = f.request(t, "GET", path+"/summary", nil)
+	b, _ = json.Marshal(r.data())
+	_ = json.Unmarshal(b, &sumStatus)
+	if r.status != 200 || sumStatus.Status != "completed" || sumStatus.AttemptVersion == nil || *sumStatus.AttemptVersion != 1 || sumStatus.Content == nil {
+		t.Fatalf("get summary unexpected: %+v", sumStatus)
+	}
+	r = f.request(t, "GET", path, nil)
+	var detail debate.DetailDTO
+	b, _ = json.Marshal(r.data())
+	_ = json.Unmarshal(b, &detail)
+	if r.status != 200 || detail.SummaryStatus.Status != "completed" || detail.SummaryStatus.AttemptVersion == nil || *detail.SummaryStatus.AttemptVersion != 1 || detail.SummaryStatus.Content == nil {
+		t.Fatalf("detail summary_status unexpected: %+v", detail.SummaryStatus)
+	}
+
+	// 跨用户访问总结接口统一返回 404 not_found
+	other := f.randomUsername(t)
+	if res, _ := f.register(t, other, integrationPassword); res.status != 201 {
+		t.Fatal("register other")
+	}
+	res, otherCookie, otherCSRF := f.login(t, other, integrationPassword)
+	if res.status != 200 {
+		t.Fatal("login other")
+	}
+	if foreign := f.do(t, "GET", path+"/summary", "", "", "", otherCookie); foreign.status != 404 || foreign.errorCode() != "not_found" {
+		t.Fatalf("foreign GET summary status=%d code=%s", foreign.status, foreign.errorCode())
+	}
+	if foreign := f.do(t, "POST", path+"/summary", `{"retry":false}`, integrationOrigin, otherCSRF, otherCookie); foreign.status != 404 || foreign.errorCode() != "not_found" {
+		t.Fatalf("foreign POST summary status=%d code=%s", foreign.status, foreign.errorCode())
 	}
 }

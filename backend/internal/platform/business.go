@@ -33,7 +33,7 @@ func NewBusinessRouter(logger *slog.Logger, db DatabasePinger, a *auth.Handler, 
 func requestBudget(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		budget := OrdinaryRequestBudget
-		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/debates/:id/turns" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/retry") {
+		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/debates/:id/turns" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/retry" || c.FullPath() == "/api/v1/debates/:id/summary") {
 			budget = ai.DefaultRequestBudget
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), budget)

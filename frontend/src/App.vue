@@ -1,116 +1,114 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Alert, Button, Tag } from '@arco-design/web-vue'
-import { ApiError } from './api/client'
-import { getLiveHealth } from './api/health'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { Button } from '@arco-design/web-vue'
+import { authState, type AuthState } from './auth/state'
+import LoginForm from './components/auth/LoginForm.vue'
+import RegisterForm from './components/auth/RegisterForm.vue'
+import FirstTurnPanel from './components/debate/FirstTurnPanel.vue'
+import { feedback } from './debate/firstTurn'
 
-type CheckStatus = 'checking' | 'success' | 'failure'
-const status = ref<CheckStatus>('checking')
-const message = ref('正在连接本地服务，请稍候。')
-const checkedAt = ref<string | null>(null)
-let inFlight = false
-const title = computed(() => ({ checking: '正在检查连接', success: '本地服务已连通', failure: '连接检查失败' })[status.value])
-
-async function checkHealth() {
-  // 请求完成前不允许重复检查；失败后只由用户明确触发重试。
-  if (inFlight) return
-  inFlight = true
-  status.value = 'checking'
-  message.value = '正在连接本地服务，请稍候。'
-  try {
-    await getLiveHealth()
-    status.value = 'success'
-    message.value = '浏览器已通过本地代理收到 Go 服务的存活响应。'
-  } catch (error) {
-    status.value = 'failure'
-    message.value = error instanceof ApiError ? error.message : '检查失败，请稍后手动重试。'
-  } finally {
-    checkedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-    inFlight = false
-  }
+const props = defineProps<{ auth?: AuthState }>()
+const auth = props.auth ?? authState
+const mode = ref<'login' | 'register'>('login')
+const restoring = ref(false)
+const message = ref('')
+const route = ref(location.hash)
+const panelVersion = ref(0)
+let active = true
+function routeChanged() { route.value = location.hash }
+function newPractice() {
+  history.replaceState(null, '', location.pathname + location.search)
+  route.value = ''
+  panelVersion.value++
 }
-
-onMounted(checkHealth)
+watch(() => [auth.state.status, auth.state.user?.id] as const, ([status, id], [previous, previousId]) => {
+  // 认证成功会先卸载表单，再轮到其完成事件；由共享状态清除旧失效提示。
+  if (status === 'authenticated' && previous !== 'authenticated') message.value = ''
+  if (previous === 'authenticated' && (status !== 'authenticated' || id !== previousId)) {
+    history.replaceState(null, '', location.pathname + location.search)
+    route.value = ''
+    mode.value = 'login'
+    message.value = status === 'anonymous' ? '登录已结束，请重新登录。' : ''
+  }
+})
+async function restore() {
+  if (restoring.value || auth.state.pending) return
+  // 创建会话使用 replaceState，不触发 hashchange；重新挂载前读取当前地址。
+  route.value = location.hash
+  restoring.value = true
+  message.value = ''
+  try { await auth.restore() } catch (error) { if (active) message.value = feedback(error) }
+  finally { if (active) restoring.value = false }
+}
+async function logout() {
+  if (auth.state.pending || restoring.value) return
+  message.value = ''
+  try { await auth.logout() }
+  catch (error) { if (active) message.value = `${feedback(error)} 退出结果尚未确认，可以恢复登录状态核实。` }
+}
+onMounted(() => { window.addEventListener('hashchange', routeChanged); void restore() })
+onUnmounted(() => { active = false; window.removeEventListener('hashchange', routeChanged) })
 </script>
 
 <template>
   <div class="page">
     <header class="masthead">
-      <span class="brand">思弈阁 <span class="brand-lite">Lite</span></span>
-      <Tag color="gray">工程初始化</Tag>
+      <a class="brand" href="/">思弈阁 <span>Lite</span></a>
+      <div v-if="auth.state.status === 'authenticated'" class="account">
+        <span>{{ auth.state.user?.username }}</span>
+        <Button :disabled="auth.state.pending || restoring" @click="logout">退出登录</Button>
+      </div>
+      <span v-else class="muted">文字辩论练习</span>
     </header>
     <main>
-      <p class="eyebrow">PROJECT BOOTSTRAP</p>
-      <h1>从一次连接开始。</h1>
-      <p class="intro">确认前端与后端在本机正常通信，为后续开发做好准备。</p>
-
-      <section class="status-card" aria-labelledby="check-heading" :aria-busy="status === 'checking'">
-        <div class="card-heading">
-          <h2 id="check-heading">本地联通验证</h2>
-          <span class="local-label">LOCAL</span>
-        </div>
-        <div class="feedback" aria-live="polite" aria-atomic="true">
-          <Alert :type="status === 'success' ? 'success' : status === 'failure' ? 'error' : 'info'" :title="title">
-            {{ message }}
-          </Alert>
-        </div>
-        <dl class="details">
-          <div><dt>检查接口</dt><dd><code>GET /health/live</code></dd></div>
-          <div><dt>最近检查</dt><dd>{{ checkedAt ?? '等待首次检查' }}</dd></div>
-        </dl>
-        <Button type="primary" size="large" long :loading="status === 'checking'" :disabled="status === 'checking'" @click="checkHealth">
-          {{ status === 'checking' ? '检查中…' : status === 'failure' ? '重试连接' : '重新检查' }}
-        </Button>
+      <div class="intro"><p class="eyebrow">思考 · 表达 · 回应</p><h1>让观点经得起交锋。</h1>
+        <p>选择一个辩题，从第一轮表达开始练习。</p>
+      </div>
+      <p v-if="message" class="page-feedback" role="alert">{{ message }}</p>
+      <section v-if="restoring || auth.state.status === 'unknown'" class="card" :aria-busy="restoring" aria-live="polite">
+        <h2>{{ restoring ? '正在恢复登录状态…' : '登录状态尚未确认' }}</h2>
+        <p>请先确认登录状态，再继续练习。</p>
+        <Button :disabled="restoring" @click="restore">恢复登录状态</Button>
       </section>
-
-      <p class="scope-note">本次仅验证本地服务存活。数据库、登录和 AI 辩论将在后续阶段逐步接入。</p>
+      <template v-else-if="auth.state.status === 'anonymous'">
+        <LoginForm v-if="mode === 'login'" :auth="auth" @show-register="mode = 'register'; message = ''" @authenticated="message = ''" />
+        <RegisterForm v-else :auth="auth" @show-login="mode = 'login'; message = ''" />
+      </template>
+      <template v-else>
+        <Button v-if="message" class="restore-button" :disabled="auth.state.pending" @click="restore">恢复登录状态</Button>
+        <FirstTurnPanel :key="`${auth.state.user?.id}:${route}:${panelVersion}`" :auth="auth" :route="route" @new-practice="newPractice" />
+      </template>
+      <p class="scope-note">AI 生成内容仅供练习参考，请勿输入个人敏感信息。当前开放首轮练习。</p>
     </main>
     <footer>思弈阁 Lite · 让每一次表达，都有进步。</footer>
   </div>
 </template>
 
 <style>
-:root {
-  --page-bg: #f6f8fa;
-  --surface: #ffffff;
-  --text: #172b3a;
-  --muted: #526578;
-  --border: #e3e8ee;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: var(--text);
-  background: var(--page-bg);
-  font-synthesis: none;
-}
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: #172b3a; background: #f6f8fa; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
-.page { max-width: 1080px; min-height: 100vh; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; }
-.masthead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.brand { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
-.brand-lite { color: var(--muted); font-size: 15px; font-weight: 500; letter-spacing: 0; }
-main { width: 100%; max-width: 560px; margin: 80px auto 48px; }
-.eyebrow { color: #235b81; font-size: 12px; font-weight: 700; letter-spacing: 2px; margin: 0 0 16px; }
-h1 { margin: 0 0 16px; font-size: clamp(28px, 5vw, 40px); line-height: 1.35; letter-spacing: -1px; }
-.intro { margin: 0 0 32px; color: var(--muted); font-size: 16px; line-height: 1.8; }
-.status-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; box-shadow: 0 8px 30px #172b3a06; }
-.card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
-h2 { margin: 0; font-size: 18px; line-height: 1.5; }
-.local-label { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
-.feedback { min-height: 90px; }
-.details { margin: 24px 0; color: var(--muted); font-size: 14px; }
-.details > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; }
-.details dd { margin: 0; color: var(--text); text-align: right; }
-code { font-size: 13px; overflow-wrap: anywhere; }
-.status-card .arco-btn { min-height: 44px; border-radius: 8px; font-weight: 500; cursor: pointer; }
-.status-card .arco-btn:disabled { cursor: wait; }
-.arco-btn:focus-visible { outline: 3px solid #235b81; outline-offset: 3px; }
-.scope-note { margin: 20px 8px 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
-footer { margin-top: auto; padding-top: 24px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; }
-@media (max-width: 600px) {
-  .page { padding: 24px 20px; }
-  main { margin-top: 56px; }
-  .status-card { padding: 22px 18px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
+.page { max-width: 1040px; min-height: 100vh; margin: auto; padding: 32px; display: flex; flex-direction: column; }
+.masthead, .account { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.brand { color: #172b3a; text-decoration: none; font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+.brand span, .muted { color: #526578; font-size: 14px; font-weight: 400; }
+main { width: 100%; max-width: 760px; margin: 48px auto; }
+.intro { margin-bottom: 32px; }
+.eyebrow { color: #235b81; font-size: 13px; font-weight: 600; letter-spacing: 3px; }
+h1 { margin: 12px 0; font-size: clamp(28px, 5vw, 38px); line-height: 1.4; }
+h2 { margin-top: 0; font-size: 21px; }
+p { line-height: 1.8; }
+.intro > p:last-child, .scope-note { color: #526578; }
+.card { padding: 28px; border: 1px solid #d8e0e8; border-radius: 16px; background: white; margin-bottom: 24px; }
+.page-feedback { color: #9f2936; padding: 12px 16px; background: #fff0f0; border-radius: 8px; overflow-wrap: anywhere; }
+.scope-note { font-size: 13px; margin-top: 24px; }
+.restore-button { margin-bottom: 16px; }
+button, select, textarea { font: inherit; }
+.arco-btn, select { min-height: 44px; }
+button, select { cursor: pointer; }
+button:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
+button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #235b81; outline-offset: 3px; }
+footer { margin-top: auto; color: #526578; font-size: 12px; text-align: center; }
+@media (max-width: 600px) { .page { padding: 24px 16px; } main { margin: 32px auto; } .card { padding: 22px 18px; } .account { gap: 8px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>

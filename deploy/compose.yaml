@@ -1,0 +1,142 @@
+name: siyige-t07
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  edge:
+    image: siyige-edge:${T07_RELEASE:?set T07_RELEASE}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: edge
+    environment:
+      SITE_HOST: ${T07_SITE_HOST:?set T07_SITE_HOST}
+    ports:
+      - "127.0.0.1:80:8080"
+      - "127.0.0.1:443:8443"
+    volumes:
+      - type: bind
+        source: ${T07_TLS_DIR:?set T07_TLS_DIR}
+        target: /run/tls
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      ingress: {}
+      proxy:
+        ipv4_address: 172.30.70.2
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32m
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+
+  app:
+    image: siyige-app:${T07_RELEASE:?set T07_RELEASE}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: app
+    environment:
+      APP_ENV: deploy
+      HTTP_ADDR: 0.0.0.0:8080
+      AUTH_ORIGIN: https://${T07_SITE_HOST:?set T07_SITE_HOST}
+      DB_ADDR: mysql:3306
+      DB_NAME: siyige_deploy
+      DB_USER: siyige_deploy_app
+      DB_PASSWORD_FILE: /run/secrets/app_password
+      AI_MODE: ${T07_AI_MODE:-disabled}
+    secrets:
+      - app_password
+    networks: [proxy, database]
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+
+  mysql:
+    image: mysql:8.4.13
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
+      - --mysqlx=0
+      - --skip-name-resolve
+    environment:
+      TZ: UTC
+      MYSQL_DATABASE: siyige_deploy
+      MYSQL_APP_USER: siyige_deploy_app
+      MYSQL_MIGRATION_USER: siyige_deploy_migrator
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
+      MYSQL_ROOT_HOST: localhost
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init-accounts.sh:/docker-entrypoint-initdb.d/10-accounts.sh:ro
+      - ./grant-app.sql:/opt/siyige/grant-app.sql:ro
+      - ../infra/mysql/mysql-client.sh:/opt/siyige/mysql-client.sh:ro
+    secrets:
+      - root_password
+      - app_password
+      - migrator_password
+    networks: [database]
+    restart: unless-stopped
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "bash", "/opt/siyige/mysql-client.sh", "migrator", "--execute=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 40s
+      retries: 30
+    logging: *logging
+
+  migrate:
+    profiles: [migration]
+    image: siyige-migrate:${T07_RELEASE:?set T07_RELEASE}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: migrate
+    secrets:
+      - migrator_password
+    networks: [database]
+    read_only: true
+    mem_limit: 128m
+    logging: *logging
+
+networks:
+  ingress: {}
+  proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.70.0/28
+          # 动态分配不能占用可信代理的固定地址 172.30.70.2。
+          ip_range: 172.30.70.8/29
+  database:
+    internal: true
+
+volumes:
+  mysql-data:
+
+secrets:
+  root_password:
+    file: ${T07_SECRETS_DIR:?set T07_SECRETS_DIR}/root.txt
+  app_password:
+    file: ${T07_SECRETS_DIR:?set T07_SECRETS_DIR}/app.txt
+  migrator_password:
+    file: ${T07_SECRETS_DIR:?set T07_SECRETS_DIR}/migrator.txt

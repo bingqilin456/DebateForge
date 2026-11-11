@@ -1,0 +1,3 @@
+# Docker 中的 Bash 脚本在 Windows 检出时也必须保留 LF。
+/infra/mysql/*.sh text eol=lf
+/deploy/**/*.sh text eol=lf

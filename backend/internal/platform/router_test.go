@@ -17,12 +17,14 @@ func TestHTTPContract(t *testing.T) {
 		status       int
 		code         string
 	}{
-		{"GET", "/health/live", 200, ""}, {"GET", "/health/ready", 404, "not_found"},
-		{"GET", "/api/v1/missing", 404, "not_found"}, {"POST", "/health/live", 405, "method_not_allowed"},
+		{"GET", "/api/health/live", 200, ""}, {"GET", "/api/health/missing", 404, "not_found"},
+		{"POST", "/api/health/ready", 405, "method_not_allowed"},
+		{"GET", "/api/v1/missing", 404, "not_found"}, {"POST", "/api/health/live", 405, "method_not_allowed"},
+		{"GET", "/health/live", 404, "not_found"}, {"GET", "/health/ready", 404, "not_found"},
 	} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
 			var logs bytes.Buffer
-			router := NewRouter(slog.New(slog.NewJSONHandler(&logs, nil)))
+			router := NewRouter(slog.New(slog.NewJSONHandler(&logs, nil)), nil)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(tc.method, tc.path+"?secret=do-not-log", nil)
 			router.ServeHTTP(rec, req)
@@ -68,7 +70,7 @@ func TestHTTPContract(t *testing.T) {
 
 func TestPanicIsControlled(t *testing.T) {
 	var logs bytes.Buffer
-	router := NewRouter(slog.New(slog.NewJSONHandler(&logs, nil)))
+	router := NewRouter(slog.New(slog.NewJSONHandler(&logs, nil)), nil)
 	router.GET("/panic", func(c *gin.Context) { panic("private-internal-detail") })
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest("GET", "/panic", nil))

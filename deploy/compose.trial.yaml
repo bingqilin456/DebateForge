@@ -1,0 +1,20 @@
+# Requires compose.trial-network.yaml and separate fee safety and target approvals.
+services:
+  app:
+    environment:
+      AI_MODE: deepseek
+      DEEPSEEK_API_KEY_FILE: /run/secrets/trial_deepseek
+      T07_TRIAL_LEDGER: /run/siyige-trial
+      T07_TRIAL_STAGE: ${T07_TRIAL_STAGE:?set approved trial stage}
+    volumes:
+      - type: bind
+        source: ${T07_TRIAL_LEDGER_DIR:?set the shared persistent ledger path}
+        target: /run/siyige-trial
+        bind:
+          create_host_path: false
+    secrets:
+      - trial_deepseek
+
+secrets:
+  trial_deepseek:
+    file: ${T07_TRIAL_KEY_FILE:?set the approved key file path}

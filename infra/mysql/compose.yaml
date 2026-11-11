@@ -1,0 +1,87 @@
+# 仅用于 T02 本地开发和集成测试，不是生产部署配置。
+name: siyige-t02
+
+x-mysql: &mysql
+  image: mysql:8.4.13
+  command:
+    - --character-set-server=utf8mb4
+    - --collation-server=utf8mb4_0900_ai_ci
+    - --default-time-zone=+00:00
+    - --mysqlx=0
+  restart: "no"
+  healthcheck:
+    test: ["CMD", "bash", "/opt/siyige/mysql-client.sh", "app", "--execute=SELECT 1"]
+    interval: 5s
+    timeout: 5s
+    start_period: 40s
+    retries: 30
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  mysql-dev:
+    <<: *mysql
+    environment:
+      TZ: UTC
+      MYSQL_DATABASE: siyige_dev
+      MYSQL_APP_USER: siyige_dev_app
+      MYSQL_MIGRATION_USER: siyige_dev_migrator
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
+      MYSQL_ROOT_HOST: localhost
+    ports:
+      - "127.0.0.1:13306:3306"
+    networks: [dev-db]
+    volumes:
+      - mysql-dev-data:/var/lib/mysql
+      - ./init-accounts.sh:/docker-entrypoint-initdb.d/10-accounts.sh:ro
+      - ./mysql-client.sh:/opt/siyige/mysql-client.sh:ro
+    secrets:
+      - {source: dev-root, target: root_password}
+      - {source: dev-app, target: app_password}
+      - {source: dev-migrator, target: migrator_password}
+
+  mysql-test:
+    <<: *mysql
+    environment:
+      TZ: UTC
+      MYSQL_DATABASE: siyige_test
+      MYSQL_APP_USER: siyige_test_app
+      MYSQL_MIGRATION_USER: siyige_test_migrator
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
+      MYSQL_ROOT_HOST: localhost
+    ports:
+      - "127.0.0.1:13307:3306"
+    networks: [test-db]
+    volumes:
+      - mysql-test-data:/var/lib/mysql
+      - ./init-accounts.sh:/docker-entrypoint-initdb.d/10-accounts.sh:ro
+      - ./mysql-client.sh:/opt/siyige/mysql-client.sh:ro
+    secrets:
+      - {source: test-root, target: root_password}
+      - {source: test-app, target: app_password}
+      - {source: test-migrator, target: migrator_password}
+
+networks:
+  dev-db:
+  test-db:
+
+volumes:
+  mysql-dev-data:
+  mysql-test-data:
+
+secrets:
+  dev-root:
+    file: ../../.cache/t02-mysql/secrets/dev-root.txt
+  dev-app:
+    file: ../../.cache/t02-mysql/secrets/dev-app.txt
+  dev-migrator:
+    file: ../../.cache/t02-mysql/secrets/dev-migrator.txt
+  test-root:
+    file: ../../.cache/t02-mysql/secrets/test-root.txt
+  test-app:
+    file: ../../.cache/t02-mysql/secrets/test-app.txt
+  test-migrator:
+    file: ../../.cache/t02-mysql/secrets/test-migrator.txt

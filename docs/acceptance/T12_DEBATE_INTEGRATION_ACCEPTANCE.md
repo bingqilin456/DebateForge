@@ -53,7 +53,18 @@ npm run build
 | **AC07** | 刷新页面先调用 `GET /api/v1/debates/{id}` 读取已落库的会话、6 条消息与总结；本人历史分页接口 `GET /api/v1/debates?page=1&page_size=10` 正常返回，未完成会话可从历史进入并继续下一轮 | **通过** |
 | **AC08** | 用户乙查询本人历史列表不包含用户甲数据；用户乙访问用户甲的会话详情、提交轮次、重试轮次、生成/查询总结接口均统一返回 `404 not_found` | **通过** |
 
-## 3. 未执行项与遗留边界
+## 3. 独立技术审查与契约一致性核验（2026-11-12）
+
+独立会话 C 在基线 `origin/main`（`9502dc0`，含 PR #10–#13）上对 T12 前端实现及后端 API 契约执行只读技术审查与本地回归验证，**结论为 PASS（无 P0/P1/P2 缺陷）**：
+
+1. **三轮连续推进与等待锁（AC03）**：`frontend/src/debate/firstTurn.ts` 的 `nextRound` 仅在 `debate.status === 'active'`、`completed_rounds < 3` 且 `turns.length === completed_rounds` 时返回 `completed_rounds + 1`；当存在 `generating` 或 `failed` 轮次，或请求在途（`busy`）/状态不明（`uncertain`）时禁用下一轮提交。第 3 轮完成后 `debate.status` 置为 `completed`，前端隐藏发言表单并展示 `SummaryPanel`。
+2. **单次自动总结守卫与失败不循环（AC06）**：`accept()` 仅在 `debate.status === 'completed'`、`summary_status.status === 'not_started'` 且 `autoSummaryForId !== debate.id` 时触发一次 `POST /api/v1/debates/{id}/summary`（`{"retry":false}`），覆盖第 3 轮刚完成与刷新进入 `completed + not_started` 会话两种路径；当 `summary_status.status === 'failed'` 时只展示手动重试按钮，绝不自动循环请求。
+3. **显式重试版本绑定与 409 恢复规则（AC04/AC05/AC06）**：`retryTurn()` 与 `retrySummary()` 均携带界面当前展示的 `expected_attempt_version`；收到 `409 attempt_version_conflict` 或其他错误后，仅置 `needsQuery = true` 并调用 `GET /api/v1/debates/{id}` 刷新最新状态与版本号，**严禁前端自动替换版本号重发**。
+4. **纯文本安全渲染与 XSS 防护（AC06/AC10）**：`FirstTurnPanel.vue` 与 `SummaryPanel.vue` 全部采用 Vue 文本插值（`{{ ... }}`）渲染用户发言、AI 回复及总结的 `strengths`/`issues`/`suggestions` 条目，未使用 `v-html` 或直接展示原始 JSON；`App.test.ts` 已覆盖 `<script>` 与 `<img onerror>` 转义断言。
+5. **本机独立复验结果**：在 `frontend/` 执行 `npm ci --no-audit --no-fund` 后运行 `npm run typecheck`（0 错误）、`npm run test`（10 个测试文件、153 个测试用例全部通过）及 `npm run build`（生产构建通过）；`origin/main` GitHub Actions CI（Run `43018694901`）四项门禁全绿。
+6. **文档细节观察（P3 非阻塞说明）**：`docs/api/API.md` 与 `docs/api/openapi.yaml` 的 14 个 HTTP 操作、路径、请求/响应 Schema、状态码与后端 Gin 路由完全一致；`API.md` 顶部历史摘要句（第 11 行“4 个 T05 业务接口”）与第 515 行 T01 历史小节文字为阶段快照残留，正文接口表（第 13–30 行）与第 507 行“Phase 2 接口晋升说明”已准确反映 14 个已实现接口。
+
+## 4. 未执行项与遗留边界
 
 - 本轮全部验证均在 `AI_MODE=disabled` 或 `AI_MODE=fake` 下完成，**未发起任何真实收费模型调用**。
 - 公网 HTTPS 部署回归（AC09）与备份恢复演练（AC10 运维部分）按计划归属 Phase 4（T16/T17）。

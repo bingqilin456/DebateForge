@@ -52,6 +52,7 @@ Pop-Location
 | 00004 debates | 用户/辩题外键；标题/描述快照 TEXT；pro/con、active/completed 使用区分大小写的 ASCII 字符串和 CHECK；完成轮数 0–3；创建/更新时间；索引 `(user_id,created_at,id)`。 |
 | 00005 debate_turns | 会话外键；轮号 1–3；规范 UUID `client_request_id CHAR(36)`；两组唯一键 `(debate_id,round_no)`、`(debate_id,client_request_id)`；三种状态 CHECK；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建时间；索引 `(status,lease_expires_at)`。 |
 | 00006 messages | 轮次外键；user/assistant CHECK；`(turn_id,role)` 唯一；`content TEXT`、创建时间。 |
+| 00011 debate_summaries | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
 
 生成元数据：`error_code/prompt_version VARCHAR(64)` ASCII，`model_name VARCHAR(255)` utf8mb4，token 用量和耗时为可空 `INT UNSIGNED`。未知用量为 NULL，不能记成 0。2000 码点、UUID 规范化、用户名规则、状态转换、所有权及密码哈希仍由后续业务任务实现；数据库检查不能替代这些规则。`updated_at` 由后续业务显式维护，无隐式 ON UPDATE。文本使用 TEXT，避免自行引入短标题上限；后续新增输入边界须同步契约。
 

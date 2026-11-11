@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,6 +16,13 @@ func TestMySQLHistoryProtection(t *testing.T) {
 	db, cfg := integrationDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	baseline, err := newProvider(db, cfg, os.DirFS("../../migrations"), "goose_db_version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := execute(ctx, baseline, "up", &bytes.Buffer{}); err != nil {
+		t.Fatal("无法建立正式迁移基线", err)
+	}
 	for _, tc := range []struct {
 		name, records string
 		valid         bool

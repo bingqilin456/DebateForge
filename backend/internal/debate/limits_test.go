@@ -28,6 +28,38 @@ func TestInputBoundaries(t *testing.T) {
 	if _, err := ValidateSubmit(SubmitInput{RoundNo: 1, Content: " \ufeff ", ClientRequestID: "550e8400-e29b-41d4-a716-446655440000"}); err == nil {
 		t.Fatal("accepted mixed BOM whitespace")
 	}
+	for _, bad := range []uint64{0, ^uint64(0)} {
+		if _, err := ValidateRetry(RetryInput{ExpectedAttemptVersion: bad}); err == nil {
+			t.Fatalf("accepted invalid expected_attempt_version %d", bad)
+		}
+	}
+	if _, err := ValidateRetry(RetryInput{ExpectedAttemptVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	page, size, err := ParsePagination(nil, nil)
+	if err != nil || page != 1 || size != 20 {
+		t.Fatalf("default pagination got page=%d size=%d err=%v", page, size, err)
+	}
+	page, size, err = ParsePagination([]string{"2"}, []string{"50"})
+	if err != nil || page != 2 || size != 50 {
+		t.Fatalf("custom pagination got page=%d size=%d err=%v", page, size, err)
+	}
+	for _, tc := range []struct {
+		page, size []string
+	}{
+		{[]string{"0"}, nil},
+		{[]string{"-1"}, nil},
+		{[]string{"01"}, nil},
+		{[]string{"1", "2"}, nil},
+		{nil, []string{"0"}},
+		{nil, []string{"51"}},
+		{nil, []string{"abc"}},
+		{nil, []string{"20", "30"}},
+	} {
+		if _, _, err := ParsePagination(tc.page, tc.size); err == nil {
+			t.Fatalf("accepted invalid pagination page=%v size=%v", tc.page, tc.size)
+		}
+	}
 }
 
 func TestAdmissionSlotsQuotaAndRollback(t *testing.T) {

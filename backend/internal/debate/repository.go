@@ -15,6 +15,13 @@ type Repository struct{ db *gorm.DB }
 
 func NewRepository(db *gorm.DB) *Repository { return &Repository{db} }
 
+func (r *Repository) now() time.Time {
+	if r != nil && r.db != nil && r.db.Config != nil && r.db.Config.NowFunc != nil {
+		return r.db.Config.NowFunc().UTC()
+	}
+	return time.Now().UTC()
+}
+
 // transaction 为整个短事务共享 3 秒，而非为事务中的每条 SQL 重置预算。
 // Commit 错误不证明回滚，保留不确定标志，禁止在调用方重试生成。
 func (r *Repository) transaction(ctx context.Context, readOnly bool, fn func(*gorm.DB) error) error {
@@ -88,6 +95,29 @@ func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance string)
 	})
 	return
 }
+func (r *Repository) List(ctx context.Context, uid uint64, page, pageSize int) (list DebateList, err error) {
+	list = DebateList{Items: []Debate{}, Page: page, PageSize: pageSize}
+	err = r.transaction(ctx, true, func(tx *gorm.DB) error {
+		var total int64
+		if e := tx.Model(&Debate{}).Where("user_id = ?", uid).Count(&total).Error; e != nil {
+			return dependency(e, false)
+		}
+		list.Total = total
+		offset := int64(page-1) * int64(pageSize)
+		if total == 0 || offset >= total {
+			return nil
+		}
+		if e := tx.Where("user_id = ?", uid).
+			Order("created_at DESC, id DESC").
+			Limit(pageSize).
+			Offset(int(offset)).
+			Find(&list.Items).Error; e != nil {
+			return dependency(e, false)
+		}
+		return nil
+	})
+	return
+}
 func (r *Repository) Detail(ctx context.Context, uid, id uint64) (d Detail, err error) {
 	err = r.transaction(ctx, true, func(tx *gorm.DB) error {
 		row, e := owned(tx, uid, id, false)
@@ -117,21 +147,26 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 			d = existing
 			return nil
 		}
-		if row.Status != "active" || in.RoundNo != 1 || row.CompletedRounds != 0 {
+		if row.Status != "active" || in.RoundNo < 1 || in.RoundNo > ai.TotalRounds || in.RoundNo != row.CompletedRounds+1 {
 			return ErrRoundConflict
 		}
-		var count int64
-		if e = tx.Model(&Turn{}).Where("debate_id = ? AND round_no = ?", id, in.RoundNo).Count(&count).Error; e != nil {
-			return dependency(e, false)
+		history, e := readTurns(tx, row, "")
+		if e != nil {
+			return e
 		}
-		if count != 0 {
+		if len(history.Turns) != in.RoundNo-1 {
 			return ErrRoundConflict
+		}
+		for i := range history.Turns {
+			if history.Turns[i].RoundNo != i+1 || history.Turns[i].Status != "completed" || len(history.Turns[i].Messages) != 2 {
+				return ErrRoundConflict
+			}
 		}
 		if e = admit(); e != nil {
 			return e
 		}
-		lease := time.Now().UTC().Add(90 * time.Second)
-		turn := Turn{DebateID: id, RoundNo: 1, ClientRequestID: in.ClientRequestID, Status: "generating", AttemptVersion: 1, LeaseExpiresAt: &lease}
+		lease := r.now().Add(LeaseDuration)
+		turn := Turn{DebateID: id, RoundNo: in.RoundNo, ClientRequestID: in.ClientRequestID, Status: "generating", AttemptVersion: 1, LeaseExpiresAt: &lease}
 		if e = tx.Create(&turn).Error; e != nil {
 			return dependency(e, false)
 		}
@@ -140,7 +175,91 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 			return dependency(e, false)
 		}
 		turn.Messages = []Message{message}
-		d = Detail{row, []Turn{turn}}
+		history.Turns = append(history.Turns, turn)
+		d = history
+		fresh = true
+		return nil
+	})
+	if err != nil {
+		fresh = false
+	}
+	return
+}
+func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expectedVersion uint64, admit func() error) (d Detail, fresh bool, err error) {
+	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
+		row, e := owned(tx, uid, debateID, true)
+		if e != nil {
+			return e
+		}
+		all, e := readTurns(tx, row, "")
+		if e != nil {
+			return e
+		}
+		idx := -1
+		for i := range all.Turns {
+			if all.Turns[i].ID == turnID {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return ErrNotFound
+		}
+		turn := all.Turns[idx]
+		if turn.Status == "completed" || turn.Status == "generating" {
+			d = Detail{Debate: row, Turns: []Turn{turn}}
+			return nil
+		}
+		if turn.Status != "failed" {
+			return dependency(errors.New("unexpected turn status"), false)
+		}
+		if turn.AttemptVersion != expectedVersion {
+			d = Detail{Debate: row, Turns: []Turn{turn}}
+			return nil
+		}
+		if row.Status != "active" || turn.RoundNo < 1 || turn.RoundNo > ai.TotalRounds || row.CompletedRounds != turn.RoundNo-1 || idx != len(all.Turns)-1 || len(all.Turns) != turn.RoundNo {
+			return ErrRoundConflict
+		}
+		for i := 0; i < idx; i++ {
+			if all.Turns[i].RoundNo != i+1 || all.Turns[i].Status != "completed" || len(all.Turns[i].Messages) != 2 {
+				return ErrRoundConflict
+			}
+		}
+		if len(turn.Messages) != 1 || turn.Messages[0].Role != "user" {
+			return dependency(errors.New("failed turn missing user message"), false)
+		}
+		if e = admit(); e != nil {
+			return e
+		}
+		lease := r.now().Add(LeaseDuration)
+		nextVersion := turn.AttemptVersion + 1
+		values := map[string]any{
+			"status":           "generating",
+			"attempt_version":  nextVersion,
+			"lease_expires_at": lease,
+			"error_code":       nil,
+			"model_name":       nil,
+			"prompt_version":   nil,
+			"input_tokens":     nil,
+			"output_tokens":    nil,
+			"latency_ms":       nil,
+		}
+		update := tx.Model(&Turn{}).
+			Where("id = ? AND debate_id = ? AND status = ? AND attempt_version = ?",
+				turn.ID, debateID, "failed", expectedVersion).
+			Updates(values)
+		if update.Error != nil {
+			return dependency(update.Error, false)
+		}
+		if update.RowsAffected != 1 {
+			return ErrAttemptVersionConflict
+		}
+		turn.Status = "generating"
+		turn.AttemptVersion = nextVersion
+		turn.LeaseExpiresAt = &lease
+		turn.ErrorCode = nil
+		all.Turns[idx] = turn
+		d = all
 		fresh = true
 		return nil
 	})
@@ -151,7 +270,7 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 }
 func currentTurn(tx *gorm.DB, d Debate, t Turn) (Turn, error) {
 	var current Turn
-	e := tx.Where("id = ? AND debate_id = ?", t.ID, d.ID).First(&current).Error
+	e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND debate_id = ?", t.ID, d.ID).First(&current).Error
 	if e != nil {
 		return current, dependency(e, false)
 	}
@@ -188,7 +307,7 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		if _, e = currentTurn(tx, row, t); e != nil {
 			return e
 		}
-		if row.Status != "active" || row.CompletedRounds != 0 {
+		if row.Status != "active" || t.RoundNo < 1 || t.RoundNo > ai.TotalRounds || row.CompletedRounds != t.RoundNo-1 {
 			return ErrRoundConflict
 		}
 		message := Message{TurnID: t.ID, Role: "assistant", Content: result.Content}
@@ -205,15 +324,22 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		if update.RowsAffected != 1 {
 			return ErrRoundConflict
 		}
-		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", 0).Updates(map[string]any{"completed_rounds": 1, "updated_at": time.Now().UTC()})
+		newRounds := t.RoundNo
+		newStatus := "active"
+		if newRounds >= ai.TotalRounds {
+			newStatus = "completed"
+		}
+		now := r.now()
+		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", t.RoundNo-1).Updates(map[string]any{"completed_rounds": newRounds, "status": newStatus, "updated_at": now})
 		if update.Error != nil {
 			return dependency(update.Error, false)
 		}
 		if update.RowsAffected != 1 {
 			return ErrRoundConflict
 		}
-		row.CompletedRounds = 1
-		row.UpdatedAt = time.Now().UTC()
+		row.CompletedRounds = newRounds
+		row.Status = newStatus
+		row.UpdatedAt = now
 		detail, e = readTurns(tx, row, t.ClientRequestID)
 		return e
 	})
@@ -243,6 +369,39 @@ func (r *Repository) Fail(ctx context.Context, uid uint64, d Debate, t Turn, cod
 		return nil
 	})
 	return
+}
+
+// RecoverExpiredLeases 扫描租约已过期的 generating 轮次，按状态和 attempt_version 条件标记为 failed。
+func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	now := r.now()
+	var expired []Turn
+	if err := r.db.WithContext(ctx).
+		Select("id", "debate_id", "attempt_version").
+		Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?", "generating", now).
+		Find(&expired).Error; err != nil {
+		return 0, dependency(err, false)
+	}
+	recovered := 0
+	for _, t := range expired {
+		update := r.db.WithContext(ctx).Model(&Turn{}).
+			Where("id = ? AND status = ? AND attempt_version = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?",
+				t.ID, "generating", t.AttemptVersion, now).
+			Updates(map[string]any{
+				"status":           "failed",
+				"error_code":       "model_timeout",
+				"lease_expires_at": nil,
+			})
+		if update.Error != nil {
+			return recovered, dependency(update.Error, false)
+		}
+		recovered += int(update.RowsAffected)
+	}
+	return recovered, nil
 }
 
 var _ Store = (*Repository)(nil)

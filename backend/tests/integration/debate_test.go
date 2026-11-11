@@ -235,10 +235,11 @@ func (g testGenerator) Generate(c context.Context, r ai.Request) (ai.Result, err
 
 type debateFixture struct {
 	*authFixture
-	cookie *http.Cookie
-	csrf   string
-	uid    uint64
-	gate   *debate.Gate
+	cookie  *http.Cookie
+	csrf    string
+	uid     uint64
+	gate    *debate.Gate
+	service *debate.Service
 }
 
 func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
@@ -247,6 +248,9 @@ func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
 	f.mount(t, g)
 	// 先登记按本轮确切 user ID 的清理；响应异常也不会遗留 Session 或 Debate。
 	t.Cleanup(func() {
+		if f.service != nil {
+			f.service.StopLeaseRecovery()
+		}
 		f.server.Close()
 		db, err := platform.OpenDatabase(databaseConfig)
 		if err != nil {
@@ -289,8 +293,12 @@ func (f *debateFixture) mount(t *testing.T, g ai.Generator) {
 }
 func (f *debateFixture) mountDB(t *testing.T, g ai.Generator, orm *gorm.DB) {
 	t.Helper()
+	if f.service != nil {
+		f.service.StopLeaseRecovery()
+	}
 	f.server.Close()
-	router := platform.NewBusinessRouter(slog.New(slog.NewJSONHandler(io.Discard, nil)), f.db, f.handler, topic.NewHandler(topic.NewService(topic.NewRepository(f.db.ORM))), debate.NewHandler(debate.NewService(debate.NewRepository(orm), g, f.gate)))
+	f.service = debate.NewService(debate.NewRepository(orm), g, f.gate)
+	router := platform.NewBusinessRouter(slog.New(slog.NewJSONHandler(io.Discard, nil)), f.db, f.handler, topic.NewHandler(topic.NewService(topic.NewRepository(f.db.ORM))), debate.NewHandler(f.service))
 	f.server = httptest.NewUnstartedServer(router)
 	f.server.Config.WriteTimeout = platform.HTTPWriteTimeout
 	f.server.Start()
@@ -356,9 +364,9 @@ func TestT05SlowHTTPPersistsAndReplays(t *testing.T) {
 	if r.status != 409 || r.errorCode() != "idempotency_conflict" {
 		t.Fatal("idempotency round conflict")
 	}
-	r = f.request(t, "POST", path+"/turns", submit("下一轮", uuid.NewString(), 2))
-	if r.status != 409 {
-		t.Fatal("second round admitted")
+	r = f.request(t, "POST", path+"/turns", submit("跳轮", uuid.NewString(), 3))
+	if r.status != 409 || r.errorCode() != "round_conflict" {
+		t.Fatal("skipped round admitted")
 	}
 	f.mount(t, ai.NewFake())
 	r = f.request(t, "GET", path, nil)
@@ -433,5 +441,119 @@ func TestT05InputAuthOwnershipAndTopics(t *testing.T) {
 	r = f.do(t, "POST", path+"/turns", `{"round_no":1,"content":"越权","client_request_id":"`+uuid.NewString()+`"}`, integrationOrigin, csrf, cookie)
 	if r.status != 404 {
 		t.Fatal("foreign turn")
+	}
+}
+
+func TestT09ThreeRoundsAndFourthRoundRejected(t *testing.T) {
+	fake := ai.NewFake()
+	f := newDebateFixture(t, fake)
+	var moment atomic.Int64
+	moment.Store(time.Date(2026, 11, 11, 1, 0, 0, 0, time.UTC).Unix())
+	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
+	f.mount(t, fake)
+
+	id := f.create(t)
+	path := "/api/v1/debates/" + id
+	for round := 1; round <= 3; round++ {
+		content := "第" + string(rune('0'+round)) + "轮用户发言"
+		r := f.request(t, "POST", path+"/turns", submit(content, uuid.NewString(), round))
+		if r.status != 201 {
+			t.Fatalf("round %d status=%d code=%s", round, r.status, r.errorCode())
+		}
+		var data debate.TurnData
+		b, _ := json.Marshal(r.data())
+		if err := json.Unmarshal(b, &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.CompletedRounds != round || data.Turn.RoundNo != round || data.Turn.Status != "completed" || len(data.Turn.Messages) != 2 {
+			t.Fatalf("round %d unexpected turn data: %+v", round, data)
+		}
+		moment.Add(15)
+	}
+	records := fake.Records()
+	if len(records) != 3 || len(records[0].Request.CompletedTurns) != 0 || len(records[1].Request.CompletedTurns) != 1 || len(records[2].Request.CompletedTurns) != 2 {
+		t.Fatalf("unexpected generator history records: %d", len(records))
+	}
+	// 第 4 轮被拒绝（409 round_conflict），数据库保持 3 轮 6 条正式消息且 status=completed
+	r := f.request(t, "POST", path+"/turns", submit("第四轮", uuid.NewString(), 4))
+	if r.status != 409 || r.errorCode() != "round_conflict" {
+		t.Fatalf("fourth round status=%d code=%s", r.status, r.errorCode())
+	}
+	f.mount(t, fake)
+	r = f.request(t, "GET", path, nil)
+	var detail debate.DetailDTO
+	b, _ := json.Marshal(r.data())
+	if err := json.Unmarshal(b, &detail); err != nil || r.status != 200 {
+		t.Fatal("get completed debate detail")
+	}
+	if detail.Debate.Status != "completed" || detail.Debate.CompletedRounds != 3 || len(detail.Turns) != 3 {
+		t.Fatalf("unexpected completed debate state: %+v", detail.Debate)
+	}
+	msgCount := 0
+	for i, turn := range detail.Turns {
+		if turn.RoundNo != i+1 || turn.Status != "completed" || len(turn.Messages) != 2 || turn.Messages[0].Role != "user" || turn.Messages[1].Role != "assistant" {
+			t.Fatalf("round %d invalid turn messages: %+v", i+1, turn)
+		}
+		msgCount += len(turn.Messages)
+	}
+	if msgCount != 6 {
+		t.Fatalf("expected 6 formal messages, got %d", msgCount)
+	}
+}
+
+func TestT11HistoryPaginationAndIsolation(t *testing.T) {
+	f := newDebateFixture(t, ai.NewFake())
+	if r := f.do(t, "GET", "/api/v1/debates", "", "", ""); r.status != 401 {
+		t.Fatalf("unauthenticated list status=%d", r.status)
+	}
+	// 空历史列表
+	r := f.request(t, "GET", "/api/v1/debates", nil)
+	var list debate.DebateListDTO
+	b, _ := json.Marshal(r.data())
+	if err := json.Unmarshal(b, &list); err != nil || r.status != 200 || list.Total != 0 || len(list.Items) != 0 || list.Page != 1 || list.PageSize != 20 {
+		t.Fatalf("empty history list unexpected: %+v", list)
+	}
+	// 创建 3 个会话，验证 (created_at DESC, id DESC) 与分页
+	id1 := f.create(t)
+	id2 := f.create(t)
+	id3 := f.create(t)
+	sameTime := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	if err := f.db.ORM.Exec("UPDATE debates SET created_at = ? WHERE id IN ?", sameTime, []string{id1, id2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	laterTime := sameTime.Add(time.Minute)
+	if err := f.db.ORM.Exec("UPDATE debates SET created_at = ? WHERE id = ?", laterTime, id3).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 另一个用户的会话不出现在当前用户分页中
+	otherUser := f.randomUsername(t)
+	if res, _ := f.register(t, otherUser, integrationPassword); res.status != 201 {
+		t.Fatal("register second user")
+	}
+	res, otherCookie, otherCSRF := f.login(t, otherUser, integrationPassword)
+	if res.status != 200 {
+		t.Fatal("login second user")
+	}
+	if res = f.do(t, "POST", "/api/v1/debates", `{"topic_id":"1","user_stance":"con"}`, integrationOrigin, otherCSRF, otherCookie); res.status != 201 {
+		t.Fatal("create second user debate")
+	}
+
+	r = f.request(t, "GET", "/api/v1/debates?page=1&page_size=2", nil)
+	b, _ = json.Marshal(r.data())
+	_ = json.Unmarshal(b, &list)
+	if r.status != 200 || list.Total != 3 || list.Page != 1 || list.PageSize != 2 || len(list.Items) != 2 || list.Items[0].ID != id3 || list.Items[1].ID != id2 {
+		t.Fatalf("page 1 unexpected: %+v", list)
+	}
+	r = f.request(t, "GET", "/api/v1/debates?page=2&page_size=2", nil)
+	b, _ = json.Marshal(r.data())
+	_ = json.Unmarshal(b, &list)
+	if r.status != 200 || list.Total != 3 || list.Page != 2 || list.PageSize != 2 || len(list.Items) != 1 || list.Items[0].ID != id1 {
+		t.Fatalf("page 2 unexpected: %+v", list)
+	}
+	for _, bad := range []string{"page=0", "page_size=0", "page_size=51", "page=abc"} {
+		if r = f.request(t, "GET", "/api/v1/debates?"+bad, nil); r.status != 400 || r.errorCode() != "invalid_request" {
+			t.Fatalf("bad query %s status=%d code=%s", bad, r.status, r.errorCode())
+		}
 	}
 }

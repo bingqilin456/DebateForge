@@ -19,11 +19,13 @@
 | POST | `/api/v1/auth/logout` | 退出当前 Session | 已实现，认证验收已通过 | 204，无正文 |
 | GET | `/api/v1/auth/me` | 查询当前用户 | 已实现，认证验收已通过 | 200 |
 | GET | `/api/v1/topics` | 查询启用辩题 | 已实现，无收费范围复审与人工验收通过 | 200 |
+| GET | `/api/v1/debates` | 查询本人历史会话分页 | 已实现（T11） | 200 |
 | POST | `/api/v1/debates` | 创建会话 | 已实现，无收费范围复审与人工验收通过 | 201 |
-| POST | `/api/v1/debates/{id}/turns` | 提交首轮、幂等重放 | 已实现，无收费范围复审与人工验收通过 | 201、200、202 |
+| POST | `/api/v1/debates/{id}/turns` | 提交轮次（1–3 轮）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
+| POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
 
-本文与 OpenAPI `paths` 均为 **10 个已实现接口**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；真实模型验收仍待另行授权，未部署。
+本文与 OpenAPI `paths` 均为 **12 个已实现接口**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 三轮状态机、显式重试、租约恢复与 T11 本人历史分页接口已在后端实现；真实模型验收仍待另行授权，未部署。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -69,11 +71,13 @@ T02 当前已实现 [ready Handler](../../backend/internal/platform/health.go)�
 
 | 位置 | 参数/头 | 要求与用途 |
 | --- | --- | --- |
-| 路径 | `id` | 发送轮次、读取详情必填；会话 ID，类型见下表。非法值 400，不存在或非本人会话同为 404。 |
+| 路径 | `id` | 发送轮次、显式重试、读取详情必填；会话 ID，类型见下表。非法值 400，不存在或非本人会话同为 404。 |
+| 路径 | `turn_id` | 显式重试必填；轮次 ID，类型见下表。非法值 400，不存在或不属于当前会话同为 404。 |
+| 查询 | `page`、`page_size` | 本人历史列表可选；`page` 默认 1，`page_size` 默认 20、最大 50，均为正整数十进制字符串，非法值 400。 |
 | Header | `Content-Type` | 有 JSON 请求体时为 `application/json`；非法媒体类型按冻结契约为 400，不擅自改为 415。 |
 | Header | `Origin` | 全部业务 POST 必须与配置的完整 Origin 一致；GET 不要求。浏览器同源请求自然携带，非浏览器调用也须显式提供合法值。 |
 | Cookie | 配置的 Session Cookie | 除注册、登录外的业务接口必需；HTTP 开发为 `siyige_session_dev`，HTTPS 安全策略为 `__Host-siyige_session`。 |
-| Header | `X-CSRF-Token` | 退出、创建会话、发送轮次必需，与 Session 同时校验；注册、登录不要求。 |
+| Header | `X-CSRF-Token` | 退出、创建会话、发送轮次、显式重试轮次必需，与 Session 同时校验；注册、登录不要求。 |
 | 响应头 | `Set-Cookie` | 登录签发、退出清除；生产 `Secure; HttpOnly; SameSite=Lax; Path=/`，不设 Domain，有效期暂定 24 小时。开发可单独命名并关闭 Secure。 |
 | 响应头 | `X-Request-ID` | 所有服务端契约响应的关联标识；JSON 信封中 `request_id` 与其一致，204 仅有响应头。 |
 | 响应头 | `Retry-After` | 429 必须携带等待秒数。 |
@@ -90,9 +94,10 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
 | `CreateDebateRequest` | `topic_id` | string | 是 | 辩题 ID，正整数十进制字符串。 |
 | `CreateDebateRequest` | `user_stance` | string | 是 | `pro` 正方或 `con` 反方。 |
-| `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；T05 只接受首轮，状态或轮序不允许时 409。 |
+| `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；允许 1–3 轮且须满足 `round_no = completed_rounds + 1`，第 4 轮或状态/轮序不允许时 409 `round_conflict`。 |
 | `SubmitTurnRequest` | `content` | string | 是 | 1–2000 个 Unicode 码点，拒绝全空白，保存原文。 |
 | `SubmitTurnRequest` | `client_request_id` | string（UUID） | 是 | 解析后统一为小写带连字符形式；会话内唯一。 |
+| `RetryTurnRequest` | `expected_attempt_version` | integer | 是 | 正整数；必须匹配失败轮次当前的 `attempt_version`，缺失或非法返回 400。 |
 
 退出无请求体；当前用户、辩题、会话详情无请求体或查询参数。除下述 `error.details` 外，响应表中的字段均为对应对象必有字段；`null` 是显式值，不表示省略字段。
 
@@ -105,20 +110,21 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `User` | `id`: EntityId；`username`: string | 用户名为归一化小写值，不返回口令或哈希。 |
 | `AuthData` | `user`: User；`csrf_token`: string | 登录及当前用户复用；Session 原值不在 JSON 中。 |
 | `Topic` | `id`: EntityId；`title`: string；`description`: string | 辩题列表为当前启用题目；会话中的 topic 为创建时快照。 |
-| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；状态为 `active/completed`；创建时 active、完成轮数 0；完整三轮由 T09 接入。时间为 UTC RFC 3339。 |
+| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；状态为 `active/completed`；创建时 active、完成轮数 0，第 3 轮完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
 | `Turn` | `id`: EntityId；`round_no`: integer；`client_request_id`: string（UUID）；`status`: string；`attempt_version`: integer；`error_code`: string 或 null；`messages`: Message[] | 轮号和版本为正整数；状态 `generating/completed/failed`；错误枚举见详情节；按同轮 user、assistant 顺序返回消息。 |
 | `Message` | `id`: EntityId；`role`: string；`content`: string；`created_at`: string | role 仅 `user/assistant`；内容为原文或正式 AI 回复；时间为 UTC RFC 3339。 |
 | `SummaryStatus` | `status`: string；`attempt_version`: null | Phase 1 固定 `not_started` 和 null，后续总结归 T10。 |
 | 错误信封 | `error`: object；`request_id`: string | error 必有 `code`、`message`；可选 `details`，受控错误码见下文。 |
-| `TurnFailureDetails` | `turn_id`: EntityId；`status`: string；`attempt_version`: integer；`query_url`: string | status 固定 `failed`；仅已确认持久化的失败轮次附此对象，提交结果不明时省略；query_url 为相对会话详情地址。 |
+| `TurnFailureDetails` | `turn_id`: EntityId；`status`: string；`attempt_version`: integer；`query_url`: string | status 固定 `failed`；用于已确认持久化的失败轮次或 `attempt_version_conflict`，提交结果不明时省略；query_url 为相对会话详情地址。 |
 
 | 成功响应 Schema | `data` 结构 | 适用接口 |
 | --- | --- | --- |
 | `UserResponse` | User | 注册 |
 | `AuthResponse` | AuthData | 登录、当前用户 |
 | `TopicsResponse` | `items`: Topic[] | 辩题列表，空列表为 `[]` |
+| `DebateListResponse` | `items`: Debate[]；`total`: 非负 integer；`page`: 正整数；`page_size`: 正整数 | 本人历史会话分页，空列表 `items` 为 `[]` |
 | `DebateResponse` | Debate | 创建会话 |
-| `TurnResponse` | `turn`: Turn；`completed_rounds`: 非负 integer；`query_url`: string | 发送或重放首轮；query_url 为 `/api/v1/debates/{id}` 的具体相对地址 |
+| `TurnResponse` | `turn`: Turn；`completed_rounds`: 非负 integer；`query_url`: string | 发送、重放或显式重试轮次；query_url 为 `/api/v1/debates/{id}` 的具体相对地址 |
 | `DebateDetailResponse` | `debate`: Debate；`turns`: Turn[]；`summary_status`: SummaryStatus | 本人会话详情；turns 按 round_no 升序 |
 
 Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`password_hash`、`enabled`、`lease_expires_at` 和模型计费元数据不在这些响应中。冻结契约没有裁定未知 JSON 字段的拒绝策略，OpenAPI 不额外设置 `additionalProperties: false`。ID 数值上界、UTF-8 字节上限、归一化、全空白校验、所有权、立场相反及状态流转仍须应用层验证；OpenAPI 的注释/扩展不等同于这些行为已实现。
@@ -134,8 +140,10 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 | `POST /api/v1/auth/logout` | 204 | 401 unauthenticated；403 csrf_failed；413 request_too_large；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/auth/me` | 200 | 401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/topics` | 200 | 401 unauthenticated；500 internal_error；503 dependency_unavailable |
+| `GET /api/v1/debates` | 200 | 400 invalid_request；401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `POST /api/v1/debates` | 201 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；413 request_too_large；500 internal_error；503 dependency_unavailable |
 | `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 
 ### 1. POST /api/v1/auth/register
@@ -190,7 +198,36 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 {"data":{"items":[{"id":"7","title":"大学课程是否应采用开放式考核","description":"讨论学习效果与评价公平"}]},"request_id":"req-topics"}
 ```
 
-### 6. POST /api/v1/debates
+### 6. GET /api/v1/debates
+
+需认证。支持可选查询参数 `page`（默认 1，正整数）与 `page_size`（默认 20，最大 50，正整数）；非法查询参数返回 `400 invalid_request`。仅查询当前登录用户的会话，按 `(created_at DESC, id DESC)` 排序，返回 `items`、`total`、`page`、`page_size`。列表为空时 `items` 为 `[]`。
+
+`200` 响应
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "123",
+        "topic": {"id":"7","title":"大学课程是否应采用开放式考核","description":"讨论学习效果与评价公平"},
+        "user_stance": "pro",
+        "ai_stance": "con",
+        "status": "completed",
+        "completed_rounds": 3,
+        "created_at": "2026-11-06T08:00:00Z",
+        "updated_at": "2026-11-06T08:05:00Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  },
+  "request_id": "req-list"
+}
+```
+
+### 7. POST /api/v1/debates
 
 需认证、Origin 和 CSRF 校验。`user_stance` 取 `pro` 或 `con`。服务端从 Session 取得 `user_id`，在事务中检查辩题可用并写入 `debates`，保存辩题标题及描述快照，反转得到 `ai_stance`。创建会话的模型调用次数为零。非法 ID 或立场为 `400 invalid_request`，不存在或禁用的辩题为 `404 not_found`。每次成功创建独立会话，客户端遇到传输故障时不自动重发创建请求。
 
@@ -216,9 +253,9 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 }
 ```
 
-### 7. POST /api/v1/debates/{id}/turns
+### 8. POST /api/v1/debates/{id}/turns
 
-需认证、Origin、CSRF 及会话所有权。T05 接受第 1 轮。`round_no` 是正整数，状态或轮序不允许时返回 `409 round_conflict`。`content` 为 1–2000 个 Unicode 码点，拒绝全空白，保存原文。`client_request_id` 为 UUID，解析后统一为小写带连字符形式，在会话内唯一。
+需认证、Origin、CSRF 及会话所有权。T09 放开第 1–3 轮（`round_no = completed_rounds + 1`，最大 3 轮），禁止第 4 轮，状态或轮序不允许时返回 `409 round_conflict`；第 3 轮完整 AI 回复落库后自动将 `debates.status` 置为 `completed`。`content` 为 1–2000 个 Unicode 码点，拒绝全空白，保存原文。`client_request_id` 为 UUID，解析后统一为小写带连字符形式，在会话内唯一。
 
 ```json
 {"round_no":1,"content":"开放式考核可以评估实际应用能力。","client_request_id":"550e8400-e29b-41d4-a716-446655440000"}
@@ -288,7 +325,52 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 `502`、`504`、`503` 或 `409 turn_failed` 确认已有失败轮次时，返回同形状的 `error.details`。数据库提交结果不明时，返回 `503 dependency_unavailable`，省略 `details`。客户端已知会话地址，收到传输错误或生成状态不明时先查详情。
 
-### 8. GET /api/v1/debates/{id}
+### 9. POST /api/v1/debates/{id}/turns/{turn_id}/retry
+
+需认证、Origin、CSRF 及会话与轮次归属校验。请求体必填正整数 `expected_attempt_version`（缺失或非法返回 `400 invalid_request`），不接收新发言内容。仅当 `turn_id` 属于该会话及当前用户、`status=failed` 且当前 `attempt_version` 与 `expected_attempt_version` 匹配时，在短事务内非阻塞获取并发槽并原子更新为 `generating`、`attempt_version+1`，复用已保存的 user 原文调用模型。写回时同样校验 `status=generating` 与 `attempt_version`，防止迟到的旧尝试结果覆盖新尝试。
+
+```json
+{"expected_attempt_version":1}
+```
+
+`200` 重试生成完成（或已完成结果重放），返回持久化后的轮次与当前完成轮数：
+
+```json
+{
+  "data": {
+    "turn": {
+      "id": "456",
+      "round_no": 1,
+      "client_request_id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "completed",
+      "attempt_version": 2,
+      "error_code": null,
+      "messages": [
+        {"id":"901","role":"user","content":"开放式考核可以评估实际应用能力。","created_at":"2026-11-06T08:01:00Z"},
+        {"id":"902","role":"assistant","content":"统一考核仍有助于比较基础知识掌握程度。","created_at":"2026-11-06T08:02:05Z"}
+      ]
+    },
+    "completed_rounds": 1,
+    "query_url": "/api/v1/debates/123"
+  },
+  "request_id": "req-retry"
+}
+```
+
+查到轮次仍为 `generating` 时返回 `202`。当轮次为 `failed` 但 `attempt_version` 已变化（如一次重试再次失败后重发旧版本请求）时，返回 `409 attempt_version_conflict` 并附当前 `status`、`attempt_version`、`query_url`，不再调用模型或消耗生成额度：
+
+```json
+{
+  "error": {
+    "code": "attempt_version_conflict",
+    "message": "请求未完成，请查看会话状态后再操作",
+    "details": {"turn_id":"456","status":"failed","attempt_version":2,"query_url":"/api/v1/debates/123"}
+  },
+  "request_id": "req-version-conflict"
+}
+```
+
+### 10. GET /api/v1/debates/{id}
 
 无查询参数。按 Session 用户和路径 ID 同时匹配。非法 ID 为 `400 invalid_request`，不存在和非本人会话同为 `404 not_found`。读取 `debates` 的快照、按 `round_no` 排序的 `debate_turns` 和已保存 `messages`，同轮先 user 后 assistant。`Turn.error_code` 为已持久化的失败原因，首轮取 `model_error`、`model_timeout`、`model_unavailable`、`dependency_unavailable` 或 `generation_cancelled`，无错误时为 `null`。`generation_cancelled` 只用于请求取消后的已保存状态，客户端通过详情读取。Phase 1 的 `summary_status` 为未开始，后续总结状态由 T10 接入。
 
@@ -335,7 +417,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 | 403 | `csrf_failed` | POST 的 Origin 或适用的 CSRF 校验失败。 |
 | 404 | `not_found` | 路由不存在、辩题不可用、会话不存在或不归当前用户。 |
 | 405 | `method_not_allowed` | 路径不支持该方法。 |
-| 409 | `username_conflict`、`round_conflict`、`idempotency_conflict`、`turn_failed` | 分别为用户名占用、状态或轮序冲突、幂等内容冲突、已失败轮次重放。 |
+| 409 | `username_conflict`、`round_conflict`、`idempotency_conflict`、`turn_failed`、`attempt_version_conflict` | 分别为用户名占用、状态或轮序冲突、幂等内容冲突、已失败轮次重放、显式重试版本不匹配。 |
 | 413 | `request_too_large` | 请求体超过 32 KiB。 |
 | 429 | `rate_limited`、`generation_busy` | 请求频率或每日生成次数超限、模型并发槽满，带 `Retry-After` 秒数。 |
 | 500 | `internal_error` | 未分类内部错误。 |
@@ -345,22 +427,20 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 会话不存在和越权返回相同的 `404 not_found` 结构与提示。错误正文和日志只使用受控消息及关联标识，敏感凭据、SQL、堆栈、用户原文和供应商原始响应留在对外边界之外。
 
-客户端普通请求使用短超时，生成请求使用 70 秒超时。丢失响应、`202` 或生成结果不明时，先 GET 详情，生成中每 2 秒查一次，最多轮询 120 秒。完成后展示已落库结果，失败则显示原文和受控提示，仍生成中则提示稍后再查。前端不自动发起生成或换键重试。Phase 1 首轮的 `attempt_version` 固定从 1 开始并参与写回校验。显式重试的 `expected_attempt_version`、进程崩溃后的租约扫描及第 2/3 轮归 T09。
+客户端普通请求使用短超时，生成请求使用 70 秒超时。丢失响应、`202` 或生成结果不明时，先 GET 详情，生成中每 2 秒查一次，最多轮询 120 秒。完成后展示已落库结果，失败则显示原文和受控提示，仍生成中则提示稍后再查。前端不自动发起生成或换键重试。`attempt_version` 从 1 开始并参与写回校验；显式重试须携带 `expected_attempt_version`。服务启动及每 30 秒扫描 `lease_expires_at` 已过期的 `generating` 轮次（租约 90 秒），以 `status='generating'` 和 `attempt_version` 为条件更新为 `failed`，确保崩溃后不永久卡在 `generating`。
 
-## T05 运行与验证状态
+## T05/T09/T11 运行与验证状态
 
-四个 T05 接口已装配到真实 main。HTTP 入口对生成请求使用 60 秒预算、模型 45 秒、数据库短事务 3 秒；普通接口保留 5 秒短预算。并发“全局 2”仅指单个 Go 进程内所有用户合计，不提供跨实例协调。分钟防刷 6 次也适用于重放，每日 20 次只计新认领，失败也计入；内存计数重启会丢失。
+六个辩论与辩题业务接口已装配到真实 main。HTTP 入口对生成与重试请求使用 60 秒预算、模型 45 秒、数据库短事务 3 秒；普通接口保留 5 秒短预算。并发“全局 2”仅指单个 Go 进程内所有用户合计，不提供跨实例协调。分钟防刷 6 次也适用于重放，每日 20 次只计新认领（含显式重试成功认领），失败也计入；内存计数重启会丢失。
 
-AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式复用 T04 Generator，另行授权后才可使用。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。独立审查及新会话复审 PASS，项目负责人确认三关人工验收通过并批准无收费范围结项；真实模型链路未验收，未部署。
+AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式复用 T04 Generator，另行授权后才可使用。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
 
 ## Phase 2 草案索引
 
-下列 4 个操作均未实现，详细契约及 JSON 示例尚待对应任务完善；保持 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 的权威位置，只在这里索引，不将草案加入 OpenAPI `paths` 或补造 Schema。
+下列 2 个总结操作（T10）尚待合并，详细契约及 JSON 示例保持 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 的权威位置，只在这里索引，不将草案加入 OpenAPI `paths`。
 
 | 方法 | 完整路径 | 用途与现有草案约束 |
 | --- | --- | --- |
-| GET | `/api/v1/debates` | 本人历史，page 默认 1、page_size 默认 20/最大 50；按 created_at、id 倒序。 |
-| POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试已有失败轮次，必填 expected_attempt_version；复用保存原文。 |
 | POST | `/api/v1/debates/{id}/summary` | completed 会话总结生成或显式重试；retry=true 时必填期望版本。 |
 | GET | `/api/v1/debates/{id}/summary` | 本人总结状态与可选结果；未开始为 not_started。 |
 

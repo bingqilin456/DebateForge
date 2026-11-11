@@ -9,7 +9,7 @@
 3. [PRD](product/PRD.md)：MVP 做什么、不做什么，以及 AC 验收标准。
 4. [ARCHITECTURE](architecture/ARCHITECTURE.md)：模块职责、数据关系、状态机及安全约束；区分已实现内容与目标设计。
 5. [API](api/API.md) 与 [OpenAPI](api/openapi.yaml)：HTTP 契约、DTO、错误处理和接口实施边界。
-6. [PLAN](planning/PLAN.md) 与 [TASKS](planning/TASKS.md)：PLAN 管阶段依赖和门槛，TASKS 管当前分工、进度和风险。
+6. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖和门槛，TASKS 管当前分工、进度和风险，Phase 2 按轻量 SDD 推进。
 7. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
 
 ## 按用途查找
@@ -20,7 +20,7 @@
 | [architecture/](architecture/) | 当前架构与目标设计：[ARCHITECTURE](architecture/ARCHITECTURE.md) |
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
-| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md)；历史实施计划按原文件名保留 |
+| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)；历史实施计划按原文件名保留 |
 | [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境 |
 | [guides/](guides/) | [协作教程](guides/Codex团队协作实战教程.md)与[阶段 0 学习笔记](guides/学习笔记/)；学习资料不能替代当前契约或验收证据 |
 

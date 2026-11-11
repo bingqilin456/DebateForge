@@ -3,9 +3,9 @@ openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
-  version: t09-t11-2026-11-11
-  description: 文档快照日期 2026-11-11（Asia/Shanghai）。共 12 个操作已实现；包含健康检查、T03 认证、T05 首轮、T09 三轮状态机与失败恢复（含显式重试与租约扫描）及 T11 本人历史分页接口。
-    默认关闭真实模型，可显式启用 Fake；Phase 2 剩余两个总结草案保留扩展索引。健康路径为 /api/health/live、/api/health/ready。
+  version: t09-t10-t11-2026-11-11
+  description: 文档快照日期 2026-11-11（Asia/Shanghai）。共 14 个操作已实现；包含健康检查、T03 认证、T05 首轮、T09 三轮状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
+    默认关闭真实模型，可显式启用 Fake；健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
   description: 本地后端默认地址；不代表当前进程已启动或生产已部署。
@@ -34,15 +34,7 @@ x-router-error-responses:
     $ref: '#/components/responses/RouterMethodNotAllowed'
   '500':
     $ref: '#/components/responses/RouterInternalError'
-x-phase2-drafts:
-- method: POST
-  path: /api/v1/debates/{id}/summary
-  source: docs/ARCHITECTURE.md#phase-2-api-草案
-  status: draft
-- method: GET
-  path: /api/v1/debates/{id}/summary
-  source: docs/ARCHITECTURE.md#phase-2-api-草案
-  status: draft
+x-phase2-drafts: []
 paths:
   /api/health/live:
     get:
@@ -719,12 +711,174 @@ paths:
           $ref: '#/components/responses/GenerationUnavailable'
         '504':
           $ref: '#/components/responses/ModelTimeout'
+  /api/v1/debates/{id}/summary:
+    post:
+      operationId: generateOrRetrySummary
+      summary: 生成或显式重试结构化总结
+      description: 仅允许 status=completed（已完成 3 轮）的会话生成总结，未完成辩论返回 409 round_conflict；共享用户分钟防刷（6 次/分）、每日生成额度（20 次/日）及模型并发槽（1/用户、2/进程）。首次生成成功返回 201，已完成重放返回 200（不调模型），进行中返回 202。失败后 retry=false 不调模型并返回 200（failed 状态）；须显式传 retry=true 且 expected_attempt_version 匹配才认领重试并 attempt_version+1，版本不匹配返回 409 attempt_version_conflict；not_started 时传 retry=true 返回 400。
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: T10
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SummaryRequest'
+            example:
+              retry: false
+      responses:
+        '200':
+          description: 重放已完成总结、显式重试成功，或 retry=false 返回已存失败状态。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+              example:
+                data:
+                  status: completed
+                  attempt_version: 1
+                  schema_version: 1
+                  content:
+                    strengths:
+                    - round_no: 1
+                      point: 首轮立场表达明确
+                      reason: 结合实际应用能力展开核心论点
+                    issues:
+                    - round_no: 2
+                      point: 二轮反驳链条可进一步展开
+                      reason: 对反方评价标准前提的拆解还可以更具体
+                    suggestions:
+                    - round_no: 3
+                      action: 三轮总结时先回应对方核心交锋点再收束主线
+                      example: 先指出对方标准的前提局限，再重申我方核心判断标准
+                request_id: req-summary-replay
+        '201':
+          description: 首次生成结构化总结成功且已持久化。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+              example:
+                data:
+                  status: completed
+                  attempt_version: 1
+                  schema_version: 1
+                  content:
+                    strengths:
+                    - round_no: 1
+                      point: 首轮立场表达明确
+                      reason: 结合实际应用能力展开核心论点
+                    issues:
+                    - round_no: 2
+                      point: 二轮反驳链条可进一步展开
+                      reason: 对反方评价标准前提的拆解还可以更具体
+                    suggestions:
+                    - round_no: 3
+                      action: 三轮总结时先回应对方核心交锋点再收束主线
+                      example: 先指出对方标准的前提局限，再重申我方核心判断标准
+                request_id: req-summary
+        '202':
+          description: 总结仍在生成中。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+              example:
+                data:
+                  status: generating
+                  attempt_version: 1
+                request_id: req-summary-pending
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RetryTurnConflict'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/GenerationLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/ModelError'
+        '503':
+          $ref: '#/components/responses/GenerationUnavailable'
+        '504':
+          $ref: '#/components/responses/ModelTimeout'
+    get:
+      operationId: getSummary
+      summary: 查询本人会话总结状态与结果
+      description: 只读查询当前会话的总结状态与可选结构化内容，不触发模型调用；尚未请求总结时返回 not_started 和 attempt_version=null。
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: T10
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      responses:
+        '200':
+          description: 当前会话的总结状态与可选结果。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+              example:
+                data:
+                  status: not_started
+                  attempt_version: null
+                request_id: req-summary-get
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /api/v1/debates/{id}:
     get:
       operationId: getDebate
       summary: 查询本人会话详情
-      description: 无查询参数。按当前用户与路径 id 同时匹配，不存在和越权返回相同 404。turns 按 round_no 排序，同轮先 user 后 assistant；保留已保存失败原因及原文。Phase
-        1 summary_status 固定为 not_started/null。
+      description: 无查询参数。按当前用户与路径 id 同时匹配，不存在和越权返回相同 404。turns 按 round_no 排序，同轮先 user 后 assistant；保留已保存失败原因及原文。summary_status
+        返回真实总结状态与 attempt_version（未开始为 not_started/null，已完成含 schema_version 与 content）。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -1014,6 +1168,79 @@ components:
         expected_attempt_version:
           $ref: '#/components/schemas/PositiveInteger'
           description: 期望重试的失败轮次 attempt_version；必须为正整数且与当前失败轮次一致。
+    SummaryRequest:
+      type: object
+      properties:
+        retry:
+          type: boolean
+          default: false
+          description: 默认 false；为 true 时必填 expected_attempt_version，not_started 时传 retry=true 返回 400。
+        expected_attempt_version:
+          $ref: '#/components/schemas/PositiveInteger'
+          description: retry=true 时必填的正整数，必须与当前 failed 总结的 attempt_version 匹配。
+    SummaryPoint:
+      type: object
+      required:
+      - round_no
+      - point
+      - reason
+      properties:
+        round_no:
+          type: integer
+          minimum: 1
+          maximum: 3
+        point:
+          type: string
+          minLength: 1
+          maxLength: 300
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 300
+    SummarySuggestion:
+      type: object
+      required:
+      - round_no
+      - action
+      - example
+      properties:
+        round_no:
+          type: integer
+          minimum: 1
+          maximum: 3
+        action:
+          type: string
+          minLength: 1
+          maxLength: 300
+        example:
+          type: string
+          minLength: 1
+          maxLength: 300
+    SummaryContent:
+      type: object
+      required:
+      - strengths
+      - issues
+      - suggestions
+      properties:
+        strengths:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/SummaryPoint'
+        issues:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/SummaryPoint'
+        suggestions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/SummarySuggestion'
     Message:
       type: object
       required:
@@ -1086,10 +1313,30 @@ components:
       properties:
         status:
           type: string
-          const: not_started
+          enum:
+          - not_started
+          - generating
+          - completed
+          - failed
         attempt_version:
-          type: 'null'
-      description: Phase 1 固定未开始；T10 接入总结时另行完善契约。
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+        error_code:
+          type: string
+          enum:
+          - model_error
+          - model_timeout
+          - model_unavailable
+          - dependency_unavailable
+          - generation_cancelled
+        schema_version:
+          type: integer
+          const: 1
+        content:
+          $ref: '#/components/schemas/SummaryContent'
+      description: 总结状态与可选结构化内容；not_started 时 attempt_version 为 null，completed 时含 schema_version 与 content，failed 时含 error_code。
     TurnResultData:
       type: object
       required:
@@ -1108,7 +1355,6 @@ components:
     TurnFailureDetails:
       type: object
       required:
-      - turn_id
       - status
       - attempt_version
       - query_url
@@ -1122,7 +1368,7 @@ components:
           $ref: '#/components/schemas/PositiveInteger'
         query_url:
           type: string
-          pattern: ^/api/v1/debates/[1-9][0-9]*$
+          pattern: ^/api/v1/debates/[1-9][0-9]*(/summary)?$
     ErrorEnvelope:
       type: object
       required:
@@ -1276,6 +1522,16 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/TurnResultData'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    SummaryResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/SummaryStatus'
         request_id:
           $ref: '#/components/schemas/RequestId'
     DebateDetailResponse:

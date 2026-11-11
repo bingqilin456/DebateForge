@@ -29,6 +29,8 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.POST("/debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.create)
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
 	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
+	group.POST("/debates/:id/summary", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.summary)
+	group.GET("/debates/:id/summary", a.RequireAuth(), h.getSummary)
 	group.GET("/debates/:id", a.RequireAuth(), h.detail)
 }
 
@@ -170,6 +172,38 @@ func (h *Handler) retry(c *gin.Context) {
 		return
 	}
 	writeData(c, status, data)
+}
+func (h *Handler) summary(c *gin.Context) {
+	id, e := ParseID(c.Param("id"))
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	var in SummaryInput
+	if !decode(c, &in) {
+		return
+	}
+	current, _ := auth.CurrentUserFrom(c)
+	data, status, e := h.service.summary(c.Request.Context(), current.User.ID, id, in)
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	writeData(c, status, data)
+}
+func (h *Handler) getSummary(c *gin.Context) {
+	id, e := ParseID(c.Param("id"))
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	current, _ := auth.CurrentUserFrom(c)
+	data, e := h.service.GetSummary(c.Request.Context(), current.User.ID, id)
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	writeData(c, 200, data)
 }
 func serviceError(c *gin.Context, e error) {
 	var f *Failure

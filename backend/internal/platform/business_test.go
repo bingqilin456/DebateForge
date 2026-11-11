@@ -15,8 +15,8 @@ func TestHTTPBudgetsAndShorterParent(t *testing.T) {
 		path, method string
 		budget       time.Duration
 		parent       time.Duration
-	}{{"/plain", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 50 * time.Millisecond, 50 * time.Millisecond}} {
-		t.Run(tc.path+tc.budget.String(), func(t *testing.T) {
+	}{{"/plain", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 50 * time.Millisecond, 50 * time.Millisecond}} {
+		t.Run(tc.method+tc.path+tc.budget.String(), func(t *testing.T) {
 			router := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 			handler := func(c *gin.Context) {
 				deadline, ok := c.Request.Context().Deadline()
@@ -28,6 +28,8 @@ func TestHTTPBudgetsAndShorterParent(t *testing.T) {
 			}
 			router.GET("/plain", handler)
 			router.POST("/api/v1/debates/:id/turns", handler)
+			router.POST("/api/v1/debates/:id/summary", handler)
+			router.GET("/api/v1/debates/:id/summary", handler)
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			if tc.parent > 0 {
 				ctx, cancel := context.WithTimeout(req.Context(), tc.parent)

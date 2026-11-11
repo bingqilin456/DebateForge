@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"unicode/utf8"
 )
@@ -21,8 +22,13 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	if a == nil {
 		return
 	}
+	if h.service != nil {
+		h.service.StartLeaseRecovery(0)
+	}
+	group.GET("/debates", a.RequireAuth(), h.list)
 	group.POST("/debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.create)
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
+	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
 	group.GET("/debates/:id", a.RequireAuth(), h.detail)
 }
 
@@ -87,6 +93,29 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	writeData(c, 201, d.DTO())
 }
+func (h *Handler) list(c *gin.Context) {
+	query, e := url.ParseQuery(c.Request.URL.RawQuery)
+	if e != nil {
+		serviceError(c, ErrInvalidRequest)
+		return
+	}
+	page, pageSize, e := ParsePagination(query["page"], query["page_size"])
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	current, ok := auth.CurrentUserFrom(c)
+	if !ok {
+		writeError(c, 401, "unauthenticated", nil)
+		return
+	}
+	list, e := h.service.List(c.Request.Context(), current.User.ID, page, pageSize)
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	writeData(c, 200, list.DTO())
+}
 func (h *Handler) detail(c *gin.Context) {
 	id, e := ParseID(c.Param("id"))
 	if e != nil {
@@ -119,6 +148,29 @@ func (h *Handler) submit(c *gin.Context) {
 	}
 	writeData(c, status, data)
 }
+func (h *Handler) retry(c *gin.Context) {
+	id, e := ParseID(c.Param("id"))
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	turnID, e := ParseID(c.Param("turn_id"))
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	var in RetryInput
+	if !decode(c, &in) {
+		return
+	}
+	current, _ := auth.CurrentUserFrom(c)
+	data, status, e := h.service.retry(c.Request.Context(), current.User.ID, id, turnID, in)
+	if e != nil {
+		serviceError(c, e)
+		return
+	}
+	writeData(c, status, data)
+}
 func serviceError(c *gin.Context, e error) {
 	var f *Failure
 	if errors.As(e, &f) {
@@ -138,6 +190,8 @@ func serviceError(c *gin.Context, e error) {
 		status, code = 409, "round_conflict"
 	case errors.Is(e, ErrIdempotencyConflict):
 		status, code = 409, "idempotency_conflict"
+	case errors.Is(e, ErrAttemptVersionConflict):
+		status, code = 409, "attempt_version_conflict"
 	case errors.Is(e, ErrDependencyUnavailable):
 		status, code = 503, "dependency_unavailable"
 	}

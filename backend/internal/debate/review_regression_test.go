@@ -119,6 +119,69 @@ func (s reviewAuthStore) FindSessionByTokenHash(_ context.Context, hash []byte) 
 func (s reviewAuthStore) DeleteSession(context.Context, uint64) (bool, error) {
 	return false, errors.New("unused")
 }
+
+func TestHTTPRetryAndPaginationRoutes(t *testing.T) {
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
+	hash := sha256.Sum256([]byte(token))
+	csrf := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32))
+	now := time.Now().UTC()
+	authStore := reviewAuthStore{auth.Session{ID: 1, UserID: 1, TokenHash: hash[:], CSRFToken: csrf, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}}
+	a, err := auth.NewHandler(auth.NewService(authStore), auth.HandlerConfig{Origin: "http://127.0.0.1:5173"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := newMemoryStore(func() time.Time { return now })
+	svc := NewService(mem, ai.NewFake(), NewGate(func() time.Time { return now }))
+	defer svc.StopLeaseRecovery()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	NewHandler(svc).RegisterRoutes(router.Group("/api/v1"), a)
+
+	// 空历史分页查询
+	req := httptest.NewRequest("GET", "/api/v1/debates?page=1&page_size=20", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"items":[]`) || !strings.Contains(rec.Body.String(), `"total":0`) {
+		t.Fatalf("empty list failed: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// 非法分页参数返回 400
+	for _, q := range []string{"page=0", "page_size=0", "page_size=51", "page=abc"} {
+		req = httptest.NewRequest("GET", "/api/v1/debates?"+q, nil)
+		req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != 400 {
+			t.Fatalf("query %s got %d want 400", q, rec.Code)
+		}
+	}
+
+	// 重试接口缺少 CSRF 返回 403，缺少或非法 expected_attempt_version 返回 400
+	req = httptest.NewRequest("POST", "/api/v1/debates/101/turns/102/retry", strings.NewReader(`{"expected_attempt_version":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
+	req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("retry missing csrf got %d want 403", rec.Code)
+	}
+
+	for _, body := range []string{`{}`, `{"expected_attempt_version":0}`, `{"expected_attempt_version":-1}`, `{"expected_attempt_version":"1"}`} {
+		req = httptest.NewRequest("POST", "/api/v1/debates/101/turns/102/retry", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "http://127.0.0.1:5173")
+		req.Header.Set("X-CSRF-Token", csrf)
+		req.AddCookie(&http.Cookie{Name: auth.CookieNameDev, Value: token})
+		rec = httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != 400 {
+			t.Fatalf("retry body %s got %d want 400", body, rec.Code)
+		}
+	}
+}
 func TestReviewInvalidHTTPRequestsAreRateLimited(t *testing.T) {
 	for _, tc := range []struct {
 		name, path, body string

@@ -288,6 +288,150 @@ func TestT05LateVersionCannotOverwrite(t *testing.T) {
 	}
 }
 
+func TestT09ExplicitRetryVersionConflictAndOwnership(t *testing.T) {
+	var calls atomic.Int32
+	step := atomic.Int32{}
+	gen := testGenerator(func(c context.Context, r ai.Request) (ai.Result, error) {
+		n := step.Add(1)
+		calls.Add(1)
+		switch n {
+		case 1:
+			return ai.NewFake().Generate(c, r)
+		case 2:
+			return ai.Result{}, &ai.Error{Code: ai.CodeModelTimeout}
+		case 3:
+			return ai.Result{}, &ai.Error{Code: ai.CodeModelError}
+		default:
+			return ai.NewFake().Generate(c, r)
+		}
+	})
+	f := newDebateFixture(t, gen)
+	var moment atomic.Int64
+	moment.Store(time.Date(2026, 11, 11, 2, 0, 0, 0, time.UTC).Unix())
+	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
+	f.mount(t, gen)
+
+	id := f.create(t)
+	otherDebate := f.create(t)
+	path := "/api/v1/debates/" + id
+
+	if r := f.request(t, "POST", path+"/turns", submit("第一轮原文", uuid.NewString(), 1)); r.status != 201 {
+		t.Fatalf("round 1 status=%d", r.status)
+	}
+	moment.Add(15)
+
+	r := f.request(t, "POST", path+"/turns", submit("第二轮原文保留", uuid.NewString(), 2))
+	if r.status != 504 {
+		t.Fatalf("round 2 timeout status=%d", r.status)
+	}
+	var failEnv struct {
+		Error struct {
+			Details *debate.FailureDetails `json:"details"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(r.body, &failEnv)
+	if failEnv.Error.Details == nil || failEnv.Error.Details.AttemptVersion != 1 {
+		t.Fatalf("missing failure details: %+v", failEnv.Error.Details)
+	}
+	turnID := failEnv.Error.Details.TurnID
+	retryPath := path + "/turns/" + turnID + "/retry"
+	moment.Add(15)
+
+	for _, bad := range []any{map[string]any{}, map[string]any{"expected_attempt_version": 0}} {
+		if r = f.request(t, "POST", retryPath, bad); r.status != 400 || r.errorCode() != "invalid_request" {
+			t.Fatalf("invalid retry input status=%d code=%s", r.status, r.errorCode())
+		}
+		moment.Add(15)
+	}
+
+	if r = f.request(t, "POST", "/api/v1/debates/"+otherDebate+"/turns/"+turnID+"/retry", map[string]any{"expected_attempt_version": 1}); r.status != 404 {
+		t.Fatalf("mismatched debate turn_id status=%d", r.status)
+	}
+	moment.Add(15)
+
+	r = f.request(t, "POST", retryPath, map[string]any{"expected_attempt_version": 1})
+	if r.status != 502 {
+		t.Fatalf("first retry status=%d", r.status)
+	}
+	callsAfterSecondFail := calls.Load()
+	moment.Add(15)
+
+	r = f.request(t, "POST", retryPath, map[string]any{"expected_attempt_version": 1})
+	_ = json.Unmarshal(r.body, &failEnv)
+	if r.status != 409 || r.errorCode() != "attempt_version_conflict" || failEnv.Error.Details == nil || failEnv.Error.Details.AttemptVersion != 2 || calls.Load() != callsAfterSecondFail {
+		t.Fatalf("expected 409 attempt_version_conflict without model call, status=%d code=%s calls=%d", r.status, r.errorCode(), calls.Load())
+	}
+	moment.Add(15)
+
+	r = f.request(t, "POST", retryPath, map[string]any{"expected_attempt_version": 2})
+	if r.status != 200 {
+		t.Fatalf("second retry status=%d code=%s", r.status, r.errorCode())
+	}
+	var turnData debate.TurnData
+	b, _ := json.Marshal(r.data())
+	_ = json.Unmarshal(b, &turnData)
+	if turnData.CompletedRounds != 2 || turnData.Turn.AttemptVersion != 3 || turnData.Turn.Status != "completed" || len(turnData.Turn.Messages) != 2 || turnData.Turn.Messages[0].Content != "第二轮原文保留" {
+		t.Fatalf("unexpected retry turn data: %+v", turnData)
+	}
+	callsAfterSuccess := calls.Load()
+	moment.Add(15)
+
+	r = f.request(t, "POST", retryPath, map[string]any{"expected_attempt_version": 2})
+	if r.status != 200 || calls.Load() != callsAfterSuccess {
+		t.Fatalf("completed retry replay status=%d calls=%d", r.status, calls.Load())
+	}
+}
+
+func TestT09LeaseRecoveryOnStartupAndTicker(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	f := newDebateFixture(t, testGenerator(func(c context.Context, r ai.Request) (ai.Result, error) {
+		close(started)
+		select {
+		case <-release:
+			return ai.NewFake().Generate(c, r)
+		case <-c.Done():
+			return ai.Result{}, c.Err()
+		}
+	}))
+	defer close(release)
+	id := f.create(t)
+	path := "/api/v1/debates/" + id
+	done := make(chan apiResult, 1)
+	go func() {
+		done <- f.request(t, "POST", path+"/turns", submit("模拟崩溃残留", uuid.NewString(), 1))
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("turn did not start")
+	}
+	expired := time.Now().UTC().Add(-2 * time.Second)
+	if err := f.db.ORM.Exec("UPDATE debate_turns SET lease_expires_at = ? WHERE debate_id = ?", expired, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := f.service.RecoverExpiredLeases(context.Background())
+	if err != nil || recovered != 1 {
+		t.Fatalf("expected 1 recovered lease, got %d err=%v", recovered, err)
+	}
+	r := f.request(t, "GET", path, nil)
+	var detail debate.DetailDTO
+	b, _ := json.Marshal(r.data())
+	_ = json.Unmarshal(b, &detail)
+	if len(detail.Turns) != 1 || detail.Turns[0].Status != "failed" || detail.Turns[0].ErrorCode == nil || *detail.Turns[0].ErrorCode != "model_timeout" {
+		t.Fatalf("lease recovery did not mark failed: %+v", detail.Turns)
+	}
+	release <- struct{}{}
+	if (<-done).status != 503 {
+		t.Fatal("expired attempt reported success after lease recovery")
+	}
+	f.mount(t, ai.NewFake())
+	r = f.request(t, "POST", path+"/turns/"+detail.Turns[0].ID+"/retry", map[string]any{"expected_attempt_version": 1})
+	if r.status != 200 {
+		t.Fatalf("retry after lease recovery status=%d code=%s", r.status, r.errorCode())
+	}
+}
+
 func TestT07FakeFailureAndTimeoutPersistWithoutCountingRound(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

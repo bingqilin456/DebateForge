@@ -14,14 +14,24 @@ import (
 )
 
 var (
-	ErrInvalidRequest        = errors.New("invalid_request")
-	ErrNotFound              = errors.New("not_found")
-	ErrRoundConflict         = errors.New("round_conflict")
-	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
-	ErrTurnFailed            = errors.New("turn_failed")
-	ErrDependencyUnavailable = errors.New("dependency_unavailable")
-	ErrRateLimited           = errors.New("rate_limited")
-	ErrGenerationBusy        = errors.New("generation_busy")
+	ErrInvalidRequest         = errors.New("invalid_request")
+	ErrNotFound               = errors.New("not_found")
+	ErrRoundConflict          = errors.New("round_conflict")
+	ErrIdempotencyConflict    = errors.New("idempotency_conflict")
+	ErrTurnFailed             = errors.New("turn_failed")
+	ErrAttemptVersionConflict = errors.New("attempt_version_conflict")
+	ErrDependencyUnavailable  = errors.New("dependency_unavailable")
+	ErrRateLimited            = errors.New("rate_limited")
+	ErrGenerationBusy         = errors.New("generation_busy")
+)
+
+const (
+	LeaseDuration     = 90 * time.Second
+	LeaseScanInterval = 30 * time.Second
+	DefaultPage       = 1
+	DefaultPageSize   = 20
+	MaxPageSize       = 50
+	MaxPage           = 1_000_000_000
 )
 
 // Failure 只暴露受控码；底层原因只通过 Unwrap 留给内部检查。
@@ -173,6 +183,34 @@ type SubmitInput struct {
 	Content         string `json:"content"`
 	ClientRequestID string `json:"client_request_id"`
 }
+type RetryInput struct {
+	ExpectedAttemptVersion uint64 `json:"expected_attempt_version"`
+}
+type DebateList struct {
+	Items    []Debate
+	Total    int64
+	Page     int
+	PageSize int
+}
+type DebateListDTO struct {
+	Items    []DebateDTO `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"page_size"`
+}
+
+func (l DebateList) DTO() DebateListDTO {
+	items := make([]DebateDTO, 0, len(l.Items))
+	for _, d := range l.Items {
+		items = append(items, d.DTO())
+	}
+	return DebateListDTO{
+		Items:    items,
+		Total:    l.Total,
+		Page:     l.Page,
+		PageSize: l.PageSize,
+	}
+}
 
 func formatID(id uint64) string { return strconv.FormatUint(id, 10) }
 func ParseID(s string) (uint64, error) {
@@ -201,12 +239,46 @@ func ValidateSubmit(in SubmitInput) (SubmitInput, error) {
 	in.ClientRequestID = id.String()
 	return in, nil
 }
+func ValidateRetry(in RetryInput) (RetryInput, error) {
+	if in.ExpectedAttemptVersion < 1 || in.ExpectedAttemptVersion == ^uint64(0) {
+		return in, ErrInvalidRequest
+	}
+	return in, nil
+}
+func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
+	page := DefaultPage
+	if len(pageValues) > 1 {
+		return 0, 0, ErrInvalidRequest
+	}
+	if len(pageValues) == 1 {
+		v, err := ParseID(pageValues[0])
+		if err != nil || v > MaxPage {
+			return 0, 0, ErrInvalidRequest
+		}
+		page = int(v)
+	}
+	pageSize := DefaultPageSize
+	if len(pageSizeValues) > 1 {
+		return 0, 0, ErrInvalidRequest
+	}
+	if len(pageSizeValues) == 1 {
+		v, err := ParseID(pageSizeValues[0])
+		if err != nil || v > MaxPageSize {
+			return 0, 0, ErrInvalidRequest
+		}
+		pageSize = int(v)
+	}
+	return page, pageSize, nil
+}
 
 // Store 将短事务和提交不确定性留在 Repository；admit 必须非阻塞且不调用模型。
 type Store interface {
 	Create(context.Context, uint64, uint64, string) (Debate, error)
+	List(context.Context, uint64, int, int) (DebateList, error)
 	Detail(context.Context, uint64, uint64) (Detail, error)
 	Claim(context.Context, uint64, uint64, SubmitInput, func() error) (Detail, bool, error)
+	ClaimRetry(context.Context, uint64, uint64, uint64, uint64, func() error) (Detail, bool, error)
 	Complete(context.Context, uint64, Debate, Turn, ai.Result) (Detail, error)
 	Fail(context.Context, uint64, Debate, Turn, string, ai.Usage, ai.Metadata) (Turn, error)
+	RecoverExpiredLeases(context.Context) (int, error)
 }

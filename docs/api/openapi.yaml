@@ -3,9 +3,9 @@ openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
-  version: t01-frozen-2026-11-08
-  description: 文档快照日期 2026-11-08（Asia/Shanghai）。T01 契约不变；共 10 个操作，10 个接口已实现；T03 有条件独立审查和人工验收通过，T05 无收费范围独立复审 PASS、三关人工验收通过并结项，真实模型链路仍待另行授权验证，未部署。
-    T05 默认关闭真实模型，可显式启用 Fake；Phase 2 四个草案只保留扩展索引，不进入 paths。健康路径为 /api/health/live、/api/health/ready。
+  version: t09-t11-2026-11-11
+  description: 文档快照日期 2026-11-11（Asia/Shanghai）。共 12 个操作已实现；包含健康检查、T03 认证、T05 首轮、T09 三轮状态机与失败恢复（含显式重试与租约扫描）及 T11 本人历史分页接口。
+    默认关闭真实模型，可显式启用 Fake；Phase 2 剩余两个总结草案保留扩展索引。健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
   description: 本地后端默认地址；不代表当前进程已启动或生产已部署。
@@ -35,14 +35,6 @@ x-router-error-responses:
   '500':
     $ref: '#/components/responses/RouterInternalError'
 x-phase2-drafts:
-- method: GET
-  path: /api/v1/debates
-  source: docs/ARCHITECTURE.md#phase-2-api-草案
-  status: draft
-- method: POST
-  path: /api/v1/debates/{id}/turns/{turn_id}/retry
-  source: docs/ARCHITECTURE.md#phase-2-api-草案
-  status: draft
 - method: POST
   path: /api/v1/debates/{id}/summary
   source: docs/ARCHITECTURE.md#phase-2-api-草案
@@ -334,6 +326,57 @@ paths:
         '503':
           $ref: '#/components/responses/DependencyUnavailable'
   /api/v1/debates:
+    get:
+      operationId: listDebates
+      summary: 分页查询本人辩论历史
+      description: 仅查询当前登录用户的会话，按 (created_at DESC, id DESC) 排序；page 默认 1，page_size 默认 20、最大 50。空列表返回 items=[]。
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: T11
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 当前用户的历史会话分页结果。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DebateListResponse'
+              example:
+                data:
+                  items:
+                  - id: '123'
+                    topic:
+                      id: '7'
+                      title: 大学课程是否应采用开放式考核
+                      description: 讨论学习效果与评价公平
+                    user_stance: pro
+                    ai_stance: con
+                    status: completed
+                    completed_rounds: 3
+                    created_at: '2026-11-06T08:00:00Z'
+                    updated_at: '2026-11-06T08:05:00Z'
+                  total: 1
+                  page: 1
+                  page_size: 20
+                request_id: req-list
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
     post:
       operationId: createDebate
       summary: 创建辩论会话
@@ -400,14 +443,14 @@ paths:
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
-      summary: 提交首轮发言或重放结果
-      description: 校验会话所有权，T05 只接受第 1 轮。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
+      summary: 提交轮次发言（1–3 轮）或重放结果
+      description: 校验会话所有权，允许第 1–3 轮（round_no = completed_rounds + 1），第 4 轮返回 409 round_conflict；第 3 轮完整 AI 回复落库后会话 status 置为 completed。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
         round_conflict。新尝试短事务认领、保存原文及 attempt_version=1，事务外调用模型，按状态和版本写回。每用户每分钟 6 次、每天最多 20 次尝试（失败也计入）；单用户并发 1、全局
-        2。请求预算 60 秒、模型 45 秒；前端超时 70 秒。202、丢失响应或状态不明先 GET 详情，每 2 秒查询，最多 120 秒，不自动生成或换键重试。显式重试和第 2/3 轮归 T09。
+        2。请求预算 60 秒、模型 45 秒；前端超时 70 秒。
       tags:
       - 辩论
       x-implementation-status: implemented
-      x-task: T05
+      x-task: T09
       security:
       - SessionCookie: []
         CsrfToken: []
@@ -568,6 +611,114 @@ paths:
               round_no: 1
               content: 开放式考核可以评估实际应用能力。
               client_request_id: 550e8400-e29b-41d4-a716-446655440000
+  /api/v1/debates/{id}/turns/{turn_id}/retry:
+    post:
+      operationId: retryTurn
+      summary: 显式重试失败轮次
+      description: 仅当 turn 属于该会话及本人、status=failed 且 attempt_version 与 expected_attempt_version 匹配时，非阻塞获取并发槽并原子更新为 generating、attempt_version+1，复用已保存的 user 原文调用模型。已完成重放返回 200，生成中返回 202，失败版本不匹配返回 409 attempt_version_conflict（附当前 status、attempt_version、query_url），不再调用模型或消耗生成额度。
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: T09
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/TurnId'
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryTurnRequest'
+            example:
+              expected_attempt_version: 1
+      responses:
+        '200':
+          description: 重试生成完成或重放已完成结果。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              example:
+                data:
+                  turn:
+                    id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: completed
+                    attempt_version: 2
+                    error_code: null
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                    - id: '902'
+                      role: assistant
+                      content: 统一考核仍有助于比较基础知识掌握程度。
+                      created_at: '2026-11-06T08:02:05Z'
+                  completed_rounds: 1
+                  query_url: /api/v1/debates/123
+                request_id: req-retry
+        '202':
+          description: 该轮次仍在生成中；先查 query_url。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              example:
+                data:
+                  turn:
+                    id: '456'
+                    round_no: 1
+                    client_request_id: 550e8400-e29b-41d4-a716-446655440000
+                    status: generating
+                    attempt_version: 2
+                    error_code: null
+                    messages:
+                    - id: '901'
+                      role: user
+                      content: 开放式考核可以评估实际应用能力。
+                      created_at: '2026-11-06T08:01:00Z'
+                  completed_rounds: 0
+                  query_url: /api/v1/debates/123
+                request_id: req-retry-pending
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RetryTurnConflict'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/GenerationLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          $ref: '#/components/responses/ModelError'
+        '503':
+          $ref: '#/components/responses/GenerationUnavailable'
+        '504':
+          $ref: '#/components/responses/ModelTimeout'
   /api/v1/debates/{id}:
     get:
       operationId: getDebate
@@ -664,6 +815,32 @@ components:
       schema:
         $ref: '#/components/schemas/EntityId'
       example: '123'
+    TurnId:
+      name: turn_id
+      in: path
+      required: true
+      description: 所属会话的轮次 ID；非法格式 400，不存在或不属于当前会话 404。
+      schema:
+        $ref: '#/components/schemas/EntityId'
+      example: '456'
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 分页页码，从 1 开始的正整数，默认 1。
+      schema:
+        $ref: '#/components/schemas/PositiveInteger'
+      example: 1
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: 每页条数，1–50 的正整数，默认 20。
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+      example: 20
   headers:
     RequestId:
       description: 服务器生成的请求关联标识；有 JSON 信封时与 request_id 一致。
@@ -707,7 +884,8 @@ components:
     CompletedRounds:
       type: integer
       minimum: 0
-      description: 已成功持久化的完成轮数；Phase 1 只接受首轮，完整三轮由 T09 实施。
+      maximum: 3
+      description: 已成功持久化的完成轮数，范围 0–3；完成第 3 轮后会话 status 置为 completed。
     Stance:
       type: string
       enum:
@@ -818,7 +996,7 @@ components:
       properties:
         round_no:
           $ref: '#/components/schemas/PositiveInteger'
-          description: 正整数；T05 只接受第 1 轮。不允许的状态或轮序为 409 round_conflict，而非把所有非 1 值当成输入格式错误。
+          description: 正整数；允许 1–3 轮且须满足 round_no = completed_rounds + 1。第 4 轮或不允许的状态/轮序为 409 round_conflict。
         content:
           type: string
           minLength: 1
@@ -828,6 +1006,14 @@ components:
           type: string
           format: uuid
           description: UUID，解析后统一为小写带连字符形式；同一会话内唯一。
+    RetryTurnRequest:
+      type: object
+      required:
+      - expected_attempt_version
+      properties:
+        expected_attempt_version:
+          $ref: '#/components/schemas/PositiveInteger'
+          description: 期望重试的失败轮次 attempt_version；必须为正整数且与当前失败轮次一致。
     Message:
       type: object
       required:
@@ -962,6 +1148,7 @@ components:
               - round_conflict
               - idempotency_conflict
               - turn_failed
+              - attempt_version_conflict
               - request_too_large
               - rate_limited
               - generation_busy
@@ -1048,6 +1235,37 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Debate'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    DebateListData:
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Debate'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          $ref: '#/components/schemas/PositiveInteger'
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 50
+    DebateListResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/DebateListData'
         request_id:
           $ref: '#/components/schemas/RequestId'
     TurnResponse:
@@ -1228,6 +1446,38 @@ components:
       - round_conflict
       - idempotency_conflict
       - turn_failed
+    RetryTurnConflict:
+      description: 轮次状态不允许重试，或失败轮次 attempt_version 已变化；attempt_version_conflict 附当前状态、版本与查询地址 details。
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            allOf:
+            - $ref: '#/components/schemas/ErrorEnvelope'
+            - properties:
+                error:
+                  properties:
+                    code:
+                      enum:
+                      - round_conflict
+                      - attempt_version_conflict
+          example:
+            error:
+              code: attempt_version_conflict
+              message: 请求未完成，请查看会话状态后再操作
+              details:
+                turn_id: '456'
+                status: failed
+                attempt_version: 2
+                query_url: /api/v1/debates/123
+            request_id: req-version-conflict
+      x-error-codes:
+      - round_conflict
+      - attempt_version_conflict
     RequestTooLarge:
       description: 请求体超过 32 KiB。
       headers:

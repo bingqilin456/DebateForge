@@ -1,0 +1,349 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+# 最小权限原则：CI 仅执行只读检出与质量门禁，不写入仓库或发布产物。
+permissions:
+  contents: read
+
+# 同一 PR 推送新提交时自动取消旧的在途运行，节省 Actions 配额；主干分支保留完整执行。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # 严格遵循 AGENTS.md 无收费回归基线：默认关闭真实模型与数据库集成开关。
+  AI_MODE: disabled
+  SIYIGE_INTEGRATION: ""
+  SIYIGE_MIGRATION_TEST: ""
+  DEEPSEEK_API_KEY: ""
+  DEEPSEEK_API_KEY_FILE: ""
+  T07_TRIAL_KEY_FILE: ""
+  T07_TRIAL_LEDGER: ""
+
+jobs:
+  repo-guard:
+    name: 仓库规范与静态门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 Git 空白、禁止入库路径与敏感内容
+        shell: python3 -I {0}
+        run: |
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          root = pathlib.Path(".").resolve()
+          raw_tracked = subprocess.check_output(
+              ["git", "-c", "core.quotepath=false", "ls-files", "-z"],
+              encoding="utf-8",
+          )
+          tracked = [p for p in raw_tracked.split("\0") if p]
+
+          forbidden_prefixes = (
+              "references/",
+              ".cache/",
+              ".codegraph/",
+              ".npm/",
+              "frontend/node_modules/",
+              "frontend/dist/",
+              "backend/bin/",
+          )
+          forbidden_suffixes = (
+              ".pem",
+              ".key",
+              ".crt",
+              ".crl",
+              ".p12",
+              ".pfx",
+              ".exe",
+              ".dll",
+              ".so",
+              ".dylib",
+              ".test",
+              ".out",
+          )
+
+          bad_paths = []
+          for rel in tracked:
+              norm = rel.replace("\\", "/")
+              name = pathlib.PurePosixPath(norm).name
+              if norm.startswith(forbidden_prefixes) or "/node_modules/" in f"/{norm}":
+                  bad_paths.append(f"{norm} (禁止入库目录)")
+              elif norm.endswith(forbidden_suffixes):
+                  bad_paths.append(f"{norm} (禁止入库证书/私钥/二进制产物)")
+              elif (name == ".env" or name.startswith(".env.")) and not name.endswith(".example"):
+                  bad_paths.append(f"{norm} (禁止入库真实环境变量文件)")
+
+          if bad_paths:
+              print("发现禁止纳入版本控制的文件：", file=sys.stderr)
+              for item in bad_paths:
+                  print(f"  - {item}", file=sys.stderr)
+              sys.exit(1)
+
+          conflict_re = re.compile(r"^(<{7} |={7}$|>{7} )", re.MULTILINE)
+          secret_re = re.compile(
+              r"(-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----|sk-[A-Za-z0-9]{20,})"
+          )
+
+          content_issues = []
+          for rel in tracked:
+              path = root / rel
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  continue
+              if conflict_re.search(text):
+                  content_issues.append(f"{rel}: 存在残留 Git 冲突标记")
+              if secret_re.search(text):
+                  content_issues.append(f"{rel}: 疑似包含私钥或 API Key 字面量")
+
+          if content_issues:
+              print("发现静态内容门禁问题：", file=sys.stderr)
+              for issue in content_issues:
+                  print(f"  - {issue}", file=sys.stderr)
+              sys.exit(1)
+
+          subprocess.run(["git", "diff", "--check"], check=True)
+          print(f"已核对 {len(tracked)} 个受跟踪文件，路径与敏感内容检查通过。")
+
+      - name: 检查 Go 源码格式 (gofmt)
+        run: |
+          unformatted="$(gofmt -l backend)"
+          if [[ -n "$unformatted" ]]; then
+            echo "以下 Go 文件未通过 gofmt 格式化：" >&2
+            printf '%s\n' "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: 检查 Markdown 本地相对链接完整性
+        shell: python3 -I {0}
+        run: |
+          import pathlib
+          import re
+          import subprocess
+          import sys
+          import urllib.parse
+
+          root = pathlib.Path(".").resolve()
+          raw_md = subprocess.check_output(
+              ["git", "-c", "core.quotepath=false", "ls-files", "-z", "*.md", "**/*.md"],
+              encoding="utf-8",
+          )
+          md_files = [p for p in raw_md.split("\0") if p]
+          tick = chr(96)
+          fence_re = re.compile(rf"^(\s*)({tick}{{3,}}|~{{3,}})")
+          link_re = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+
+          missing = []
+          for rel in md_files:
+              path = (root / rel).resolve()
+              text = path.read_text(encoding="utf-8")
+              in_fence = None
+              for lineno, line in enumerate(text.splitlines(), 1):
+                  m = fence_re.match(line)
+                  if m:
+                      marker = m.group(2)
+                      if in_fence is None:
+                          in_fence = marker[0] * len(marker)
+                      elif line.lstrip().startswith(in_fence):
+                          in_fence = None
+                      continue
+                  if in_fence is not None:
+                      continue
+                  for raw_target in link_re.findall(line):
+                      target = raw_target.strip()
+                      if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+                          continue
+                      file_part = urllib.parse.unquote(target.split("#", 1)[0])
+                      if not file_part:
+                          continue
+                      resolved = (path.parent / file_part).resolve()
+                      if not resolved.exists():
+                          missing.append(f"{rel}:{lineno} -> {target}")
+
+          if missing:
+              print("发现失效的本地 Markdown 链接：", file=sys.stderr)
+              for item in missing:
+                  print(f"  - {item}", file=sys.stderr)
+              sys.exit(1)
+          print(f"已核对 {len(md_files)} 份 Markdown 文档，本地相对链接全部有效。")
+
+      - name: 校验部署 Compose 静态配置契约
+        run: |
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$tmp_dir"' EXIT
+          mkdir -p "$tmp_dir/secrets" "$tmp_dir/tls" "$tmp_dir/ledger"
+          for name in root app migrator trial-key; do
+            printf '%064d' 0 > "$tmp_dir/secrets/$name.txt"
+          done
+          T07_RELEASE=ci-check \
+          T07_SITE_HOST=debate.example.invalid \
+          T07_SECRETS_DIR="$tmp_dir/secrets" \
+          T07_TLS_DIR="$tmp_dir/tls" \
+          T07_AI_MODE=disabled \
+            docker compose --project-directory deploy -f deploy/compose.yaml --profile migration config --quiet
+          T07_RELEASE=ci-check \
+          T07_SITE_HOST=debate.example.invalid \
+          T07_SECRETS_DIR="$tmp_dir/secrets" \
+          T07_TLS_DIR="$tmp_dir/tls" \
+          T07_TRIAL_STAGE=isolated \
+          T07_TRIAL_LEDGER_DIR="$tmp_dir/ledger" \
+          T07_TRIAL_KEY_FILE="$tmp_dir/secrets/trial-key.txt" \
+            docker compose --project-directory deploy \
+              -f deploy/compose.yaml \
+              -f deploy/compose.trial-network.yaml \
+              -f deploy/compose.trial.yaml \
+              config --quiet
+
+  backend-unit:
+    name: 后端与迁移工具无收费检查
+    runs-on: ubuntu-latest
+    needs: [repo-guard]
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go 工具链
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: |
+            backend/go.sum
+            backend/tools/migrate/go.sum
+
+      - name: 后端模块校验、静态检查、竞态单测与编译
+        working-directory: backend
+        run: |
+          go mod verify
+          go vet ./...
+          go test -race -count=1 ./...
+          go build ./...
+
+      - name: 迁移工具模块校验、静态检查、竞态单测与编译
+        working-directory: backend/tools/migrate
+        run: |
+          go mod verify
+          go vet ./...
+          go test -race -count=1 ./...
+          go build ./...
+
+      - name: Nginx 413 上游透传与脱敏日志契约测试
+        working-directory: backend
+        run: |
+          if ! command -v nginx >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends nginx-light
+          fi
+          SIYIGE_TEST_NGINX_PROXY_CONF="$GITHUB_WORKSPACE/deploy/nginx/proxy.conf" \
+            go test -v -count=1 -run '^TestT07NginxForwardsUpstream413$' ./internal/platform
+
+  backend-mysql-integration:
+    name: 隔离 MySQL 8.4.13 迁移与集成测试
+    runs-on: ubuntu-latest
+    needs: [repo-guard]
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go 工具链
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: |
+            backend/go.sum
+            backend/tools/migrate/go.sum
+
+      - name: 生成一次性隔离测试库口令并启动 mysql-test (8.4.13)
+        run: |
+          secret_dir="$GITHUB_WORKSPACE/.cache/t02-mysql/secrets"
+          mkdir -p "$secret_dir"
+          chmod 0700 "$secret_dir"
+          # 容器内 mysql 用户 (UID 999) 通过单文件 secret 挂载读取口令，私有父目录保持 0700，口令文件设 0444。
+          for name in dev-root dev-app dev-migrator test-root test-app test-migrator; do
+            openssl rand -hex 32 | tr -d '\r\n' > "$secret_dir/$name.txt"
+            chmod 0444 "$secret_dir/$name.txt"
+          done
+          docker compose -f infra/mysql/compose.yaml config --quiet
+          docker compose -f infra/mysql/compose.yaml up -d --wait --wait-timeout 180 mysql-test
+
+      - name: 显式执行迁移 CLI 与迁移集成测试
+        working-directory: backend/tools/migrate
+        run: |
+          migrator_secret="$GITHUB_WORKSPACE/.cache/t02-mysql/secrets/test-migrator.txt"
+          first_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations up)"
+          test "$first_out" = "applied=10"
+          second_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations up)"
+          test "$second_out" = "applied=0"
+          status_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations status)"
+          test "$(printf '%s\n' "$status_out" | grep -c ' applied ')" -eq 10
+          SIYIGE_MIGRATION_TEST=1 \
+          SIYIGE_MIGRATION_PASSWORD_FILE="$migrator_secret" \
+            go test -v -race -count=1 ./...
+
+      - name: 执行后端隔离 MySQL 集成测试
+        working-directory: backend
+        run: |
+          app_secret="$GITHUB_WORKSPACE/.cache/t02-mysql/secrets/test-app.txt"
+          SIYIGE_INTEGRATION=1 \
+          APP_ENV=test \
+          DB_ADDR=127.0.0.1:13307 \
+          DB_NAME=siyige_test \
+          DB_USER=siyige_test_app \
+          DB_PASSWORD_FILE="$app_secret" \
+          AI_MODE=disabled \
+            go test -v -race -count=1 ./tests/integration/...
+
+      - name: 清理隔离 MySQL 容器、数据卷与临时口令
+        if: always()
+        run: |
+          docker compose -f infra/mysql/compose.yaml down -v --remove-orphans || true
+          rm -rf -- "$GITHUB_WORKSPACE/.cache/t02-mysql"
+
+  frontend:
+    name: 前端类型检查、单测与构建
+    runs-on: ubuntu-latest
+    needs: [repo-guard]
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 工具链
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/package.json
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 按锁文件安装前端依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 前端 TypeScript 类型检查
+        run: npm run typecheck
+
+      - name: 前端单元测试
+        run: npm run test
+
+      - name: 前端生产构建
+        run: npm run build

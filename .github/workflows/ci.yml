@@ -139,6 +139,18 @@ jobs:
           import urllib.parse
 
           root = pathlib.Path(".").resolve()
+          raw_tracked = subprocess.check_output(
+              ["git", "-c", "core.quotepath=false", "ls-files", "-z"],
+              encoding="utf-8",
+          )
+          tracked_files = set(p for p in raw_tracked.split("\0") if p)
+          tracked_dirs = {""}
+          for p in tracked_files:
+              parent = pathlib.PurePosixPath(p).parent
+              while str(parent) != ".":
+                  tracked_dirs.add(str(parent))
+                  parent = parent.parent
+
           raw_md = subprocess.check_output(
               ["git", "-c", "core.quotepath=false", "ls-files", "-z", "*.md", "**/*.md"],
               encoding="utf-8",
@@ -172,7 +184,15 @@ jobs:
                       if not file_part:
                           continue
                       resolved = (path.parent / file_part).resolve()
-                      if not resolved.exists():
+                      try:
+                          rel_target = resolved.relative_to(root).as_posix()
+                      except ValueError:
+                          missing.append(f"{rel}:{lineno} -> {target} (越出仓库根目录)")
+                          continue
+                      # 历史验收记录中明确说明保存在 Git 忽略本地目录 (.cache/) 的脱敏收据不纳入版本库。
+                      if rel_target.startswith((".cache/", "backend/.cache/")):
+                          continue
+                      if rel_target not in tracked_files and rel_target not in tracked_dirs:
                           missing.append(f"{rel}:{lineno} -> {target}")
 
           if missing:

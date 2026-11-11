@@ -28,7 +28,7 @@ flowchart LR
     end
     subgraph L4["4. CI 基础质量与专项验收"]
         CI[".github/workflows/ci.yml<br/>静态门禁 / 单测 / 隔离 MySQL / 前端构建"]
-        ACC["docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md<br/>专项验证 / 浏览器联调 / 独立审查 / 负责人验收"]
+        ACC["docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md<br/>专项验证 / 浏览器联调 / 负责人验收"]
     end
 
     L1 --> L3
@@ -81,9 +81,9 @@ Phase 2 的每个任务（`T08`～`T12`）均按以下五步推进：
 
 ### Step 5 · 专项验收与状态收敛（Focused Acceptance & Sign-off）
 
-1. **专项验证**：完成 CI 不覆盖的高风险专项验证（如真实浏览器跨组件交互、并发/超时故障注入、独立 Codex 会话只读代码审查）。
-2. **轻量留证**：在 `docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md` 记录本次交付文件范围、专项验证命令与结果、独立审查结论及遗留风险。常规静态与单测门禁直接引用本地汇总结论或 GitHub CI 运行结果。
-3. **单一状态更新**：验证与独立审查通过后，在 [TASKS](TASKS.md#phase-2核心辩论功能闭环) 将任务状态更新为 `待人工验收`（并在 [docs/README.md](../README.md#历史计划与验收证据) 补充一行验收链接）；待项目负责人最终确认后更新为 `已完成`。不跨文件散落更新状态快照。
+1. **专项验证**：按改动影响范围完成 CI 不覆盖的高风险专项验证（如真实浏览器跨组件交互、并发/超时故障注入），直接复用未受影响的既有证据，不做无关全量复跑或强制重复独立审查。
+2. **轻量留证**：在 `docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md` 简明记录本次交付文件范围、专项验证命令与结果、未执行项及遗留风险。常规静态与单测门禁直接引用本地汇总结论或 GitHub CI 运行结果。
+3. **单一状态更新**：验证通过后，在 [TASKS](TASKS.md#phase-2核心辩论功能闭环) 将任务状态更新为 `待人工验收`（并在 [docs/README.md](../README.md#历史计划与验收证据) 补充一行验收链接）；待项目负责人最终确认后更新为 `已完成`。不跨文件散落更新状态快照。
 
 ---
 
@@ -123,7 +123,7 @@ Phase 2 的每个任务（`T08`～`T12`）均按以下五步推进：
 - [ ] API/OpenAPI 同步更新并通过校验（如适用）
 - [ ] 本地定向测试（含 `-race` / 隔离 MySQL / 前端 typecheck+test+build）通过
 - [ ] GitHub CI 四项基础门禁通过（或本地同口径命令全绿）
-- [ ] 独立只读代码审查无未关闭 P0/P1，验收证据写入 `docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md`
+- [ ] 专项验证证据与遗留问题简明写入 `docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md`，任务状态置为 `待人工验收`
 ```
 
 ---
@@ -177,4 +177,4 @@ flowchart TD
 | **后端与迁移单测** | `backend-unit` Job 自动检查：`backend` 与 `backend/tools/migrate` 的 `go mod verify`、`go vet ./...`、`go test -p 1 -count=1 ./...`、`go build ./...` 及 Nginx 413 上游透传测试 | 开发中针对修改包运行快速单测；涉及并发状态机、限流器、租约扫描（如 `T09`、`T10`）时，本地必须加跑 `go test -race ./...` |
 | **隔离 MySQL 集成** | `backend-mysql-integration` Job 自动拉起官方 `mysql:8.4.13` 容器，验证迁移 CLI 首次执行与重复执行幂等（`up` / `status`）、运行 `SIYIGE_MIGRATION_TEST=1` 迁移集成测试及 `SIYIGE_INTEGRATION=1` 后端集成测试 | 新增迁移（如 `T10` 的 `00011`）时，须同步更新 `ci.yml` 中的预期迁移版本计数断言（如 `applied=10` → `applied=11`），并在本地隔离 `mysql-test`（`127.0.0.1:13307`）先行验证 |
 | **前端质量门禁** | `frontend` Job 自动执行：`npm ci`、`npm run typecheck`（`vue-tsc`）、`npm run test`（Vitest）、`npm run build` | 本地按组件/状态模块运行 Vitest 定向测试；涉及页面联调（`T08`、`T11`、`T12`）时，使用真实浏览器通过 Vite 代理连接本地后端与隔离 MySQL（`AI_MODE=fake`）留存交互证据 |
-| **审查与人工验收** | 不由 CI 代替 | 保持 [ADR-011](../decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项) 要求：完成独立只读代码审查（P0/P1 归零）与项目负责人最终人工验收 |
+| **人工验收与阶段结项** | 不由 CI 代替 | 按 [AGENTS](../../AGENTS.md#测试与阶段验收) 与 [ADR-011](../decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项) 要求：不强制 A/B 互审、正式契约讲解登记或多轮重复独立审查，完成受影响范围专项验证后由项目负责人最终人工验收 |

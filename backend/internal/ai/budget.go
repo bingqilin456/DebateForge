@@ -162,10 +162,11 @@ func newModelCallContext(parent context.Context) (context.Context, context.Cance
 // Fake 是与真实适配器共用 Generator 接口的可记录实现：深拷贝记录、并发隔离、
 // 可按脚本返回失败，用于 T05 等上层测试。
 type Fake struct {
-	mu      sync.Mutex
-	steps   []FakeStep
-	index   int
-	records []FakeRecord
+	mu             sync.Mutex
+	steps          []FakeStep
+	index          int
+	records        []FakeRecord
+	summaryRecords []FakeSummaryRecord
 }
 
 // FakeStep 是一次预设的调用结果；Err 非 nil 时返回该错误。

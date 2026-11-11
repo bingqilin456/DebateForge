@@ -9,8 +9,8 @@
 3. [PRD](product/PRD.md)：MVP 做什么、不做什么，以及 AC 验收标准。
 4. [ARCHITECTURE](architecture/ARCHITECTURE.md)：模块职责、数据关系、状态机及安全约束；区分已实现内容与目标设计。
 5. [API](api/API.md) 与 [OpenAPI](api/openapi.yaml)：HTTP 契约、DTO、错误处理和接口实施边界。
-6. [PLAN](planning/PLAN.md) 与 [TASKS](planning/TASKS.md)：阶段依赖、任务分工、进度和风险；结合对应验收记录核对状态。
-7. [DECISIONS](decisions/DECISIONS.md)：选型理由、决策替代关系和授权增量；实施具体任务前再读相关计划及验收证据。
+6. [PLAN](planning/PLAN.md) 与 [TASKS](planning/TASKS.md)：PLAN 管阶段依赖和门槛，TASKS 管当前分工、进度和风险。
+7. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
 
 ## 按用途查找
 
@@ -41,14 +41,16 @@
 - T04：[AI 验收记录](acceptance/T04_AI_ACCEPTANCE.md)、[实施交接](acceptance/T04_AI_IMPLEMENTATION.md)及[实施计划](planning/T04_AI_PLAN.md)。
 - T05：[首轮验收记录](acceptance/T05_FIRST_TURN_ACCEPTANCE.md)、[实施计划](planning/T05_FIRST_TURN_PLAN.md)及 [DSH 实施进度](planning/T05_DSH_PROGRESS.md)；结项范围限于无收费实现，真实模型链路未验收。
 - T05 / T06-B：[Git 集成验证记录](acceptance/T05_T06_B_GIT_INTEGRATION.md)；来源 SHA、冲突处理、验证与未执行项。
-- T06-B：[认证与本地预览交接](acceptance/T06_B_HANDOFF.md)；B 部分已交付，T06 整体仍待正式入口/首轮面板、真实浏览器联调与验收。
+- T06-B 历史交付见 [认证与本地预览交接](acceptance/T06_B_HANDOFF.md)。
+- T06 已完成人工验收，见 [实施计划](planning/T06_COMPLETION_PLAN.md) 和 [验收记录](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
+- T07 部署准备见 [配置与运行清单](../deploy/README.md) 和 [验收记录](acceptance/T07_DEPLOYMENT_PREPARATION_ACCEPTANCE.md)。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
-历史记录不等于当前状态，也不构成新增操作授权。应按明确的后续授权、决策替代关系和验收结论核对，不能仅凭文件日期、文件存在或早期段落判断任务完成、阻塞解除或可执行某项操作。本次整理不新增业务验收结论。
+历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。
 
-## 整理时发现的状态差异与保留项
+## 2026-11-08 目录迁移时发现的状态差异与保留项
 
-2026 年 11 月 8 日整理时核对到以下差异，登记于此；本次不改写既有授权原文、历史状态或验收证据。
+下表记录目录迁移时发现的差异。当前状态统一从 [TASKS](planning/TASKS.md) 和对应验收记录查阅。
 
 | 差异或保留项 | 查阅依据与处理 |
 | --- | --- |

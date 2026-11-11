@@ -13,17 +13,14 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/bingqilin456/DebateForge/backend/internal/ai"
-	"github.com/joho/godotenv"
 )
 
 const (
@@ -82,52 +79,8 @@ type evidence struct {
 }
 
 func main() {
-	// 显式固定参数，默认启动不会触网；没有重置/换目录/重试选项。
-	if len(os.Args) != 2 || os.Args[1] != "--execute-once" {
-		fmt.Println("未执行：仅支持本次授权的 --execute-once；没有重置或重试入口")
-		return
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		fmt.Println("BLOCKED: workspace_unavailable")
-		os.Exit(1)
-	}
-	mod, err := os.ReadFile(filepath.Join(wd, "go.mod"))
-	if err != nil || !strings.HasPrefix(string(mod), "module github.com/bingqilin456/DebateForge/backend") {
-		fmt.Println("BLOCKED: run_from_backend_required")
-		os.Exit(1)
-	}
-	key, err := loadKey()
-	if err != nil {
-		fmt.Println("BLOCKED: credential_unavailable")
-		os.Exit(1)
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	transport := newDirectTransport()
-	defer transport.CloseIdleConnections()
-	dir := filepath.Join(wd, ".cache", "t04-smoke-20261108")
-	e := execute(ctx, dir, key, transport)
-	fmt.Printf("status=%s error_code=%s consumed=%t model_attempts=%d evidence=%s\n", e.Status, e.ErrorCode, e.Consumed, e.ModelAttempts, filepath.Join(dir, "evidence.json"))
-	if e.Status != "success" {
-		os.Exit(1)
-	}
-}
-
-// loadKey 只向调用器返回内存值；解析错误可能含原文，因此不传播错误细节。
-func loadKey() (string, error) {
-	key, present := os.LookupEnv("DEEPSEEK_API_KEY")
-	if !present {
-		values, err := godotenv.Read(".env")
-		if err != nil {
-			return "", errors.New("credential_unavailable")
-		}
-		key = values["DEEPSEEK_API_KEY"]
-	}
-	if strings.TrimSpace(key) == "" || strings.TrimSpace(key) != key || strings.ContainsAny(key, "\r\n") {
-		return "", errors.New("credential_unavailable")
-	}
-	return key, nil
+	fmt.Println("BLOCKED: T04 一次性调用授权已消耗")
+	os.Exit(1)
 }
 
 // createRecord 使用排他创建及同步落盘。任何既有文件（包括半写入文件）均拒绝重入。

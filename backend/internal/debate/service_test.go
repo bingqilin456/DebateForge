@@ -132,3 +132,15 @@ func TestServiceDeadlinePersistsFailureWithLiveContext(t *testing.T) {
 		t.Fatal("deadline cleanup")
 	}
 }
+
+func TestGenerationTimeoutPreservesLedgerFailure(t *testing.T) {
+	ledgerErr := errors.New("synthetic ledger write failure")
+	err := generationContextError(ledgerErr, ai.Result{}, context.DeadlineExceeded)
+	if !errors.Is(err, ledgerErr) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("combined causes lost: %v", err)
+	}
+	code, status, _, _ := classifyFailure(context.Background(), err)
+	if code != "model_timeout" || status != 504 {
+		t.Fatalf("timeout classification changed: %s %d", code, status)
+	}
+}

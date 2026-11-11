@@ -1,5 +1,7 @@
 # T06 B 部分交接与本地验证
 
+2026-11-09 后续结项。T06 复用本交付接入正式入口和首轮面板，项目负责人已确认整体验收通过。真实 T03/T05、隔离 MySQL 和 Fake 浏览器联调及独立复审证据见 [T06 验收记录](T06_COMPLETION_ACCEPTANCE.md)。下文保留 B 部分和后续集成时的历史记录。
+
 集成说明（2026-11-09）：本交接从 `docs/T06_B_HANDOFF.md` 迁入验收目录，仅修复文档路径。以下“不提交/推送/合并”和运行状态均为当轮历史；本轮 Git 集成授权见根 AGENTS，既有验证不冒充本轮重跑，T06 整体仍未验收。
 
 日期：2026 年 11 月 7 日。依据本轮用户明确授权，在原仓库直接实施 T06 的 B 部分。PB 和 T01 的历史结项不重验、不回退。正式依据为 [API](../api/API.md)、[ARCHITECTURE](../architecture/ARCHITECTURE.md)、[PRD](../product/PRD.md) F01 与 [TASKS](../planning/TASKS.md) T06，不使用旧个人任务包覆盖正式契约。

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
@@ -653,6 +654,42 @@ func TestRateLimitResponsesCarryRetryAfter(t *testing.T) {
 	if store.createUserCalls != before {
 		t.Fatal("被限流的请求到达存储层")
 	}
+}
+
+func TestRegistrationLimitsUseVerifiedProxyClient(t *testing.T) {
+	store := newFakeStore()
+	service, _, _ := newTestService(t, store)
+	handler, err := NewHandler(service, HandlerConfig{
+		Origin:       testOrigin,
+		TrustedProxy: netip.MustParseAddr("172.30.70.2"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := engineFor(t, handler)
+	register := func(name, peer string, clientIPs ...string) *httptest.ResponseRecorder {
+		req := jsonRequest("POST", "/api/v1/auth/register",
+			`{"username":"`+name+`","password":"`+httpPassword+`"}`)
+		req.RemoteAddr = peer + ":12345"
+		req.Header.Set("X-Forwarded-For", "203.0.113.77")
+		for _, ip := range clientIPs {
+			req.Header.Add("X-Real-IP", ip)
+		}
+		return serve(engine, req)
+	}
+	for i := 0; i < RegisterIPLimit; i++ {
+		assertData(t, register("proxy_a"+strconv.Itoa(i), "172.30.70.2", "203.0.113.1"), http.StatusCreated)
+	}
+	assertErrorResponse(t, register("proxy_full", "172.30.70.2", "203.0.113.1"), http.StatusTooManyRequests, "rate_limited")
+	assertData(t, register("proxy_other", "172.30.70.2", "203.0.113.2"), http.StatusCreated)
+	// 直连不能借用代理头切换额度。可信对端传来歧义头时也回退到对端地址。
+	for i := 0; i < RegisterIPLimit; i++ {
+		assertData(t, register("direct_a"+strconv.Itoa(i), "203.0.113.3"), http.StatusCreated)
+		assertData(t, register("bad_ip_a"+strconv.Itoa(i), "172.30.70.2"), http.StatusCreated)
+	}
+	assertErrorResponse(t, register("direct_full", "203.0.113.3", "203.0.113.2"), http.StatusTooManyRequests, "rate_limited")
+	assertErrorResponse(t, register("double_ip", "172.30.70.2", "203.0.113.2", "203.0.113.4"), http.StatusTooManyRequests, "rate_limited")
+	assertErrorResponse(t, register("joined_ip", "172.30.70.2", "203.0.113.2, 203.0.113.4"), http.StatusTooManyRequests, "rate_limited")
 }
 
 func TestDependencyFailureAndBusyMapTo503(t *testing.T) {

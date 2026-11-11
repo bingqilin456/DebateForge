@@ -1,0 +1,36 @@
+# Shared by the Fake network verification and the separately approved real trial.
+services:
+  app:
+    networks: [proxy, database, trial-relay]
+
+  trial-relay:
+    image: siyige-edge:${T07_RELEASE:?set T07_RELEASE}
+    entrypoint: ["nginx", "-c", "/etc/nginx/siyige/trial-relay.conf", "-g", "daemon off;"]
+    command: []
+    configs:
+      - source: trial-relay
+        target: /etc/nginx/siyige/trial-relay.conf
+    networks: [trial-relay, trial-egress]
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=4m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+
+configs:
+  trial-relay:
+    file: ./nginx/trial-relay.conf
+
+networks:
+  proxy:
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  database:
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  trial-relay:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  trial-egress: {}

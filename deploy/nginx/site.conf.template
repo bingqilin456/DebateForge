@@ -1,0 +1,64 @@
+server {
+    listen 8080;
+    server_name ${SITE_HOST};
+    if ($host != ${SITE_HOST}) { return 421; }
+    return 308 https://${SITE_HOST}$request_uri;
+}
+
+server {
+    listen 8443 ssl;
+    server_name ${SITE_HOST};
+    if ($host != ${SITE_HOST}) { return 421; }
+
+    # 拒绝原始路径中的点段，避免保留路径经 Nginx 归一化落入 SPA。
+    if ($request_uri ~* "^[^?]*(?:/|%2f)(?:[.]|%2e)(?:[.]|%2e)?(?:/|%2f|[?]|$)") {
+        return 404;
+    }
+
+    ssl_certificate /run/tls/fullchain.pem;
+    ssl_certificate_key /run/tls/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location = /api/health/live {
+        include /etc/nginx/siyige/proxy.conf;
+    }
+    location = /api/health/ready {
+        include /etc/nginx/siyige/proxy.conf;
+    }
+    location = /api {
+        include /etc/nginx/siyige/proxy.conf;
+    }
+    location ^~ /api/ {
+        include /etc/nginx/siyige/proxy.conf;
+    }
+    location @api_body_too_large {
+        # 与本地响应头和 JSON 信封使用同一个 Nginx 请求 ID。
+        access_log /dev/stdout api_413;
+        default_type application/json;
+        add_header X-Request-ID $request_id always;
+        add_header Cache-Control "no-store" always;
+        return 413 '{"error":{"code":"request_too_large","message":"请求体超过限制"},"request_id":"$request_id"}';
+    }
+    location = /health { return 404; }
+    location ^~ /health/ { return 404; }
+    location ^~ /assets/ {
+        try_files $uri =404;
+    }
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# 仅供容器内检查 Nginx。业务健康路径始终转发至 Go。
+server {
+    listen 127.0.0.1:8081;
+    access_log off;
+    location = / { return 200 "ok\n"; }
+}

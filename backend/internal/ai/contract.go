@@ -89,6 +89,8 @@ type CompletedTurn struct {
 
 // Request 是一次无状态生成请求：每轮都完整重建消息，不跨请求共享可变状态。
 type Request struct {
+	// UserID 来自认证会话，只用于真实试运行准入。
+	UserID         uint64
 	Topic          Topic
 	UserStance     Stance
 	RoundNo        int

@@ -57,6 +57,10 @@ func NewOpenAIGenerator(ctx context.Context, cfg OpenAIConfig) (Generator, error
 	}
 	// 复制客户端，避免为观察响应而修改调用方共享的 Transport。
 	clientCopy := *httpClient
+	// 模型 POST 可能已计费。即使供应商返回重定向，也只处理首次响应。
+	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
 	transport := clientCopy.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -201,7 +205,7 @@ func classifyReply(content string, observation responseObservation) *Error {
 // classifyModelError 只依赖 HTTP 状态码与错误链分类，不从敏感正文猜测原因。
 func classifyModelError(callCtx context.Context, err error, usage Usage, metadata Metadata) *Error {
 	if ctxErr := callCtx.Err(); ctxErr != nil {
-		return contextError(ctxErr, usage, metadata)
+		return contextError(ctxErr, usage, metadata).WithCause(errors.Join(ctxErr, err))
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &Error{Code: CodeModelTimeout, Message: "模型生成超时", Usage: usage, Metadata: metadata, cause: err}

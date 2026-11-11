@@ -81,6 +81,137 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
   expect(location.hash).toBe('')
 })
 
+it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完整闭环', async () => {
+  const time = '2026-11-09T00:00:00Z'
+  const baseDebate = {
+    id: '123',
+    topic: { id: '1', title: '开放考核', description: '讨论学习' },
+    user_stance: 'pro',
+    ai_stance: 'con',
+    status: 'active' as 'active' | 'completed',
+    completed_rounds: 0,
+    created_at: time,
+    updated_at: time,
+  }
+  const turns: Array<{
+    id: string; round_no: number; client_request_id: string; status: 'completed' | 'failed'
+    attempt_version: number; error_code: string | null
+    messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; created_at: string }>
+  }> = []
+  let summaryAttempts = 0
+  let summaryState: Record<string, unknown> = { status: 'not_started', attempt_version: null }
+
+  fetchMock.mockImplementation(async (url, init) => {
+    const u = String(url)
+    if (u.endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
+    if (u.endsWith('/topics')) return response({ items: [baseDebate.topic] })
+    if (u.endsWith('/debates') && init?.method === 'POST') return response(baseDebate, 201)
+    if (u.endsWith('/debates/123')) {
+      return response({ debate: baseDebate, turns, summary_status: summaryState })
+    }
+    if (u.endsWith('/debates/123/turns')) {
+      const body = JSON.parse(String(init?.body))
+      const rNo = Number(body.round_no)
+      if (rNo === 2 && turns.length === 1) {
+        turns.push({
+          id: '22', round_no: 2, client_request_id: body.client_request_id,
+          status: 'failed', attempt_version: 1, error_code: 'model_timeout',
+          messages: [{ id: '201', role: 'user', content: body.content, created_at: time }],
+        })
+        return failure(504, 'model_timeout')
+      }
+      const turn = {
+        id: String(rNo * 10),
+        round_no: rNo,
+        client_request_id: body.client_request_id,
+        status: 'completed' as const,
+        attempt_version: 1,
+        error_code: null,
+        messages: [
+          { id: String(rNo * 100 + 1), role: 'user' as const, content: body.content, created_at: time },
+          { id: String(rNo * 100 + 2), role: 'assistant' as const, content: `第${rNo}轮AI回复`, created_at: time },
+        ],
+      }
+      turns.push(turn)
+      baseDebate.completed_rounds = rNo
+      if (rNo === 3) baseDebate.status = 'completed'
+      return response({ turn, completed_rounds: rNo, query_url: '/api/v1/debates/123' }, 201)
+    }
+    if (u.endsWith('/debates/123/turns/22/retry')) {
+      const turn = {
+        ...turns[1]!,
+        status: 'completed' as const,
+        attempt_version: 2,
+        error_code: null,
+        messages: [
+          turns[1]!.messages[0]!,
+          { id: '202', role: 'assistant' as const, content: '第2轮重试成功回复', created_at: time },
+        ],
+      }
+      turns[1] = turn
+      baseDebate.completed_rounds = 2
+      return response({ turn, completed_rounds: 2, query_url: '/api/v1/debates/123' }, 200)
+    }
+    if (u.endsWith('/debates/123/summary') && init?.method === 'POST') {
+      summaryAttempts++
+      if (summaryAttempts === 1) {
+        summaryState = { status: 'failed', attempt_version: 1, error_code: 'model_error' }
+        return failure(502, 'model_error')
+      }
+      summaryState = {
+        status: 'completed',
+        attempt_version: 2,
+        schema_version: 1,
+        content: {
+          strengths: [{ round_no: 1, point: '<script>alert(1)</script>首轮优点', reason: '论据扎实' }],
+          issues: [{ round_no: 2, point: '<img src=x onerror=alert(2)>二轮不足', reason: '可进一步细化' }],
+          suggestions: [{ round_no: 3, action: '三轮收束', example: '直接对比双方标准' }],
+        },
+      }
+      return response(summaryState, 200)
+    }
+    return failure(404, 'not_found')
+  })
+
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
+  click('创建会话')
+  await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
+
+  // 第 1 轮成功
+  let textarea = host.querySelector('textarea')!
+  textarea.value = '第一轮论点'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  await vi.waitFor(() => expect(host.textContent).toContain('第 2 轮发言'))
+
+  // 第 2 轮首次超时失败 -> 展示重试按钮
+  textarea = host.querySelector('textarea')!
+  textarea.value = '第二轮论点'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  await vi.waitFor(() => expect(host.querySelector('[data-retry-turn]')).not.toBeNull())
+  expect(host.querySelector('form[data-first-turn]')).toBeNull()
+
+  // 点击重试第 2 轮（携带 expected_attempt_version: 1）
+  host.querySelector<HTMLButtonElement>('[data-retry-turn]')!.click()
+  await vi.waitFor(() => expect(host.textContent).toContain('第 3 轮发言'))
+
+  // 第 3 轮成功 -> 自动请求一次总结（模拟首次总结失败，不循环调用，展示手动重试按钮）
+  textarea = host.querySelector('textarea')!
+  textarea.value = '第三轮总结陈词'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
+  host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  await vi.waitFor(() => expect(host.querySelector('[data-retry-summary]')).not.toBeNull())
+  expect(summaryAttempts).toBe(1)
+
+  // 点击手动重试总结（携带 retry: true, expected_attempt_version: 1）
+  host.querySelector<HTMLButtonElement>('[data-retry-summary]')!.click()
+  await vi.waitFor(() => expect(host.querySelector('[data-summary-completed]')).not.toBeNull())
+  expect(summaryAttempts).toBe(2)
+  expect(host.textContent).toContain('<script>alert(1)</script>首轮优点')
+  expect(host.textContent).toContain('<img src=x onerror=alert(2)>二轮不足')
+  expect(host.querySelector('script')).toBeNull()
+  expect(host.querySelector('img')).toBeNull()
+})
+
 it('退出失败保留认证和面板；显式恢复或退出成功才清理', async () => {
   fetchMock.mockImplementation(async url => String(url).endsWith('/auth/me')
     ? response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })

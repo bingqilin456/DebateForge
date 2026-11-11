@@ -1,31 +1,105 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFirstTurnState } from './firstTurn'
 import { ApiError } from '../api/client'
-import type { Debate, DebateDetail, DebateApi } from '../api/debate'
+import type { Debate, DebateDetail, DebateApi, SummaryContent, Turn } from '../api/debate'
 
-const debate: Debate = { id: '123', topic: { id: '1', title: '开放考核', description: '学习与公平' }, user_stance: 'pro', ai_stance: 'con', status: 'active', completed_rounds: 0, created_at: '2026-11-09T00:00:00Z', updated_at: '2026-11-09T00:00:00Z' }
+const debate: Debate = {
+  id: '123',
+  topic: { id: '1', title: '开放考核', description: '学习与公平' },
+  user_stance: 'pro',
+  ai_stance: 'con',
+  status: 'active',
+  completed_rounds: 0,
+  created_at: '2026-11-09T00:00:00Z',
+  updated_at: '2026-11-09T00:00:00Z',
+}
+const sampleSummary: SummaryContent = {
+  strengths: [{ round_no: 1, point: '首轮立论明确', reason: '紧扣学习效果' }],
+  issues: [{ round_no: 2, point: '二轮拆解不足', reason: '未回应评分标准' }],
+  suggestions: [{ round_no: 3, action: '三轮总结先破后立', example: '先回应公平性，再强调能力培养' }],
+}
 const empty: DebateDetail = { debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } }
-const generating: DebateDetail = { ...empty, turns: [{ id: '2', round_no: 1, client_request_id: '550e8400-e29b-41d4-a716-446655440000', status: 'generating', attempt_version: 1, error_code: null, messages: [{ id: '3', role: 'user', content: '原文', created_at: debate.created_at }] }] }
+function makeTurn(roundNo: number, status: Turn['status'] = 'completed', version = 1, content = `第${roundNo}轮发言`): Turn {
+  const messages: Turn['messages'] = [{ id: `${roundNo * 10 + 1}`, role: 'user', content, created_at: debate.created_at }]
+  if (status === 'completed') {
+    messages.push({ id: `${roundNo * 10 + 2}`, role: 'assistant', content: `第${roundNo}轮反驳`, created_at: debate.created_at })
+  }
+  return {
+    id: `${roundNo + 1}`,
+    round_no: roundNo,
+    client_request_id: `550e8400-e29b-41d4-a716-44665544000${roundNo}`,
+    status,
+    attempt_version: version,
+    error_code: status === 'failed' ? 'model_timeout' : null,
+    messages,
+  }
+}
+const generating: DebateDetail = { ...empty, turns: [makeTurn(1, 'generating', 1, '原文')] }
+
 function fixture() {
-  const api: DebateApi = { topics: vi.fn().mockResolvedValue([{ id: '1', title: '开放考核', description: '学习与公平' }]), create: vi.fn().mockResolvedValue(debate), detail: vi.fn().mockResolvedValue(empty), send: vi.fn().mockResolvedValue({ turn: { ...generating.turns[0]!, status: 'completed', messages: [...generating.turns[0]!.messages, { id: '4', role: 'assistant', content: '反驳', created_at: debate.created_at }] }, completed_rounds: 1, query_url: '/api/v1/debates/123' }) }
+  const api: DebateApi = {
+    topics: vi.fn().mockResolvedValue([debate.topic]),
+    list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
+    create: vi.fn().mockResolvedValue(debate),
+    detail: vi.fn().mockResolvedValue(empty),
+    send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
+      turn: makeTurn(roundNo, 'completed', 1, content),
+      completed_rounds: roundNo,
+      query_url: '/api/v1/debates/123',
+    })),
+    retryTurn: vi.fn().mockResolvedValue({
+      turn: makeTurn(1, 'completed', 2, '原文'),
+      completed_rounds: 1,
+      query_url: '/api/v1/debates/123',
+    }),
+    summary: vi.fn().mockResolvedValue({ status: 'not_started', attempt_version: null }),
+    requestSummary: vi.fn().mockResolvedValue({
+      status: 'completed',
+      attempt_version: 1,
+      schema_version: 1,
+      content: sampleSummary,
+    }),
+  }
   const state = createFirstTurnState(api)
   return { api, state }
 }
+
 afterEach(() => { vi.useRealTimers() })
-describe('首轮状态与恢复', () => {
-  it('创建不调用生成；重复提交只发送一次并展示持久化结果', async () => {
+
+describe('三轮状态机、重试与总结恢复', () => {
+  it('创建不调用生成；连续完成三轮后自动请求一次总结，并禁止第四轮提交', async () => {
     const { api, state } = fixture()
     await state.start('1', 'pro')
     expect(api.send).not.toHaveBeenCalled()
-    const first = state.submit('原文')
-    await state.submit('第二次')
+
+    const first = state.submit('第一轮观点')
+    await state.submit('并发重复点击')
     await first
     expect(api.send).toHaveBeenCalledOnce()
     expect(state.detail.value?.debate.completed_rounds).toBe(1)
-    expect(state.detail.value?.turns[0]?.messages[1]?.content).toBe('反驳')
-    await state.submit('第二轮')
-    expect(api.send).toHaveBeenCalledOnce()
+    expect(state.nextRound.value).toBe(2)
+
+    await state.submit('第二轮观点')
+    expect(api.send).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(api.send).mock.calls[1]?.[3]).toBe(2)
+    expect(state.detail.value?.debate.completed_rounds).toBe(2)
+    expect(state.nextRound.value).toBe(3)
+    expect(api.requestSummary).not.toHaveBeenCalled()
+
+    await state.submit('第三轮观点')
+    expect(api.send).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(api.send).mock.calls[2]?.[3]).toBe(3)
+    expect(state.detail.value?.debate.completed_rounds).toBe(3)
+    expect(state.detail.value?.debate.status).toBe('completed')
+    expect(state.nextRound.value).toBeNull()
+    expect(api.requestSummary).toHaveBeenCalledOnce()
+    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false })
+    expect(state.detail.value?.summary_status.status).toBe('completed')
+
+    await state.submit('第四轮越界')
+    expect(api.send).toHaveBeenCalledTimes(3)
   })
+
   it('按 Unicode 码点校验，全空白与 2001 码点不请求，2000 emoji 可发送', async () => {
     const { api, state } = fixture()
     await state.start('1', 'con')
@@ -35,6 +109,7 @@ describe('首轮状态与恢复', () => {
     await state.submit('😀'.repeat(2000))
     expect(api.send).toHaveBeenCalledOnce()
   })
+
   it('丢失生成响应先查详情；不自动重新生成，查询失败仍锁定原文', async () => {
     const { api, state } = fixture()
     vi.mocked(api.send).mockRejectedValue(new ApiError('network', '网络失败'))
@@ -47,6 +122,7 @@ describe('首轮状态与恢复', () => {
     expect(api.send).toHaveBeenCalledOnce()
     expect(state.draft.value).toBe('原文')
   })
+
   it('生成中只每 2 秒查询，120 秒停止，保留稍后查询入口', async () => {
     vi.useFakeTimers()
     const { api, state } = fixture()
@@ -60,6 +136,7 @@ describe('首轮状态与恢复', () => {
     expect(api.send).not.toHaveBeenCalled()
     state.dispose()
   })
+
   it('卸载清除轮询且迟到响应不能带回旧用户数据', async () => {
     const { api, state } = fixture()
     let finish!: (value: DebateDetail) => void
@@ -71,15 +148,103 @@ describe('首轮状态与恢复', () => {
     expect(state.detail.value).toBeNull()
     expect(state.busy.value).toBe(false)
   })
-  it('已失败的首轮保留原文并禁止冒充 T09 重试', async () => {
+
+  it('已失败轮次保留原文且禁止通过 submit 跳轮；显式重试携带所见 expected_attempt_version，遇 409 只查询不重发', async () => {
     const { api, state } = fixture()
-    vi.mocked(api.detail).mockResolvedValue({ ...generating, turns: [{ ...generating.turns[0]!, status: 'failed', error_code: 'model_timeout' }] })
+    const failedV1: DebateDetail = {
+      debate: { ...debate, completed_rounds: 1 },
+      turns: [makeTurn(1, 'completed', 1, '首轮'), makeTurn(2, 'failed', 1, '二轮原文')],
+      summary_status: { status: 'not_started', attempt_version: null },
+    }
+    const failedV2: DebateDetail = {
+      ...failedV1,
+      turns: [makeTurn(1, 'completed', 1, '首轮'), makeTurn(2, 'failed', 2, '二轮原文')],
+    }
+    vi.mocked(api.detail).mockResolvedValueOnce(failedV1).mockResolvedValueOnce(failedV2)
+    vi.mocked(api.retryTurn).mockRejectedValueOnce(new ApiError(
+      'http',
+      '重试版本已变化，请查询最新状态后再操作。',
+      { status: 409, code: 'attempt_version_conflict' },
+    ))
+
     await state.open('123')
-    await state.submit('偷偷重试')
-    expect(state.detail.value?.turns[0]?.messages[0]?.content).toBe('原文')
+    await state.submit('试图跳过失败轮')
     expect(api.send).not.toHaveBeenCalled()
     expect(state.notice.value).toContain('失败')
+
+    await state.retryTurn()
+    expect(api.retryTurn).toHaveBeenCalledOnce()
+    expect(api.retryTurn).toHaveBeenCalledWith('123', '3', 1)
+    expect(api.detail).toHaveBeenCalledTimes(2)
+    expect(state.detail.value?.turns[1]?.attempt_version).toBe(2)
+    expect(state.notice.value).toContain('重试版本已变化')
+
+    vi.mocked(api.retryTurn).mockResolvedValueOnce({
+      turn: makeTurn(2, 'completed', 3, '二轮原文'),
+      completed_rounds: 2,
+      query_url: '/api/v1/debates/123',
+    })
+    await state.retryTurn()
+    expect(api.retryTurn).toHaveBeenCalledTimes(2)
+    expect(api.retryTurn).toHaveBeenLastCalledWith('123', '3', 2)
+    expect(state.detail.value?.debate.completed_rounds).toBe(2)
   })
+
+  it('刷新 completed 会话：not_started 自动补发一次总结；failed 只展示手动重试且 409 后只查询不自动重发', async () => {
+    const { api, state } = fixture()
+    const completedNotStarted: DebateDetail = {
+      debate: { ...debate, status: 'completed', completed_rounds: 3 },
+      turns: [makeTurn(1), makeTurn(2), makeTurn(3)],
+      summary_status: { status: 'not_started', attempt_version: null },
+    }
+    const completedFailedV1: DebateDetail = {
+      ...completedNotStarted,
+      summary_status: { status: 'failed', attempt_version: 1, error_code: 'model_error' },
+    }
+    const completedFailedV2: DebateDetail = {
+      ...completedNotStarted,
+      summary_status: { status: 'failed', attempt_version: 2, error_code: 'model_timeout' },
+    }
+
+    // 1) 打开 completed + not_started：自动补发一次，若失败转 failed 绝不循环调用
+    vi.mocked(api.detail).mockResolvedValueOnce(completedNotStarted).mockResolvedValueOnce(completedFailedV1)
+    vi.mocked(api.requestSummary).mockRejectedValueOnce(new ApiError('http', 'AI 回复生成失败，请查询会话状态。', { status: 502, code: 'model_error' }))
+    await state.open('123')
+    expect(api.requestSummary).toHaveBeenCalledOnce()
+    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false })
+    expect(state.detail.value?.summary_status).toEqual(completedFailedV1.summary_status)
+    expect(state.canRetrySummary.value).toBe(true)
+
+    // 2) 再次刷新已 failed 会话：不自动请求总结
+    vi.mocked(api.detail).mockResolvedValueOnce(completedFailedV1)
+    await state.refresh()
+    expect(api.requestSummary).toHaveBeenCalledOnce()
+
+    // 3) 手动重试总结：携带当前所见版本 1，遇 409 只重查状态更新为版本 2，不自动换版本重发
+    vi.mocked(api.requestSummary).mockRejectedValueOnce(new ApiError(
+      'http',
+      '重试版本已变化，请查询最新状态后再操作。',
+      { status: 409, code: 'attempt_version_conflict' },
+    ))
+    vi.mocked(api.detail).mockResolvedValueOnce(completedFailedV2)
+    await state.retrySummary()
+    expect(api.requestSummary).toHaveBeenCalledTimes(2)
+    expect(api.requestSummary).toHaveBeenLastCalledWith('123', { retry: true, expectedAttemptVersion: 1 })
+    expect(state.detail.value?.summary_status.attempt_version).toBe(2)
+
+    // 4) 用户再次点击手动重试：使用新版本 2 成功完成
+    vi.mocked(api.requestSummary).mockResolvedValueOnce({
+      status: 'completed',
+      attempt_version: 3,
+      schema_version: 1,
+      content: sampleSummary,
+    })
+    await state.retrySummary()
+    expect(api.requestSummary).toHaveBeenCalledTimes(3)
+    expect(api.requestSummary).toHaveBeenLastCalledWith('123', { retry: true, expectedAttemptVersion: 2 })
+    expect(state.detail.value?.summary_status.status).toBe('completed')
+  })
+
   it('确认未落库后仅由用户重发原文与原键，保留 429 等失败反馈', async () => {
     const { api, state } = fixture()
     vi.mocked(api.send).mockRejectedValueOnce(new ApiError('http', '请在 60 秒后重试。', { status: 429, code: 'rate_limited' }))
@@ -90,12 +255,21 @@ describe('首轮状态与恢复', () => {
     await state.submit('篡改内容')
     expect(vi.mocked(api.send).mock.calls[1]).toEqual(vi.mocked(api.send).mock.calls[0])
   })
+
   it('恢复生成中会话后轮询读到已完成结果便停止，无自动生成', async () => {
     vi.useFakeTimers()
     const { api, state } = fixture()
     vi.mocked(api.detail).mockResolvedValueOnce(generating).mockResolvedValue(empty)
     await state.open('123')
-    const completed = { ...generating, debate: { ...debate, completed_rounds: 1 }, turns: [{ ...generating.turns[0]!, status: 'completed' as const, messages: [...generating.turns[0]!.messages, { id: '4', role: 'assistant' as const, content: '已保存', created_at: debate.created_at }] }] }
+    const completed = {
+      ...generating,
+      debate: { ...debate, completed_rounds: 1 },
+      turns: [{
+        ...generating.turns[0]!,
+        status: 'completed' as const,
+        messages: [...generating.turns[0]!.messages, { id: '4', role: 'assistant' as const, content: '已保存', created_at: debate.created_at }],
+      }],
+    }
     vi.mocked(api.detail).mockResolvedValue(completed)
     await vi.advanceTimersByTimeAsync(2000)
     expect(state.detail.value?.turns[0]?.messages[1]?.content).toBe('已保存')
@@ -104,15 +278,17 @@ describe('首轮状态与恢复', () => {
     expect(api.send).not.toHaveBeenCalled()
     state.dispose()
   })
-  it.each(['\u0085', '\u0085\ufeff\u2000\n', '\ufeff', '\u3000'])('拒绝后端视为空白的输入 %#，不绑定原文且仍能修改后提交', async content => {
+
+  it.each(['\u0085', '\u0085\u{FEFF}\u{2000}\n', '\u{FEFF}', '\u{3000}'])('拒绝后端视为空白的输入 %#，不绑定原文且仍能修改后提交', async content => {
     const { api, state } = fixture()
     await state.start('1', 'pro')
     await state.submit(content)
     expect(api.send).not.toHaveBeenCalled()
     expect(state.draft.value).toBe('')
-    await state.submit('\u0085有效论点\ufeff')
-    expect(api.send).toHaveBeenCalledWith('123', '\u0085有效论点\ufeff', expect.any(String))
+    await state.submit('\u0085有效论点\u{FEFF}')
+    expect(api.send).toHaveBeenCalledWith('123', '\u0085有效论点\u{FEFF}', expect.any(String))
   })
+
   it('首轮提交返回生成中后启动查询，120 秒内不重发生成', async () => {
     vi.useFakeTimers()
     const { api, state } = fixture()

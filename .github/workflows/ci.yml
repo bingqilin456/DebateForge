@@ -270,6 +270,17 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends nginx-light
           fi
+          real_nginx="$(command -v nginx)"
+          wrapper_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$wrapper_dir"' EXIT
+          # t07_nginx_test.go 在结束时仅对主进程调用 Process.Kill()；注入 master_process off;
+          # 避免残留子 worker 进程持有 go test 的 stderr 管道导致 WaitDelay 超时。
+          cat > "$wrapper_dir/nginx" <<EOF
+          #!/usr/bin/env bash
+          exec "$real_nginx" "\${@/#daemon off;/daemon off; master_process off;}"
+          EOF
+          chmod 0755 "$wrapper_dir/nginx"
+          PATH="$wrapper_dir:$PATH" \
           SIYIGE_TEST_NGINX_PROXY_CONF="$GITHUB_WORKSPACE/deploy/nginx/proxy.conf" \
             go test -v -count=1 -run '^TestT07NginxForwardsUpstream413$' ./internal/platform
 

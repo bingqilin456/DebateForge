@@ -126,6 +126,7 @@ const errorMessages: Record<string, string> = {
   round_conflict: '会话状态已变化，请查询最新状态。',
   idempotency_conflict: '请求内容发生冲突，请查询最新状态。',
   turn_failed: '本轮生成失败，请查询会话状态。',
+  attempt_version_conflict: '重试版本已变化，请查询最新状态后再操作。',
 }
 
 function businessError(value: unknown, response: Response, id: string): ApiError {

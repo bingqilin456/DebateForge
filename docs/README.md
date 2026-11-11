@@ -44,6 +44,7 @@
 - T06-B 历史交付见 [认证与本地预览交接](acceptance/T06_B_HANDOFF.md)。
 - T06 已完成人工验收，见 [实施计划](planning/T06_COMPLETION_PLAN.md) 和 [验收记录](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
 - T07 部署准备见 [配置与运行清单](../deploy/README.md) 和 [验收记录](acceptance/T07_DEPLOYMENT_PREPARATION_ACCEPTANCE.md)。
+- T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 Spec](planning/T12_DEBATE_INTEGRATION_SPEC.md) 和 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

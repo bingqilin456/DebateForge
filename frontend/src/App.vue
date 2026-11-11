@@ -78,7 +78,7 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
         <Button v-if="message" class="restore-button" :disabled="auth.state.pending" @click="restore">恢复登录状态</Button>
         <FirstTurnPanel :key="`${auth.state.user?.id}:${route}:${panelVersion}`" :auth="auth" :route="route" @new-practice="newPractice" />
       </template>
-      <p class="scope-note">AI 生成内容仅供练习参考，请勿输入个人敏感信息。当前开放首轮练习。</p>
+      <p class="scope-note">AI 生成内容仅供练习参考，请勿输入个人敏感信息。支持三轮文字辩论与结构化复盘总结。</p>
     </main>
     <footer>思弈阁 Lite · 让每一次表达，都有进步。</footer>
   </div>

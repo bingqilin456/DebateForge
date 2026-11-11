@@ -312,3 +312,17 @@ Session 和 CSRF 各用 32 字节密码学随机值，base64url 无填充编码�
 负责人接受替代路径无法实现绝对费用封顶的风险。超时、取消或停用可能发生在供应商已受理之后，延迟结算及共享账户或密钥泄露仍可能增加实际费用。任何真实模型公网试运行均须先通过相关控制验证、独立审查与负责人人工验收，再按批准范围单独授权。隔离 Fake 部署和 HTTPS 验证、真实 DeepSeek 调用及公网开放分别审查和授权。
 
 部署方向沿用 ADR-008 的 Linux 单机 Compose。首次使用全新隔离数据库，显式迁移。升级前验证备份可用、上一版应用镜像标识可核对且兼容目标 Schema。应用回退和数据库恢复分别授权。将服务器秘密文件、TLS 证书、加密异机备份及恢复演练纳入运维计划。数据库账户及服务端密钥继续高强度随机生成，普通用户密码产品政策与当前 T03 校验的差异登记在 TASKS。后续可通过现有 `ai.Generator` 边界增加其他供应商适配器，统一执行预算、超时和受控错误映射，逐一验证用量语义与费用策略。本轮仅记录该方向。
+
+## ADR-020 Phase 2 采用基于现有文档与 CI 的轻量 SDD 工作流
+
+2026-11-11，按项目负责人要求为 Phase 2（`T08`～`T12`）建立轻量级 Spec-Driven Development（SDD）工作方式。本轮仅建设工作流与必要文档，不启动 Phase 2 实际功能开发。
+
+背景：Phase 1（`T01`～`T07`）已完成本地结项，且仓库已在 `.github/workflows/ci.yml` 建立包含静态规范、前后端单测与构建、隔离 MySQL `8.4.13` 迁移及集成测试的自动化门禁。Phase 1 期间曾出现计划文件命名不统一、每次子任务在多份顶层文档顶部叠加状态快照横幅、以及在 CI 上线前于验收文档中重复记录大量常规静态/单测输出的问题。Phase 2 需要更聚焦、低摩擦的规范驱动开发流程。
+
+决定：采用「Phase 管理里程碑、功能任务驱动开发、Spec 明确需求、CI 负责基础质量」的轻量 SDD 模式，完整规范与 `T08`～`T12` 拆解基线集中维护在 [Phase 2 轻量 SDD 工作流](../planning/PHASE2_SDD_WORKFLOW.md)：
+
+1. **复用既有单一事实来源**：以 [PLAN](../planning/PLAN.md) 管理阶段里程碑，[TASKS](../planning/TASKS.md) 作为任务状态的唯一主入口，[PRD](../product/PRD.md)、[ARCHITECTURE](../architecture/ARCHITECTURE.md)、[API](../api/API.md) 与 [OpenAPI](../api/openapi.yaml) 作为全局契约，[AGENTS](../../AGENTS.md) 作为协作与安全红线。
+2. **单文件轻量任务 Spec**：每个任务获准实施时，在 `docs/planning/Txx_<SLUG>_SPEC.md` 编写单文件增量 Spec（明确范围、API/迁移增量、状态不变量、实施 Slice 与验收矩阵），并将落地的 Phase 2 草案接口晋升至 `API.md` 与 `openapi.yaml`。
+3. **CI 守住基础质量，Acceptance 聚焦专项证据**：由 `.github/workflows/ci.yml` 自动承担格式、链接、单测、隔离 MySQL 集成和前端构建门禁；`docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md` 仅聚焦业务 AC 验证、并发 `-race`/真实浏览器专项证据、独立只读审查与负责人验收结论。
+
+替代方案与取舍：引入外部完整 Spec Kit（如 `.specify/` 多文件模板、专用生成 CLI 或独立 `specs/` 目录树）会与现有 `PRD.md`、`ARCHITECTURE.md`、`API.md` 形成双轨重复维护，增加同步负担，故不采用；完全不写任务级 Spec 直接编码则容易在 `T09`/`T10` 的版本冲突、租约回收和 Schema 校验边界上遗漏约束，故采用单文件增量 Spec 折中方案。

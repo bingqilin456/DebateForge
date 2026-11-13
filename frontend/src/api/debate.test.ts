@@ -41,7 +41,7 @@ describe('辩论与总结 API 边界', () => {
     try { await expect(createDebateApi(createApiClient()).topics()).rejects.toMatchObject({ kind: 'format' }) } finally { fetcher.mockRestore() }
   })
 
-  it('生成使用 70 秒预算、允许 1-3 轮与 202，且保留输入原文和相同请求标识', async () => {
+  it('生成使用 70 秒预算、按会话赛制校验轮次上限与 202，且保留输入原文和相同请求标识', async () => {
     const request = vi.fn().mockResolvedValue({})
     const api = createDebateApi({ request })
     await api.send('123', ' 原文 ', key)
@@ -53,7 +53,14 @@ describe('辩论与总结 API 边界', () => {
     expect(request).toHaveBeenCalledWith('/api/v1/debates/123/turns', expect.objectContaining({
       body: { round_no: 2, content: '第二轮', client_request_id: key },
     }))
-    await expect(api.send('123', '第四轮', key, 4)).rejects.toMatchObject({ kind: 'format' })
+    // 四轮标准赛制下第 4 轮合法。
+    await api.send('123', '第四轮', key, 4, 4)
+    expect(request).toHaveBeenCalledWith('/api/v1/debates/123/turns', expect.objectContaining({
+      body: { round_no: 4, content: '第四轮', client_request_id: key },
+    }))
+    // 超过该会话赛制上限（四轮的第 5 轮）与三轮会话的第 4 轮都必须被拒。
+    await expect(api.send('123', '第五轮', key, 5, 4)).rejects.toMatchObject({ kind: 'format' })
+    await expect(api.send('123', '越界', key, 4, 3)).rejects.toMatchObject({ kind: 'format' })
     await expect(api.detail('../auth/me')).rejects.toMatchObject({ kind: 'format' })
   })
 
@@ -76,7 +83,7 @@ describe('辩论与总结 API 边界', () => {
   })
 
   it('真实 client 拒绝其它会话详情，即使结构完整', async () => {
-    const data = { debate: { id: '124', topic, user_stance: 'pro', ai_stance: 'con', status: 'active', completed_rounds: 0, created_at: time, updated_at: time }, turns: [], summary_status: { status: 'not_started', attempt_version: null } }
+    const data = { debate: { id: '124', topic, user_stance: 'pro', ai_stance: 'con', mode: 'quick_3', ai_style: 'logical', total_rounds: 3, status: 'active', completed_rounds: 0, created_at: time, updated_at: time }, turns: [], summary_status: { status: 'not_started', attempt_version: null } }
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(data))
     try { await expect(createDebateApi(createApiClient()).detail('123')).rejects.toMatchObject({ kind: 'format' }) }
     finally { fetcher.mockRestore() }
@@ -123,7 +130,8 @@ describe('辩论与总结 API 边界', () => {
       }, 201))
       .mockResolvedValueOnce(reply({
         status: 'completed', attempt_version: 2, schema_version: 1,
-        content: { ...sampleSummary, strengths: [{ round_no: 4, point: '非法轮次', reason: '越界' }] },
+        // 第 5 轮超出任何已知赛制上限（quick_3 为 3、standard_4 为 4），必须被拒。
+        content: { ...sampleSummary, strengths: [{ round_no: 5, point: '非法轮次', reason: '越界' }] },
       }, 200))
     try {
       const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
@@ -136,8 +144,25 @@ describe('辩论与总结 API 边界', () => {
     } finally { fetcher.mockRestore() }
   })
 
+
+  it('总结校验按会话赛制收窄轮号上限，不接受 quick_3 会话的第 4 轮引用', async () => {
+    // 这是回归测试：summary/requestSummary 曾用全局上限 4 校验，
+    // 导致 quick_3 会话的总结可以引用不存在的第 4 轮。
+    const badSummary = { ...sampleSummary, strengths: [{ round_no: 4, point: '不存在的轮次', reason: '越界' }] }
+    const fetcher = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(reply({ status: 'completed', attempt_version: 1, schema_version: 1, content: badSummary }, 200))
+      .mockResolvedValueOnce(reply({ status: 'completed', attempt_version: 1, schema_version: 1, content: sampleSummary }, 200))
+    try {
+      const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
+      // 三轮会话：第 4 轮必须被判为格式错误。
+      await expect(api.requestSummary('123', { totalRounds: 3 })).rejects.toMatchObject({ kind: 'format' })
+      // 四轮会话：第 4 轮合法。
+      const ok = await api.requestSummary('123', { totalRounds: 4 })
+      expect(ok.status).toBe('completed')
+    } finally { fetcher.mockRestore() }
+  })
   it('本人历史列表校验分页参数与返回结构', async () => {
-    const debateItem = { id: '123', topic, user_stance: 'pro', ai_stance: 'con', status: 'completed', completed_rounds: 3, created_at: time, updated_at: time }
+    const debateItem = { id: '123', topic, user_stance: 'pro', ai_stance: 'con', mode: 'quick_3', ai_style: 'logical', total_rounds: 3, status: 'completed', completed_rounds: 3, created_at: time, updated_at: time }
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply({
       items: [debateItem], total: 1, page: 1, page_size: 10,
     }))
@@ -157,6 +182,9 @@ describe('辩论与总结 API 边界', () => {
       topic,
       user_stance: 'pro' as const,
       ai_stance: 'con' as const,
+      mode: 'quick_3' as const,
+      ai_style: 'logical' as const,
+      total_rounds: 3,
       status: 'active' as const,
       completed_rounds: 0,
       created_at: time,

@@ -30,15 +30,23 @@ func BuildPrompt(req Request) (Prompt, error) {
 	return Prompt{Version: PromptVersion, Messages: messages}, nil
 }
 
-// systemPrompt 中的全部可变部分都来自受信任调用方（辩题快照、立场、轮次），
+// systemPrompt 中的全部可变部分都来自受信任调用方（辩题快照、立场、轮次、赛制、流派），
 // 不含用户自由文本，避免用户借发言改写规则。
 func systemPrompt(req Request, aiStance Stance) string {
+	rounds := MustRoundsFor(req.Mode)
+	style := "逻辑型：按前提与推理逐层推进"
+	if req.AIStyle != "" && req.AIStyle.Valid() {
+		style = req.AIStyle.Label()
+	}
 	return "你是中文辩论训练中的陪练，始终持与用户相反的立场并用中文回应。\n\n" +
 		"【本场信息】\n" +
 		"辩题：" + req.Topic.Title + "\n" +
 		"辩题说明：" + req.Topic.Description + "\n" +
 		"用户立场：" + req.UserStance.label() + "；你必须持" + aiStance.label() + "立场。\n" +
-		"当前是第 " + strconv.Itoa(req.RoundNo) + " 轮，共 " + strconv.Itoa(TotalRounds) + " 轮。\n\n" +
+		"本场赛制：" + req.Mode.label() + "；当前是第 " + strconv.Itoa(req.RoundNo) + " 轮，共 " + strconv.Itoa(rounds) + " 轮。\n" +
+		"本轮环节：" + StageFor(req.Mode, req.RoundNo).label() + "。\n" +
+		"你的辩手流派：" + style + "。\n\n" +
+		stageRequirement(req.Mode, req.RoundNo) +
 		"【回复要求】\n" +
 		"1. 只输出本轮的中文辩论回复正文，不要输出角色名、标题或额外说明。\n" +
 		"2. 必须直接回应用户本轮提出的具体论点，指出其依据或推理中的薄弱之处。\n" +

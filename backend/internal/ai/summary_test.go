@@ -31,8 +31,10 @@ func fixedAnonymousTurns() []CompletedTurn {
 	}
 }
 
+// validSummaryRequest 使用 quick_3，使既有的“三轮六条消息”用例保持原语义。
 func validSummaryRequest() SummaryRequest {
 	return SummaryRequest{
+		Mode: ModeQuick3,
 		Topic: Topic{
 			Title:       "大学课程是否应采用开放式考核",
 			Description: "讨论学习效果与评价公平",
@@ -66,6 +68,7 @@ func TestBuildSummaryPromptWithSixAnonymousMessages(t *testing.T) {
 	}
 
 	reqByMessages := SummaryRequest{
+		Mode:       ModeQuick3,
 		Topic:      reqByTurns.Topic,
 		UserStance: StancePro,
 		Messages:   fixedAnonymousMessages(),
@@ -132,6 +135,7 @@ func TestBuildSummaryPromptWithSixAnonymousMessages(t *testing.T) {
 
 func TestBuildSummaryPromptPreventsPromptInjection(t *testing.T) {
 	req := SummaryRequest{
+		Mode:       ModeQuick3,
 		Topic:      validSummaryRequest().Topic,
 		UserStance: StanceCon,
 		Messages:   fixedAnonymousMessages(),
@@ -216,7 +220,9 @@ func TestValidateSummaryRequestRejectsInvalidHistory(t *testing.T) {
 
 func TestWorstCaseSummaryPromptFitsBudgetEstimate(t *testing.T) {
 	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
+	// 用四轮标准赛制构造最坏请求：它比三轮更长，必须仍被预算上界覆盖。
 	req := SummaryRequest{
+		Mode: ModeStandard4,
 		Topic: Topic{
 			Title:       strings.Repeat("𠮷", MaxTopicTitleCodepoints),
 			Description: strings.Repeat("𠮷", MaxTopicDescriptionCodepoints),
@@ -226,6 +232,7 @@ func TestWorstCaseSummaryPromptFitsBudgetEstimate(t *testing.T) {
 			{RoundNo: 1, UserContent: worst, AssistantContent: worst},
 			{RoundNo: 2, UserContent: worst, AssistantContent: worst},
 			{RoundNo: 3, UserContent: worst, AssistantContent: worst},
+			{RoundNo: 4, UserContent: worst, AssistantContent: worst},
 		},
 	}
 	prompt, err := BuildSummaryPrompt(req)
@@ -367,6 +374,7 @@ func TestParseSummaryRejectsArrayBounds(t *testing.T) {
 }
 
 func TestParseSummaryRejectsInvalidRoundNo(t *testing.T) {
+	// 按 quick_3 的三轮上限校验：4 在当前赛制下越界，必须被拒。
 	for _, badRound := range []string{"0", "4", "-1", "99", `"1"`, "1.0", "1.5", "null", "true"} {
 		t.Run("round_no="+badRound, func(t *testing.T) {
 			for _, target := range []string{"strengths", "issues", "suggestions"} {
@@ -383,10 +391,26 @@ func TestParseSummaryRejectsInvalidRoundNo(t *testing.T) {
 				case "suggestions":
 					raw = strings.Replace(raw, `"round_no":3`, `"round_no":`+badRound, 1)
 				}
-				_, err := ParseSummary(raw)
+				_, err := ParseSummaryForMode(raw, ModeQuick3)
 				assertCode(t, err, CodeModelError)
 			}
 		})
+	}
+}
+
+// TestParseSummaryRoundNoFollowsMode 验证同一份引用第 4 轮的总结：
+// quick_3 拒绝、standard_4 接受，证明轮号范围确实由赛制驱动而非固定常量。
+func TestParseSummaryRoundNoFollowsMode(t *testing.T) {
+	raw := `{
+		"strengths":[{"round_no":1,"point":"优点","reason":"依据"}],
+		"issues":[{"round_no":4,"point":"问题","reason":"原因"}],
+		"suggestions":[{"round_no":4,"action":"动作","example":"示例"}]
+	}`
+	if _, err := ParseSummaryForMode(raw, ModeQuick3); err == nil {
+		t.Fatal("quick_3 只有三轮，引用第 4 轮必须被拒")
+	}
+	if _, err := ParseSummaryForMode(raw, ModeStandard4); err != nil {
+		t.Fatalf("standard_4 有四轮，引用第 4 轮应被接受: %v", err)
 	}
 }
 
@@ -475,6 +499,7 @@ func TestFakeGenerateSummaryWithSixAnonymousMessages(t *testing.T) {
 	fake := NewFake()
 	req := SummaryRequest{
 		UserID:     7,
+		Mode:       ModeQuick3,
 		Topic:      validSummaryRequest().Topic,
 		UserStance: StancePro,
 		Messages:   fixedAnonymousMessages(),
@@ -561,6 +586,7 @@ func TestOpenAIAdapterGenerateSummaryValidatesAndDoesNotAutoRepair(t *testing.T)
 
 		req := SummaryRequest{
 			UserID:     1,
+			Mode:       ModeQuick3,
 			Topic:      validSummaryRequest().Topic,
 			UserStance: StancePro,
 			Messages:   fixedAnonymousMessages(),

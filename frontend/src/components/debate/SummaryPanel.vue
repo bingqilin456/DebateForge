@@ -23,7 +23,7 @@ const emit = defineEmits<{
     </div>
 
     <div v-if="summary.status === 'not_started'" class="summary-state" role="status">
-      <p>三轮辩论已完成，正在准备生成结构化总结…</p>
+      <p>辩论已完成，正在准备生成结构化总结…</p>
       <Button v-if="canStart" type="outline" data-start-summary :disabled="busy" @click="emit('start')">
         生成结构化总结
       </Button>
@@ -35,7 +35,7 @@ const emit = defineEmits<{
 
     <div v-else-if="summary.status === 'failed'" class="summary-failed" role="alert">
       <p>
-        总结生成失败（错误码：{{ summary.error_code }} · 当前版本 v{{ summary.attempt_version }}）。本场三轮辩论记录已完整保存，你可以手动重试总结。
+        总结生成失败（错误码：{{ summary.error_code }} · 当前版本 v{{ summary.attempt_version }}）。本场辩论记录已完整保存，你可以手动重试总结。
       </p>
       <Button
         type="primary"

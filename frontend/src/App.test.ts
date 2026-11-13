@@ -41,7 +41,7 @@ it('恢复失败提供显式恢复入口；503 不伪装未登录', async () => 
 })
 
 it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯文本展示', async () => {
-  const debate = { id: '123', topic: { id: '1', title: '开放考核', description: '讨论学习' }, user_stance: 'con', ai_stance: 'pro', status: 'active', completed_rounds: 0, created_at: '2026-11-09T00:00:00Z', updated_at: '2026-11-09T00:00:00Z' }
+  const debate = { id: '123', topic: { id: '1', title: '开放考核', description: '讨论学习' }, user_stance: 'con', ai_stance: 'pro', mode: 'quick_3', ai_style: 'logical', total_rounds: 3, status: 'active', completed_rounds: 0, created_at: '2026-11-09T00:00:00Z', updated_at: '2026-11-09T00:00:00Z' }
   fetchMock.mockImplementation(async (url, init) => {
     if (String(url).endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'memory-only' })
     if (String(url).endsWith('/topics')) return response({ items: [debate.topic] })
@@ -64,7 +64,7 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
   expect(host.querySelector<HTMLButtonElement>('form[data-first-turn] button[type="submit"]')?.disabled).toBe(true)
   textarea.value = '原文'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
   host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-  await vi.waitFor(() => expect(host.textContent).toContain('首轮已完成'))
+  await vi.waitFor(() => expect(host.textContent).toContain('已完成 1 / 3 轮'))
   expect(host.textContent).toContain('<img src=x onerror=alert(1)>')
   expect(host.querySelector('img')).toBeNull()
   expect(location.hash).toBe('#debate=123')
@@ -88,6 +88,9 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
     topic: { id: '1', title: '开放考核', description: '讨论学习' },
     user_stance: 'pro',
     ai_stance: 'con',
+    mode: 'quick_3',
+    ai_style: 'logical',
+    total_rounds: 3,
     status: 'active' as 'active' | 'completed',
     completed_rounds: 0,
     created_at: time,
@@ -269,6 +272,9 @@ it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占�
     topic: { id: '1', title: '开放考核', description: '讨论学习' },
     user_stance: 'pro',
     ai_stance: 'con',
+    mode: 'quick_3',
+    ai_style: 'logical',
+    total_rounds: 3,
     status: 'active',
     completed_rounds: 0,
     created_at: '2026-11-09T00:00:00Z',

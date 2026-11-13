@@ -145,6 +145,10 @@ func TestPhase2EndToEndAC01ToAC08(t *testing.T) {
 		debatePro.Topic.ID != topics[0].ID || debatePro.Topic.Title != topics[0].Title || debatePro.Topic.Description != topics[0].Description {
 		t.Fatalf("unexpected pro debate DTO: %+v", debatePro)
 	}
+	// AC03/AC04/AC05/AC06 验证的是历史 quick_3 语义（三轮六条消息、第 4 轮 409）。
+	// 新会话默认 standard_4，这里显式切回 quick_3 以保持这些验收条目原有含义；
+	// 四轮赛制本身由 TestStandard4FourRoundsEndToEnd 单独覆盖。
+	f.markQuick3(t, debatePro.ID)
 
 	createConRes := f.request(t, "POST", "/api/v1/debates", map[string]any{"topic_id": topics[1].ID, "user_stance": "con"})
 	assertStatus(t, createConRes, http.StatusCreated, "")
@@ -472,7 +476,7 @@ func TestPhase2AdverseBoundaryCodePointsAndIdempotency(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, gen)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：本用例验证三轮边界与总结六条消息
 	path := "/api/v1/debates/" + id
 
 	// 1. 2001 个 Unicode 码点（ASCII、中文 BMP、4 字节扩展汉字/Emoji）均返回 400，不调用模型、不写库
@@ -564,7 +568,7 @@ func TestPhase2SameRoundConcurrentLockContention(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, gen)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：本用例验证三轮边界与总结六条消息
 	path := "/api/v1/debates/" + id
 
 	// 1. 第 1 轮：两个并发请求使用不同 client_request_id 同时抢占第 1 轮
@@ -718,7 +722,7 @@ func TestPhase2XSSAndSpecialCharactersVerbatimStorage(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, gen)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：本用例验证三轮边界与总结六条消息
 	path := "/api/v1/debates/" + id
 	inputs := []string{xssUser1, xssUser2, xssUser3}
 

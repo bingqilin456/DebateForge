@@ -112,7 +112,7 @@ onUnmounted(() => { active = false; panel.dispose() })
           <option value="pro">正方</option>
           <option value="con">反方</option>
         </select>
-        <p class="muted">AI 将持相反立场，由你先发言，共进行 3 轮交锋与复盘总结。</p>
+        <p class="muted">AI 将持相反立场，由你先发言，共进行 4 轮标准赛（立论/驳立论/自由辩/结辩）与复盘总结。</p>
         <Button type="primary" html-type="submit" :loading="busy" :disabled="locked || !selectedTopic">
           {{ createAttempted && !busy ? '另建新会话' : '创建会话' }}
         </Button>
@@ -122,12 +122,13 @@ onUnmounted(() => { active = false; panel.dispose() })
     <section v-else class="card" :aria-busy="busy" aria-label="首轮辩论面板">
       <div class="debate-heading">
         <h2>{{ detail?.debate.topic.title ?? '正在读取会话' }}</h2>
-        <span class="muted">{{ detail?.debate.status === 'completed' ? '三轮已完成' : '三轮辩论练习' }}</span>
+        <span class="muted">{{ detail?.debate.status === 'completed' ? '已完成' : '辩论练习' }}</span>
       </div>
       <p v-if="detail" class="muted">
         你：{{ detail.debate.user_stance === 'pro' ? '正方' : '反方' }} ·
         AI：{{ detail.debate.ai_stance === 'pro' ? '正方' : '反方' }} ·
-        已完成 {{ detail.debate.completed_rounds }} / 3 轮
+        赛制：{{ detail.debate.mode === 'standard_4' ? '四轮标准赛' : '三轮快速赛' }} ·
+        已完成 {{ detail.debate.completed_rounds }} / {{ detail.debate.total_rounds }} 轮
       </p>
       <p class="muted">会话 {{ id }} · 刷新可恢复当前会话</p>
 

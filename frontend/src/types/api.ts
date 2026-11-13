@@ -34,11 +34,23 @@ export interface CreateDebateRequest {
 
 export type DebateStatus = 'active' | 'completed'
 
+export type DebateMode = 'quick_3' | 'standard_4'
+
+export type AIStyle = 'logical' | 'aggressive' | 'empathic' | 'data'
+
+/** 赛制环节：第 3 轮在 quick_3 为结辩、在 standard_4 为自由辩。 */
+export type DebateStage = 'opening' | 'rebuttal' | 'free_debate' | 'closing'
+
 export interface Debate {
   id: string
   topic: Topic
   user_stance: Stance
   ai_stance: Stance
+  /** 赛制模式由服务端在创建时固定，客户端不可修改。 */
+  mode: DebateMode
+  ai_style: AIStyle
+  /** 总轮数由赛制推导，前端以此为唯一上限来源，不再硬编码 3。 */
+  total_rounds: number
   status: DebateStatus
   completed_rounds: number
   created_at: string

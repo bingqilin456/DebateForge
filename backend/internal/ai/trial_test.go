@@ -69,7 +69,7 @@ func TestTrialResultLedgerAndFailClosed(t *testing.T) {
 			})
 			ledger := &trialLedger{root: root, stage: isolatedTrial, bootID: "local", window: window, alert: alert, now: func() time.Time { return now }}
 			ctx := context.Background()
-			req := Request{UserID: 1, Topic: Topic{Title: "合成辩题", Description: "合成描述"}, UserStance: StancePro, RoundNo: 1, UserContent: "合成发言"}
+			req := Request{UserID: 1, Mode: ModeQuick3, Topic: Topic{Title: "合成辩题", Description: "合成描述"}, UserStance: StancePro, RoundNo: 1, UserContent: "合成发言"}
 			var generator trialGenerator
 			var calls int
 			transport := trialTransport{reserve: ledger.reserve, base: trialStub(func(r *http.Request) (*http.Response, error) {
@@ -250,7 +250,7 @@ func TestTrialAdapterAttemptsAtMostOneProviderRequest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := g.Generate(ctx, Request{Topic: Topic{Title: "合成辩题", Description: "合成描述"}, UserStance: StancePro, RoundNo: 1, UserContent: "合成发言"})
+			result, err := g.Generate(ctx, Request{Mode: ModeQuick3, Topic: Topic{Title: "合成辩题", Description: "合成描述"}, UserStance: StancePro, RoundNo: 1, UserContent: "合成发言"})
 			if attempts != 1 || reserved != 1 {
 				t.Fatalf("attempts=%d reservations=%d err=%v", attempts, reserved, err)
 			}

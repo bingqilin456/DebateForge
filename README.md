@@ -1,20 +1,32 @@
-# 思弈阁 Lite / DebateForge
+# 思弈阁 / DebateForge
 
-**T06 已完成（2026-11-09）。** 项目负责人确认人工验收通过。正式入口支持注册、登录、登录恢复与退出，以及预设辩题、立场选择和首轮辩论。真实 T03/T05 接口使用隔离 MySQL 与 Fake 模型完成浏览器联调，技术证据与本地运行步骤见 [T06 验收记录](docs/acceptance/T06_COMPLETION_ACCEPTANCE.md)。T07-COST-01 继续阻塞公网真实 AI 入口。下方集成状态和 PB 健康页操作是历史记录。
+**思弈阁**是基于 **Go + Eino + MySQL** 与 **Vue 3 + TypeScript + Arco Design** 的专业中文 AI 辩论训练与对抗演练系统。为缺少练习对手的中文辩论学习者提供赛制化的文字对抗训练与结构化复盘反馈，由双人团队按阶段目标交付可访问、可维护、可测试、可答辩的工程实践项目。
 
-**当前集成状态（2026-11-09）：T02–T05 累积成果、文档重组与 T06-B 在 `feat/integration-t05-t06-b` 集成，准备面向 `develop` 的 PR。** T02 已验收、T03 有条件验收及 P2/P3 延期保留、T04 已结项、T05 无收费范围已结项；真实模型链路未验收，T07-COST-01 仍阻塞公网真实入口。T06-B 的统一 client、认证 API/内存状态、独立表单和本地模拟预览已交付，见 [交接](docs/acceptance/T06_B_HANDOFF.md)；尚未接入 App.vue 或完成真实 T03/T05 浏览器联调，T06 整体进行中、未验收。本轮仅 Git 集成与必要验证，PR 创建后停止，等待全新会话独立只读审查及负责人决定；下方旧状态均保留当时语境。
+**当前状态（2026-11-14）。** Phase 0 与 Phase 1 已结项；**Phase 2 核心闭环已结项**，范围为后端轮次状态机、结构化总结、历史分页与 AC01–AC08 全链路（接口与 Fake 证据），**T08/T11 前端页面仍为占位实现、未闭环**。赛制升级已落地：`debates.mode` 为轮数唯一事实来源，新建会话默认四轮标准赛（立论/驳立论/自由辩/结辩），三轮快速赛仅用于历史兼容与隔离测试。SSE 流式已提升为 P0，端点契约与 Nginx 流式代理已就绪，实现进入 Phase 3。当前阶段与任务见 [PLAN](docs/planning/PLAN.md) 与 [TASKS](docs/planning/TASKS.md)。
 
-**T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](docs/acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。
+## 核心能力
 
-**T03 当前增量（2026 年 11 月 8 日）：用户另行授权完整认证实现，现已通过 Codex 集成技术验证，待独立审查与项目负责人人工验收。** 注册、登录、退出、登录状态恢复及认证保护已实现；见 [T03 验收记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md)。不进入 T04–T06，不 commit/push/merge/deploy。下方 T03 不启动及业务未实现等内容为历史说明，不覆盖本轮增量。
+| 能力 | 说明 | 状态 |
+| --- | --- | --- |
+| 赛制化对辩 | 四轮标准赛（立论/驳立论/自由辩/结辩）为默认；三轮快速赛仅历史兼容 | 已实现 |
+| AI 陪练 | Eino 驱动，服务端构建 Prompt，四种辩手流派影响论证风格 | 已实现 |
+| 结构化复盘 | 三栏总结（优点/问题/建议），按赛制校验轮次引用 | 已实现 |
+| 可靠性与恢复 | `attempt_version` 版本控制、90 秒租约回收、幂等重放、显式重试 | 已实现 |
+| 历史与权限 | 本人历史分页、会话详情、跨用户 404 隔离 | 已实现（接口层） |
+| SSE 流式对辩 | 打字机式增量显示、断线回退，复用同一认领内核 | 契约就绪，实现待 Phase 3 |
+| 破局亮点 | 逻辑谬误透视镜、四维训练维度参考值、双 AI 互搏演示 | 规划中（Phase 3） |
 
-**当前状态（2026 年 11 月 8 日）：T02 已完成，最终独立技术审查和项目负责人人工验收通过。** M01/M02 已关闭，M03 及已接受的验证/恢复边界继续延期，见 [最终验收记录](docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。本轮仅授权提交并推送到 `origin/feat/t02-database`，不进入 T03；Phase 1 尚未完成。下文早期“进行中/待验收”文字保留当时状态，以本段为当前依据。
+## 技术栈
 
-面向中文辩论初学者的 AI 文字辩论训练项目，双人团队按阶段目标交付可访问、可维护、可测试、可答辩的 MVP，各阶段不限定自然日数或固定投入时长。
+- **后端**：Go 1.27.1、Gin、Eino（CloudWeGo）、GORM、MySQL 8.4.13，模块化单体，按 `auth`/`topic`/`debate`/`ai` 划分。
+- **前端**：Vue 3、TypeScript、Arco Design、Vite，自研轻量 API client 与运行时契约校验。
+- **数据库**：版本化 SQL 迁移（Goose），前向升级、不修改已执行文件。
+- **部署**：Linux + Docker Compose + Nginx，单机形态，TLS 终止于 Nginx。
+- **门禁**：GitHub Actions 覆盖静态规范、前后端单测与构建、隔离 MySQL 集成测试。
 
-**Phase 0（工程初始化与基线验收）已结项，PB 已完成。T01 已于 2026 年 11 月 7 日经项目负责人验收结项，仅完成 Phase 1 首批 8 个 API 的契约设计，不代表业务代码已实现。** Phase 0 结项记录见 [INIT_ACCEPTANCE](docs/acceptance/INIT_ACCEPTANCE.md)。T02 进行中，已有隔离 MySQL 环境，本轮新增后端连接、Readiness 和测试目标保护，技术验证后待人工验收；业务迁移/种子未实施，完整 T02 未完成，T03–T18 尚未开始。前端仍为本地联通页面。阶段计划及暂停恢复规则见 [PLAN](docs/planning/PLAN.md)。
+需求以 [PRD](docs/product/PRD.md) 为准，技术契约见 [ARCHITECTURE](docs/architecture/ARCHITECTURE.md)，接口见 [API](docs/api/API.md) 与 [OpenAPI](docs/api/openapi.yaml)，长期决策见 [DECISIONS](docs/decisions/DECISIONS.md)。
 
-2026 年 11 月 8 日当前进展：六表初始迁移后，新增 00007–00009 精确枚举 CHECK、00010 五条事务性辩题种子、历史保护回归及测试 MySQL 服务重启验证，技术闭环已通过，见 [种子与持久化记录](docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。完整 T02 仍进行中，等待独立审查、辩题人工审阅、负责人验收及学习讲解；本轮不提交、推送或合并。上段及下方“种子未实施”等早期接入描述保留为历史状态。初始迁移的有条件审查及历史提交授权见 [迁移记录](docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
+以下各节保留历史阶段的环境、启动与验证细节；与当前状态冲突之处以本段及 [PLAN](docs/planning/PLAN.md) 为准。
 
 ## 环境
 
@@ -24,7 +36,7 @@ T02 本地数据库环境独立使用 PowerShell **7.2+**（`pwsh`）、Docker D
 
 后端为独立模块 `github.com/bingqilin456/DebateForge/backend`。前端只使用 npm，保留 package-lock.json；不要混用其他包管理器或锁文件。
 
-版本化迁移使用独立工具 module `backend/tools/migrate/`，锁定 Goose v3.29.0，通过显式 up/status 执行；服务启动不建表或播种。当前共十个 SQL 文件：六表、三个枚举修复、五条种子版本，固定目标保护及失败恢复见 [迁移说明](backend/migrations/README.md)。只在测试库验证，开发库未迁移。工具需在其自身目录运行 test/vet/build，服务目录的 `go test ./...` 不会覆盖独立 module。根目录可显式运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1` 重启测试 MySQL 并核对持久化，详见该验收记录。
+版本化迁移使用独立工具 module `backend/tools/migrate/`，锁定 Goose v3.29.0，通过显式 up/status 执行；服务启动不建表或播种。当前共十二个 SQL 文件：六表、三个枚举修复、五条种子、一张总结表、一份轮次与赛制扩展，固定目标保护及失败恢复见 [迁移说明](backend/migrations/README.md)。只在测试库验证，开发库未迁移。工具需在其自身目录运行 test/vet/build，服务目录的 `go test ./...` 不会覆盖独立 module。根目录可显式运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1` 重启测试 MySQL 并核对持久化，详见该验收记录。
 
 ## 获取与启动
 

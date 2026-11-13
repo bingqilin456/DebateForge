@@ -321,11 +321,11 @@ jobs:
         run: |
           migrator_secret="$GITHUB_WORKSPACE/.cache/t02-mysql/secrets/test-migrator.txt"
           first_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations up)"
-          test "$first_out" = "applied=11"
+          test "$first_out" = "applied=12"
           second_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations up)"
           test "$second_out" = "applied=0"
           status_out="$(go run . -env test -password-file "$migrator_secret" -dir ../../migrations status)"
-          test "$(printf '%s\n' "$status_out" | grep -c ' applied ')" -eq 11
+          test "$(printf '%s\n' "$status_out" | grep -c ' applied ')" -eq 12
           SIYIGE_MIGRATION_TEST=1 \
           SIYIGE_MIGRATION_PASSWORD_FILE="$migrator_secret" \
             go test -v -p 1 -count=1 ./...

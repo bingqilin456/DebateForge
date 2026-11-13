@@ -3,8 +3,10 @@ openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
-  version: t09-t10-t11-2026-11-11
-  description: 文档快照日期 2026-11-11（Asia/Shanghai）。共 14 个操作已实现；包含健康检查、T03 认证、T05 首轮、T09 三轮状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
+  version: t09-t10-t11-s6-2026-11-14
+  description: 文档快照日期 2026-11-14（Asia/Shanghai）。共 14 个操作已实现，另有 1 个计划操作（流式轮次 turns/stream，SSE）。
+    已实现部分包含健康检查、T03 认证、T05 首轮、T09 轮次状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
+    赛制自 2026-11-14 起由 debates.mode 驱动：quick_3 为三轮（历史兼容），standard_4 为四轮（新建默认），会话 DTO 增补 mode、ai_style、total_rounds。
     默认关闭真实模型，可显式启用 Fake；健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
@@ -603,6 +605,71 @@ paths:
               round_no: 1
               content: 开放式考核可以评估实际应用能力。
               client_request_id: 550e8400-e29b-41d4-a716-446655440000
+  /api/v1/debates/{id}/turns/stream:
+    post:
+      operationId: submitTurnStream
+      summary: 流式提交轮次（SSE，计划中）
+      description: 请求体与 POST /api/v1/debates/{id}/turns 完全一致，响应改为 text/event-stream。
+        必须复用同一认领内核（client_request_id 幂等、attempt_version、90 秒租约与并发配额），禁止另建幂等。
+        鉴权/限流/校验失败仍返回普通 JSON；generating 期间重复请求返回 202 JSON。
+        事件固定为 start（认领成功后，含 turn_id 与 request_id）、delta（增量文本）、done（最终事务提交成功后）、error（流内失败后关闭连接）。
+        不做事件重放或断点续传，断线后先 GET 会话判定真实状态。
+      tags:
+      - 辩论
+      x-implementation-status: planned
+      x-phase: S6
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/Origin'
+      x-max-request-body-bytes: 32768
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTurnRequest'
+      responses:
+        '200':
+          description: 事件流。只有最终事务提交成功后才发送 done。
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: 固定 no-cache，禁止缓存事件流。
+            X-Accel-Buffering:
+              schema:
+                type: string
+              description: 固定 no，提示中间层关闭缓冲。
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: start
+                data: {"turn_id":"42","request_id":"550e8400-e29b-41d4-a716-446655440000"}
+
+                event: delta
+                data: {"text":"对方认为"}
+
+                event: done
+                data: {"turn":{},"completed_rounds":3,"status":"active"}
+        '202':
+          description: 同一启动请求仍在生成中；返回普通 JSON，不进入事件流。
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/TurnConflict'
+        '429':
+          $ref: '#/components/responses/GenerationLimited'
   /api/v1/debates/{id}/turns/{turn_id}/retry:
     post:
       operationId: retryTurn
@@ -1038,8 +1105,22 @@ components:
     CompletedRounds:
       type: integer
       minimum: 0
-      maximum: 3
-      description: 已成功持久化的完成轮数，范围 0–3；完成第 3 轮后会话 status 置为 completed。
+      maximum: 4
+      description: 已成功持久化的完成轮数。quick_3 范围 0–3、standard_4 范围 0–4，精确上限由会话 mode 决定；达到该上限后 status 置为 completed。
+    DebateMode:
+      type: string
+      enum:
+      - quick_3
+      - standard_4
+      description: 赛制模式，轮数上限的唯一事实来源。quick_3 为三轮（立论/攻辩/结辩，仅历史兼容与测试），standard_4 为四轮（立论/驳立论/自由辩/结辩，新建默认）。创建后不可修改。
+    AIStyle:
+      type: string
+      enum:
+      - logical
+      - aggressive
+      - empathic
+      - data
+      description: 陪练 AI 的辩手流派，影响 Prompt 的论证风格，不改变轮数或状态机。新建会话固定 logical。
     Stance:
       type: string
       enum:
@@ -1115,6 +1196,9 @@ components:
       - topic
       - user_stance
       - ai_stance
+      - mode
+      - ai_style
+      - total_rounds
       - status
       - completed_rounds
       - created_at
@@ -1128,19 +1212,28 @@ components:
           $ref: '#/components/schemas/Stance'
         ai_stance:
           $ref: '#/components/schemas/Stance'
+        mode:
+          $ref: '#/components/schemas/DebateMode'
+        ai_style:
+          $ref: '#/components/schemas/AIStyle'
+        total_rounds:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: 由 mode 推导，前端以此作为轮次上限，不得自行硬编码。quick_3 为 3、standard_4 为 4。
         status:
           type: string
           enum:
           - active
           - completed
-          description: Phase 1 创建为 active；T09 完成三轮后才能成为 completed。
+          description: 创建为 active；达到该赛制轮数上限后成为 completed（quick_3 第 3 轮、standard_4 第 4 轮）。
         completed_rounds:
           $ref: '#/components/schemas/CompletedRounds'
         created_at:
           $ref: '#/components/schemas/UtcTime'
         updated_at:
           $ref: '#/components/schemas/UtcTime'
-      description: topic 为创建时快照；ai_stance 必须与 user_stance 相反。
+      description: topic 为创建时快照；ai_stance 必须与 user_stance 相反；赛制在创建后不可修改。
     SubmitTurnRequest:
       type: object
       required:
@@ -1241,6 +1334,39 @@ components:
           maxItems: 3
           items:
             $ref: '#/components/schemas/SummarySuggestion'
+          scores:
+            $ref: '#/components/schemas/TrainingDimensionScores'
+      description: V1 只含三数组；V2（schema_version=2）增量增加 scores。
+    TrainingDimensionScores:
+      type: object
+      required:
+      - argumentation
+      - rebuttal
+      - logic
+      - presentation
+      properties:
+        argumentation:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 论证维度参考值。
+        rebuttal:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 反驳维度参考值。
+        logic:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 逻辑维度参考值。
+        presentation:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 表达维度参考值。
+      additionalProperties: false
+      description: 训练维度参考值。单场有效、不跨会话累计、不排名、不汇总为总分、不产生胜负、不用于任何评价或选拔；无综合总分与胜负字段。受 PRD 六条硬约束与 AC14 约束。
     Message:
       type: object
       required:
@@ -1333,7 +1459,10 @@ components:
           - generation_cancelled
         schema_version:
           type: integer
-          const: 1
+          enum:
+          - 1
+          - 2
+          description: 判别式而非断言式。2 为增量升级，在三数组外增加 scores 四维参考值；客户端必须按此字段分支渲染，V1 只渲染三栏、隐藏四维，不得判为格式错误。
         content:
           $ref: '#/components/schemas/SummaryContent'
       description: 总结状态与可选结构化内容；not_started 时 attempt_version 为 null，completed 时含 schema_version 与 content，failed 时含 error_code。

@@ -28,6 +28,11 @@ server {
     location = /api/health/ready {
         include /etc/nginx/siyige/proxy.conf;
     }
+    # SSE 流式轮次：必须单独关闭缓冲并放宽读取超时，否则无法逐步显示增量。
+    # 该正则只匹配 turns/stream，其余 /api/ 路由仍走下方通用规则。
+    location ~ ^/api/v1/debates/[0-9]+/turns/stream$ {
+        include /etc/nginx/siyige/proxy-sse.conf;
+    }
     location = /api {
         include /etc/nginx/siyige/proxy.conf;
     }

@@ -37,7 +37,7 @@ RUN npm run build
 FROM nginx:1.30.6-alpine-slim AS edge
 COPY --from=web-build /src/dist/ /usr/share/nginx/html/
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY deploy/nginx/site.conf.template deploy/nginx/proxy.conf /etc/nginx/siyige/
+COPY deploy/nginx/site.conf.template deploy/nginx/proxy.conf deploy/nginx/proxy-sse.conf /etc/nginx/siyige/
 COPY deploy/nginx/entrypoint.sh /opt/siyige/entrypoint.sh
 USER 101:101
 ENTRYPOINT ["/bin/sh", "/opt/siyige/entrypoint.sh"]

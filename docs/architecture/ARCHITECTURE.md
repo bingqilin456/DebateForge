@@ -159,7 +159,7 @@ Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Ph
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |
 | `GET /debates?page=1&page_size=20` | page_size 最大 50 | 200，仅本人，按 created_at、id 倒序，返回 items、total、page、page_size |
-| `POST /debates` | 请求体仅 `topic_id`、`user_stance`；**不接受 `mode`/`ai_style`** | 201；服务端固定 `standard_4` + `logical`；客户端传入的赛制字段被忽略 |
+| `POST /debates` | `topic_id`、`user_stance` 必填；Phase 3 目标新增可选 `ai_style`（四枚举、省略 logical），不接受客户端选择 mode | 201；赛制固定 standard_4；目标流派校验后持久化，非法值 400；当前 Phase 2 仍固定 logical，自主选择待 T14-STYLE 实现 |
 | `POST /debates/:id/turns/:turn_id/retry` | expected_attempt_version（必填）；无新内容；CSRF Header | failed 且版本匹配才认领；成功 200，进行中 202，已完成重放 200；失败版本已变化为 409，不调模型 |
 | `POST /debates/:id/summary` | `retry` 默认 false；为 true 时必填 expected_attempt_version | 仅 completed 辩论；首次成功 201，已完成重放 200，进行中 202；失败须 retry=true 且版本匹配才认领，版本冲突 409；not_started 时 retry=true 为 400 |
 | `GET /debates/:id/summary` | 本人会话 | 200，返回 status 和可选 content；未开始也返回 not_started |
@@ -169,9 +169,19 @@ Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Ph
 
 会话 DTO 增补 `mode`、`ai_style`、`total_rounds` 三个字段；`total_rounds` 由 `mode` 推导，前端据此确定轮次上限，**不自行硬编码轮数**。
 
+**Phase 3 自主流派选择契约（待实现，依据 ADR-023）：** 创建前用户可选 logical（逻辑型）、aggressive（进攻型）、empathic（共情型）、data（数据型）。Handler 解析可选 ai_style，必须区分字段缺失与显式 null；Service 对精确枚举校验，字段缺失才默认 logical，null/空串/未知值/非字符串返回 400 invalid_request 且无创建副作用。Repository 与辩题快照一起在创建事务保存 debates.ai_style，数据库已有该列及枚举约束，不因开放选择而另建迁移。创建后的会话流派不可改，详情/历史/后续 Prompt 与策略卡均读取该值；不信任后续发言请求传入的流派，不重新读取用户全局偏好。选择不改变相反立场、mode、轮次、状态机或额度，历史会话保持原值。
+
+建会话不调用模型；策略卡生成不放入创建事务或隐式触发，其 API、触发时机、额度与失败契约在 T14-STYLE 实施前细化。本次只更新契约，当前代码仍固定 logical；接口和 OpenAPI 必须保留这一实现差距。总结 V2 战报为 P1，缺席不阻塞核心验收，交付时仍须遵守 V1 兼容与发布顺序。
+
 总结查询及会话详情的 `summary_status` 同时返回 `status` 和 `attempt_version`（`not_started` 时为 `null`），成功总结另含 `schema_version` 和 `content`。轮次与总结重试版本冲突用 `409 attempt_version_conflict` 和受控 `error.details` 提供当前状态、版本及查询地址。总结失败提供总结查询地址。Phase 2 实施时补齐这些新增接口的 JSON 示例。
 
 ## AI 上下文与总结
+
+**Phase 3 真实模型 Demo 装配目标（T15-DEMO-REAL，P0，尚未实现/验收）：** 复用现有 Vue → 本地 Go → Eino → 供应商与本地隔离 MySQL 链路；维护者按批准的模型与服务器秘密配置启用真实模式，浏览器不保存密钥、不直连供应商，不新建绕过鉴权/CSRF/认领/额度的演示接口。用户通过正常业务页面输入内容，完成四轮 SSE、真实总结及持久化重读；Demo 不是独立的临时聊天程序，也不同于 P1 不落库的双 AI 演示。
+
+真实体验前以 Fake 验证费用、次数/Token 限制与体验窗口停止控制，真实请求继续共用现有生成预算、并发、超时与无隐式重试规则。维护者在授权的体验窗口内启用，窗口到期、费用/次数/Token 边界触达即停止新请求；拒绝路径不得自动切换供应商或 Fake 来伪装成功。已发出的在途调用可能仍计费，须计入预留并如实记录，不能声称供应商绝对费用封顶。实施时补齐并验证本地体验的受控启停，不借用 ADR-017 已消耗的一次调用例外。
+
+交付说明须列实际版本、依赖、准备隔离库/秘密的方法、启动、模式确认、体验与停止步骤及限制；不提交秘密，不在此提供尚未经验证的启动命令。至少一场用户在浏览器完成真实四轮及总结才满足 AC17；可复用同版本、同授权范围的 T14-EVAL 合格场次，不重复计费/计场。SSE 的直连与本地 Nginx Fake 专项仍按 AC12 独立取证，不额外要求用真实模型重复注入故障。Phase 3 本地 Demo 不开放公网，不替代 Phase 4 部署与费用准入。
 
 先通过 Eino 的 ChatModel 组件调用 `Generate`；流式阶段接入同一 `ChatModel` 的 `Stream`，不使用 Agent Runner 或工具循环。Eino 官方文档提供完整响应和流式响应两类接口，具体包及签名以实施时锁定版本为准。[Eino ChatModel 文档](https://www.cloudwego.cn/zh/docs/eino/core_modules/components/chat_model_guide/)
 
@@ -257,12 +267,12 @@ flowchart LR
 
 | 事件 | 时机 | 载荷 | 约束 |
 | --- | --- | --- | --- |
-| `start` | 鉴权、限流、请求校验**全部通过且认领成功之后** | `turn_id`、`request_id` | 断线恢复的唯一句柄；此处之后失败不能再改 HTTP 状态 |
+| `start` | 鉴权、限流、请求校验**全部通过且认领成功之后** | `turn_id`、`request_id` | 恢复锚点，最新版本查详情取得；此处之后失败不能再改 HTTP 状态 |
 | `delta` | 模型每个增量 | `text` | 临时展示内容，非正式消息；刷新后以数据库为准 |
 | `done` | 最终事务**提交成功之后** | 正式消息、`completed_rounds`、会话状态 | 未提交成功绝不能发 |
 | `error` | 流内任意失败 | 受控 `code`、`message` | 发送后关闭连接 |
 
-`start` 不得省略：没有它，前端在流期间拿不到 `turn_id` 与版本句柄，断线后只能盲查，也无法绑定重试版本。事件名固定为 `start`/`delta`/`done`/`error`，不使用 `chunk` 等别名。
+`start` 不得省略：turn_id 定位已认领轮次，request_id 用于请求关联，二者为恢复锚点；request_id 不等于 client_request_id，也不代表版本。事件不携带 attempt_version，最新版本一律从本人详情/状态查询获取，不能从 start、delta 或本地计数推断。未收到 start 就断线时仍须按原 client_request_id 查询详情定位，暂未查到也不自动重发。事件名固定为 start/delta/done/error，不使用 chunk 等别名。
 
 **持久化与顺序保证。**
 
@@ -273,7 +283,8 @@ flowchart LR
 **断线与取消。**
 
 - 连接断开即取消本次模型请求，并尽力在独立有界上下文内以 `generation_cancelled` 标记失败；若完成事务已提交则保持 `completed`。
-- 不做事件重放、自动断点续传或事件日志表。断线后先 `GET` 会话：已完成读结果，`generating` 继续查，`failed` 才显示手动重试。
+- 不做事件重放、自动断点续传或事件日志表。断线、error 或缺少 done 时先 GET 会话详情，按 turn_id（尚无 start 时按 client_request_id）读取轮次最新 status/attempt_version。completed 读正式结果，generating 每 2 秒查询、最多 120 秒，超时或未定位提示稍后查询；failed 才显示手动重试。
+- 用户显式重试调用已有 POST /debates/:id/turns/:turn_id/retry，expected_attempt_version 使用查询到的失败版本，复用原文与同一轮次，沿用普通 JSON 响应及状态查询，不另建流式重试入口。202 继续查询，409 attempt_version_conflict 只刷新状态，不自动换版本重发；再次失败须用户看过最新状态后再次点击。总结版本只能从总结状态读取，不能代替轮次版本。
 - 崩溃残留由既有租约扫描回收，流式不引入新的恢复机制。
 
 **代理层（AC12 硬门槛）。** 缓冲与超时必须在代理层单独处理，应用层无法弥补：

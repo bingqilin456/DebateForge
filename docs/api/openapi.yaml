@@ -1,12 +1,13 @@
-# T05 实现核对快照；冻结契约不变，无收费范围独立复审 PASS、人工验收通过并结项，真实模型待授权验证，详见 API.md。
+# Phase 2 实现快照 + Phase 3 目标增量；ai_style 自主选择与 SSE 为计划契约，本轮仅改文档，详见 API.md。
 openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
-  version: t09-t10-t11-s6-2026-11-14
+  version: phase3-contract-2026-11-14
   description: 文档快照日期 2026-11-14（Asia/Shanghai）。共 14 个操作已实现，另有 1 个计划操作（流式轮次 turns/stream，SSE）。
     已实现部分包含健康检查、T03 认证、T05 首轮、T09 轮次状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
     赛制自 2026-11-14 起由 debates.mode 驱动：quick_3 为三轮（历史兼容），standard_4 为四轮（新建默认），会话 DTO 增补 mode、ai_style、total_rounds。
+    Phase 3 目标新增创建时自主 ai_style 选择（可选，缺省 logical，创建后不可改），尚未实现；当前创建仍固定 logical。SSE 最新版本从详情查询获取。
     默认关闭真实模型，可显式启用 Fake；健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
@@ -375,6 +376,14 @@ paths:
       operationId: createDebate
       summary: 创建辩论会话
       description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
+        Phase 3 目标增量（尚未实现）支持可选 ai_style，省略默认 logical，显式 null、空串、非字符串或未知/大小写不符的枚举为 400 invalid_request 且不创建；校验后与会话一起保存并在响应、详情和历史返回，创建后不可修改。当前 Phase 2 仍固定 logical。
+        mode 仍由服务端固定 standard_4，客户端传入不生效；流派不改变轮次、立场、状态机或配额。策略生成与创建分离，不隐式调用模型。
+      x-planned-changes:
+        task: T14-STYLE
+        implementation-status: planned
+        fields:
+        - ai_style
+        current-behavior: 当前忽略客户端流派输入并固定 logical，目标枚举校验尚未实现。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -403,11 +412,15 @@ paths:
                     description: 讨论学习效果与评价公平
                   user_stance: pro
                   ai_stance: con
+                  mode: standard_4
+                  ai_style: aggressive
+                  total_rounds: 4
                   status: active
                   completed_rounds: 0
                   created_at: '2026-11-06T08:00:00Z'
                   updated_at: '2026-11-06T08:00:00Z'
                 request_id: req-create
+              x-example-implementation-status: planned
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '403':
@@ -434,11 +447,13 @@ paths:
             example:
               topic_id: '7'
               user_stance: pro
+              ai_style: aggressive
+            x-example-implementation-status: planned
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
-      summary: 提交轮次发言（1–3 轮）或重放结果
-      description: 校验会话所有权，允许第 1–3 轮（round_no = completed_rounds + 1），第 4 轮返回 409 round_conflict；第 3 轮完整 AI 回复落库后会话 status 置为 completed。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
+      summary: 按会话赛制提交轮次或重放结果
+      description: 校验会话所有权，round_no = completed_rounds + 1，轮数上限由会话 mode 决定（standard_4 为 4，quick_3 为 3）；越界返回 409 round_conflict，最后一轮完整 AI 回复落库后会话 status 置为 completed。相同 UUID、轮号和原文重放不再调用模型或消耗生成额度；不同内容/轮号为 idempotency_conflict，失败重放为 turn_failed，新键抢占同轮为
         round_conflict。新尝试短事务认领、保存原文及 attempt_version=1，事务外调用模型，按状态和版本写回。每用户每分钟 6 次、每天最多 20 次尝试（失败也计入）；单用户并发 1、全局
         2。请求预算 60 秒、模型 45 秒；前端超时 70 秒。
       tags:
@@ -613,7 +628,10 @@ paths:
         必须复用同一认领内核（client_request_id 幂等、attempt_version、90 秒租约与并发配额），禁止另建幂等。
         鉴权/限流/校验失败仍返回普通 JSON；generating 期间重复请求返回 202 JSON。
         事件固定为 start（认领成功后，含 turn_id 与 request_id）、delta（增量文本）、done（最终事务提交成功后）、error（流内失败后关闭连接）。
-        不做事件重放或断点续传，断线后先 GET 会话判定真实状态。
+        start 的 turn_id 定位轮次、request_id 关联请求，二者仅为恢复锚点；request_id 不是 client_request_id，不携带或代表 attempt_version。
+        断线、error 或缺少 done 时先 GET /api/v1/debates/{id}，读取对应 Turn 最新 status/attempt_version；未收到 start 时按原 client_request_id 在 turns 中定位，未查到仍有限查询并提示稍后核实，不自动生成或换键。
+        completed 读正式结果，generating 每 2 秒有限查询最多 120 秒，failed 才显示手动重试。用户明确重试时调用已有 /turns/{turn_id}/retry，expected_attempt_version 取查询到的失败版本，沿用 JSON 响应与查询，不重发 /turns/stream。
+        202 继续查询，409 attempt_version_conflict 仅刷新状态，不自动换版本重发。总结版本来自总结状态查询，不能代替轮次版本。不做事件重放或断点续传。
       tags:
       - 辩论
       x-implementation-status: planned
@@ -649,7 +667,7 @@ paths:
                 type: string
               example: |
                 event: start
-                data: {"turn_id":"42","request_id":"550e8400-e29b-41d4-a716-446655440000"}
+                data: {"turn_id":"42","request_id":"req-stream-example"}
 
                 event: delta
                 data: {"text":"对方认为"}
@@ -782,7 +800,7 @@ paths:
     post:
       operationId: generateOrRetrySummary
       summary: 生成或显式重试结构化总结
-      description: 仅允许 status=completed（已完成 3 轮）的会话生成总结，未完成辩论返回 409 round_conflict；共享用户分钟防刷（6 次/分）、每日生成额度（20 次/日）及模型并发槽（1/用户、2/进程）。首次生成成功返回 201，已完成重放返回 200（不调模型），进行中返回 202。失败后 retry=false 不调模型并返回 200（failed 状态）；须显式传 retry=true 且 expected_attempt_version 匹配才认领重试并 attempt_version+1，版本不匹配返回 409 attempt_version_conflict；not_started 时传 retry=true 返回 400。
+      description: 仅允许 status=completed（已完成该会话 mode 的全部轮次）的会话生成总结，未完成辩论返回 409 round_conflict；共享用户分钟防刷（6 次/分）、每日生成额度（20 次/日）及模型并发槽（1/用户、2/进程）。首次生成成功返回 201，已完成重放返回 200（不调模型），进行中返回 202。失败后 retry=false 不调模型并返回 200（failed 状态）；须显式传 retry=true 且 expected_attempt_version 匹配才认领重试并 attempt_version+1，版本不匹配返回 409 attempt_version_conflict；not_started 时传 retry=true 返回 400。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -1120,7 +1138,7 @@ components:
       - aggressive
       - empathic
       - data
-      description: 陪练 AI 的辩手流派，影响 Prompt 的论证风格，不改变轮数或状态机。新建会话固定 logical。
+      description: 陪练 AI 的辩手流派，logical 逻辑型、aggressive 进攻型、empathic 共情型、data 数据型；仅改变话术/论证风格，不改变轮次、立场、状态机或配额。Phase 3 目标允许创建时自主选择，创建后不可修改；历史读取保存值。当前 Phase 2 创建仍固定 logical，选择增量尚未实现。
     Stance:
       type: string
       enum:
@@ -1189,6 +1207,12 @@ components:
           $ref: '#/components/schemas/EntityId'
         user_stance:
           $ref: '#/components/schemas/Stance'
+        ai_style:
+          $ref: '#/components/schemas/AIStyle'
+          default: logical
+          description: Phase 3 计划字段，尚未实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
+          x-implementation-status: planned
+          x-task: T14-STYLE
     Debate:
       type: object
       required:
@@ -1243,7 +1267,7 @@ components:
       properties:
         round_no:
           $ref: '#/components/schemas/PositiveInteger'
-          description: 正整数；允许 1–3 轮且须满足 round_no = completed_rounds + 1。第 4 轮或不允许的状态/轮序为 409 round_conflict。
+          description: 正整数；须满足 round_no = completed_rounds + 1，且不超过会话 mode 的轮数上限（standard_4 为 4、quick_3 为 3）；越界或不允许的状态/轮序为 409 round_conflict。
         content:
           type: string
           minLength: 1

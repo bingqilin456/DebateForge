@@ -112,7 +112,7 @@ onUnmounted(() => { disposed = true; version++ })
           <dl class="record-details">
             <div><dt>你的立场</dt><dd>{{ debate.user_stance === 'pro' ? '正方' : '反方' }}</dd></div>
             <div><dt>AI 立场</dt><dd>{{ debate.ai_stance === 'pro' ? '正方' : '反方' }}</dd></div>
-            <div><dt>完成轮数</dt><dd>{{ debate.completed_rounds }} / 3 轮</dd></div>
+            <div><dt>完成轮数</dt><dd>{{ debate.completed_rounds }} / {{ debate.total_rounds }} 轮</dd></div>
             <div><dt>创建时间</dt><dd><time :datetime="debate.created_at">{{ localTime(debate.created_at) }}</time></dd></div>
             <div><dt>更新时间</dt><dd><time :datetime="debate.updated_at">{{ localTime(debate.updated_at) }}</time></dd></div>
           </dl>

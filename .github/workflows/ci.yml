@@ -379,3 +379,9 @@ jobs:
 
       - name: 前端生产构建
         run: npm run build
+
+      - name: 安装 Chromium 浏览器运行时
+        run: npx playwright install --with-deps chromium
+
+      - name: 辩题与历史页面浏览器验收（隔离响应，无模型调用）
+        run: npm run test:e2e

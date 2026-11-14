@@ -8,7 +8,7 @@ import type { Debate, DebateListResult } from '../types/api'
 const fetchMock = vi.fn<typeof fetch>()
 const mounted: Array<{ app: App, host: HTMLDivElement }> = []
 function debate(id = '11', completed = false): Debate {
-  return { id, topic: { id: '7', title: `历史辩题 ${id}`, description: '历史快照' }, user_stance: completed ? 'con' : 'pro', ai_stance: completed ? 'pro' : 'con', status: completed ? 'completed' : 'active', completed_rounds: completed ? 3 : 1, created_at: '2026-11-11T23:05:06Z', updated_at: '2026-11-12T00:05:06Z' }
+  return { id, topic: { id: '7', title: `历史辩题 ${id}`, description: '历史快照' }, user_stance: completed ? 'con' : 'pro', ai_stance: completed ? 'pro' : 'con', mode: 'standard_4', ai_style: 'logical', total_rounds: 4, status: completed ? 'completed' : 'active', completed_rounds: completed ? 4 : 1, created_at: '2026-11-11T23:05:06Z', updated_at: '2026-11-12T00:05:06Z' }
 }
 function json(data: unknown) {
   return new Response(JSON.stringify({ data, request_id: 'req-history' }), { headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-history' } })
@@ -55,12 +55,15 @@ describe('T11 本人历史列表', () => {
     const pending = deferred()
     const { host } = await mount(() => pending.promise)
     expect(host.textContent).toContain('正在加载历史')
-    pending.resolve(list([debate(), debate('12', true)]))
-    await loaded(host, ['11', '12'])
+    const legacy = { ...debate('13', true), mode: 'quick_3' as const, total_rounds: 3, completed_rounds: 3 }
+    pending.resolve(list([debate(), debate('12', true), legacy]))
+    await loaded(host, ['11', '12', '13'])
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/v1/debates?page=1&page_size=20')
     expect(host.textContent).toContain('正方'); expect(host.textContent).toContain('反方')
     expect(host.textContent).toContain('进行中'); expect(host.textContent).toContain('已完成')
-    expect(host.textContent).toContain('1 / 3'); expect(host.textContent).toContain('3 / 3')
+    expect(host.querySelector('[data-history-id="11"]')?.textContent).toContain('1 / 4')
+    expect(host.querySelector('[data-history-id="12"]')?.textContent).toContain('4 / 4')
+    expect(host.querySelector('[data-history-id="13"]')?.textContent).toContain('3 / 3')
     const time = host.querySelector<HTMLTimeElement>('time[datetime="2026-11-11T23:05:06Z"]')!
     expect(time.textContent).toBe(new Date(debate().created_at).toLocaleString('zh-CN', { hour12: false }))
     expect(time.textContent).not.toBe(debate().created_at)

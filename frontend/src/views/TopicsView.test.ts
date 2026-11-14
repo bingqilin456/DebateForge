@@ -19,7 +19,7 @@ function failure(status: number, code: string) {
   })
 }
 function debate(stance: Stance = 'pro'): Debate {
-  return { id: '123', topic: topics[1]!, user_stance: stance, ai_stance: stance === 'pro' ? 'con' : 'pro', status: 'active', completed_rounds: 0, created_at: '2026-11-12T00:00:00Z', updated_at: '2026-11-12T00:00:00Z' }
+  return { id: '123', topic: topics[1]!, user_stance: stance, ai_stance: stance === 'pro' ? 'con' : 'pro', mode: 'standard_4', ai_style: 'logical', total_rounds: 4, status: 'active', completed_rounds: 0, created_at: '2026-11-12T00:00:00Z', updated_at: '2026-11-12T00:00:00Z' }
 }
 function deferred() {
   let resolve!: (response: Response) => void

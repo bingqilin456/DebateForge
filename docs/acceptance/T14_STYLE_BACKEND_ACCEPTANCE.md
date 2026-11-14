@@ -38,7 +38,7 @@
 | 迁移独立模块 `go test -count=1 -v ./...`（显式集成开关） | 通过，含版本重跑、约束与错误恢复；新增策略字段/唯一键/外键/精确枚举/版本约束专项再次通过 |
 | 迁移独立模块 `go vet ./...` / `go build ./...` | 通过 |
 | OpenAPI/Schema/样例/本地链接/gofmt/diff 检查 | OpenAPI 3.1.1、YAML 重复键、353 引用、48 Schema、16 implemented/1 planned、53 样例边界断言、305 本地链接/锚点通过；100 个暂存 Go 文件的 Git LF 内容均符合 gofmt，git diff --cached --check 通过 |
-| PR #19 适用 CI | 推送后检查；未完成时不预记为通过，最终状态见 PR Checks |
+| PR #19 适用 CI | 实现提交 `9b4968f4fcf8b5d73c9c227404883519a2312949`，Actions run `43606219030` 四项全部通过：仓库静态门禁、后端与迁移工具、隔离 MySQL 8.4.13、既有前端检查（含隔离响应浏览器验收）。包含 Linux/Nginx 413 契约；不替代 B 的 T14 前端 AC16。后续文档同步提交的最终状态见 PR Checks |
 | 本地前端/浏览器、SSE、真实模型质量/费用验收 | 未执行；前端未改，真实模型未授权 |
 
 测试先观察到 null 创建返回 201 和策略 GET 404，再实现并转绿。后续测试暴露并修复：结构错误时已知用量丢失、策略 POST 遗漏 60 秒预算、Fake 规范 JSON 序列化后大小越界（修复后 ai 包 race/vet 通过）；旧赛制测试中“忽略 ai_style”的历史断言随新契约更新，standard_4 断言保留。累计 MySQL 回归修正该旧断言后通过；没有隐瞒失败或把重跑前结果当作成功。
@@ -114,7 +114,7 @@ B 在自己的前端工作树沿用 `npm ci`、`npm run dev`，Vite 原路径代
 
 可直接发送给 B（发送由成员 A 决定，本轮未代发）：
 
-> T14-STYLE 后端已在 codex/p3-a-integration / 草稿 PR #19 交付，保留 A1 契约，完整版本取本次交接 SHA。请先在本地隔离测试库应用 00013，再用 AI_MODE=fake 启动后端。创建请求可选 ai_style，仅接受 logical/aggressive/empathic/data，省略 logical，null/空串/未知/大小写不符/非字符串为 400；新会话仍 standard_4，创建零模型调用。创建后保存流派不再修改。策略 GET/POST 为 /api/v1/debates/{id}/strategy：进入/刷新/重登只 GET，点击才 POST {}；成功 201，completed 重放 200，generating 202，failed 普通重放 200。失败显式重试必须 retry:true + 最新 expected_attempt_version，旧版 409 时只 GET，不自动换版本重发。仅无任何 turn 可首次生成/重试，策略可跳过，不计轮次。正文只展示 thesis/arguments/risks 三字段并转义；completed 返回 schema_version、prompt_version、ai_style。请求未知字段拒绝 400；POST 仍带 Origin/Session/CSRF。后端 Fake/隔离 MySQL/race 已通过，失败与恢复场景见本专项记录。SSE、P1、真实模型和 AC16 浏览器整体验收未包含，请 B 留下四流派、刷新重登及失败恢复的前端证据。
+> T14-STYLE 后端已在 codex/p3-a-integration / 草稿 PR #19 交付，保留 A1 契约，完整版本取实现提交 9b4968f（或包含它的最新分支 HEAD）。请先在本地隔离测试库应用 00013，再用 AI_MODE=fake 启动后端。创建请求可选 ai_style，仅接受 logical/aggressive/empathic/data，省略 logical，null/空串/未知/大小写不符/非字符串为 400；新会话仍 standard_4，创建零模型调用。创建后保存流派不再修改。策略 GET/POST 为 /api/v1/debates/{id}/strategy：进入/刷新/重登只 GET，点击才 POST {}；成功 201，completed 重放 200，generating 202，failed 普通重放 200。失败显式重试必须 retry:true + 最新 expected_attempt_version，旧版 409 时只 GET，不自动换版本重发。仅无任何 turn 可首次生成/重试，策略可跳过，不计轮次。正文只展示 thesis/arguments/risks 三字段并转义；completed 返回 schema_version、prompt_version、ai_style。请求未知字段拒绝 400；POST 仍带 Origin/Session/CSRF。后端 Fake/隔离 MySQL/race 已通过，失败与恢复场景见本专项记录。SSE、P1、真实模型和 AC16 浏览器整体验收未包含，请 B 留下四流派、刷新重登及失败恢复的前端证据。
 
 ## 验收结论与遗留
 

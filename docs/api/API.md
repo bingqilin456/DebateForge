@@ -8,6 +8,8 @@
 
 ## 接口清单与实现状态
 
+**2026-11-14 Phase 3 目标增量（仅文档，尚未实现）：** 创建会话支持自主选择 `ai_style`；SSE 以 `turn_id/request_id` 为恢复锚点，版本由详情/状态查询获取。本次按 [ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 更新契约，不改变 Phase 2 已验收实现状态。当前创建仍固定 `logical`，客户端不能据本文的目标字段推定后端已经支持选择。
+
 以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 7 个辩论/历史/总结接口，共 14 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
@@ -20,7 +22,7 @@
 | GET | `/api/v1/auth/me` | 查询当前用户 | 已实现，认证验收已通过 | 200 |
 | GET | `/api/v1/topics` | 查询启用辩题 | 已实现，无收费范围复审与人工验收通过 | 200 |
 | GET | `/api/v1/debates` | 查询本人历史会话分页 | 已实现（T11） | 200 |
-| POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 已实现，无收费范围复审与人工验收通过 | 201 |
+| POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 基础已实现；自主 ai_style 为 T14-STYLE 计划增量 | 201 |
 | POST | `/api/v1/debates/{id}/turns` | 提交轮次（上限由会话赛制决定）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
 | POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 计划（P0，契约见下） | 200（`text/event-stream`） |
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
@@ -31,6 +33,8 @@
 本文与 OpenAPI `paths` 记录 **14 个已实现接口 + 1 个计划接口（流式轮次）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
+
+**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；本次没有新增 HTTP 路径或请求/响应字段，OpenAPI 的实现状态保持不变。公网体验仍待 Phase 4。
 
 ## 存活检查
 
@@ -97,6 +101,7 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
 | `CreateDebateRequest` | `topic_id` | string | 是 | 辩题 ID，正整数十进制字符串。 |
 | `CreateDebateRequest` | `user_stance` | string | 是 | `pro` 正方或 `con` 反方。 |
+| `CreateDebateRequest` | `ai_style` | string | 否 | **Phase 3 计划增量**：精确枚举 logical/aggressive/empathic/data，省略默认 logical；null、空串、未知值、大小写不符或非字符串为 400 invalid_request，不写会话。创建后不可修改。 |
 | `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；须满足 `round_no = completed_rounds + 1` 且不超过该会话 `mode` 的轮数上限（`quick_3` 为 3、`standard_4` 为 4）；越界或状态/轮序不允许时 409 `round_conflict`。 |
 | `SubmitTurnRequest` | `content` | string | 是 | 1–2000 个 Unicode 码点，拒绝全空白，保存原文。 |
 | `SubmitTurnRequest` | `client_request_id` | string（UUID） | 是 | 解析后统一为小写带连字符形式；会话内唯一。 |
@@ -239,11 +244,13 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 需认证、Origin 和 CSRF 校验。`user_stance` 取 `pro` 或 `con`。服务端从 Session 取得 `user_id`，在事务中检查辩题可用并写入 `debates`，保存辩题标题及描述快照，反转得到 `ai_stance`。创建会话的模型调用次数为零。非法 ID 或立场为 `400 invalid_request`，不存在或禁用的辩题为 `404 not_found`。每次成功创建独立会话，客户端遇到传输故障时不自动重发创建请求。
 
+**T14-STYLE 目标契约（待实现）：** 用户在创建前选择 `logical`（逻辑型）、`aggressive`（进攻型）、`empathic`（共情型）或 `data`（数据型）。可选请求字段 `ai_style` 省略时默认 `logical`，显式 null、空串、非字符串或非精确枚举值返回 `400 invalid_request`，校验失败不创建会话。Service 校验后由 Repository 在创建事务中写入 `debates.ai_style`，响应返回所保存值；详情/历史及后续 Prompt、策略卡统一读取会话值。创建后不可修改，无流派更新接口。`mode` 仍不接受客户端选择，传入不生效，统一 `standard_4`；流派不改变轮数、立场、状态机、配额或所有权规则。历史会话不回填、不切换。策略卡调用不合并到创建事务或创建请求，具体生成接口、配额和失败响应在实施前另行细化，不在本次新增已实现路径。
+
 ```json
-{"topic_id":"7","user_stance":"pro"}
+{"topic_id":"7","user_stance":"pro","ai_style":"aggressive"}
 ```
 
-`201` 响应
+上述为 Phase 3 目标请求；当前 Phase 2 客户端仍仅提交 topic_id/user_stance。以下为目标 `201` 响应示例，省略 ai_style 的兼容请求则返回 logical。
 
 ```json
 {
@@ -252,6 +259,9 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
     "topic": {"id":"7","title":"大学课程是否应采用开放式考核","description":"讨论学习效果与评价公平"},
     "user_stance": "pro",
     "ai_stance": "con",
+    "mode": "standard_4",
+    "ai_style": "aggressive",
+    "total_rounds": 4,
     "status": "active",
     "completed_rounds": 0,
     "created_at": "2026-11-06T08:00:00Z",
@@ -263,7 +273,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 ### 8. POST /api/v1/debates/{id}/turns
 
-需认证、Origin、CSRF 及会话所有权。T09 放开第 1–3 轮（`round_no = completed_rounds + 1`，最大 3 轮），禁止第 4 轮，状态或轮序不允许时返回 `409 round_conflict`；第 3 轮完整 AI 回复落库后自动将 `debates.status` 置为 `completed`。`content` 为 1–2000 个 Unicode 码点，拒绝全空白，保存原文。`client_request_id` 为 UUID，解析后统一为小写带连字符形式，在会话内唯一。
+需认证、Origin、CSRF 及会话所有权。`round_no = completed_rounds + 1`，上限从会话 mode 取得（standard_4 为 4，quick_3 为 3），越界或状态/轮序不允许时返回 `409 round_conflict`；最后一轮完整 AI 回复落库后将 `debates.status` 置为 `completed`。`content` 为 1–2000 个 Unicode 码点，拒绝全空白，保存原文。`client_request_id` 为 UUID，解析后统一为小写带连字符形式，在会话内唯一。
 
 ```json
 {"round_no":1,"content":"开放式考核可以评估实际应用能力。","client_request_id":"550e8400-e29b-41d4-a716-446655440000"}
@@ -418,7 +428,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 ### 11. POST /api/v1/debates/{id}/summary
 
-需认证、Origin、CSRF 及会话所有权校验。仅允许 `status=completed`（已完成 3 轮）的会话生成总结，未完成会话拒绝生成并返回 `409 round_conflict`。共享既有用户分钟防刷（6 次/分钟）、每日生成额度（20 次/日）与模型并发槽（单用户 1、全局 2）。
+需认证、Origin、CSRF 及会话所有权校验。仅允许 `status=completed`（已完成该会话 mode 的全部轮次）的会话生成总结，未完成会话拒绝生成并返回 `409 round_conflict`。共享既有用户分钟防刷（6 次/分钟）、每日生成额度（20 次/日）与模型并发槽（单用户 1、全局 2）。
 
 请求体中 `retry` 默认为 `false`；首次生成（`not_started`）时若传 `retry=true` 返回 `400 invalid_request`。当已有总结处于 `failed` 状态时，`retry=false` 不重调模型，直接返回 `200` 与当前失败状态；必须显式传 `retry=true` 且提供匹配的 `expected_attempt_version` 才允许认领重试并将 `attempt_version` 加 1。若 `failed` 总结的 `attempt_version` 已变化，返回 `409 attempt_version_conflict` 并附当前状态、版本与查询地址 `/api/v1/debates/{id}/summary`。
 
@@ -492,14 +502,14 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 | 事件 | 时机 | `data` 载荷 |
 | --- | --- | --- |
-| `start` | 认领成功后立即 | `{"turn_id":"…","request_id":"…"}`；断线恢复的唯一句柄 |
+| `start` | 认领成功后立即 | `{"turn_id":"…","request_id":"…"}`；轮次定位与请求关联的恢复锚点，不携带 attempt_version；版本从详情/状态查询取得 |
 | `delta` | 模型每个增量 | `{"text":"增量片段"}`；临时展示内容，非正式消息 |
-| `done` | 最终事务**提交成功后** | `{"turn":{…},"completed_rounds":3,"status":"active"}`；结构同普通提交的成功 `data` |
+| `done` | 最终事务**提交成功后** | `{"turn":{…},"completed_rounds":3,"status":"active"}`；turn 沿用正式 Turn 结构，其余为提交后的会话完成轮数与状态快照 |
 | `error` | 流内失败 | `{"error":{"code":"…","message":"…"},"request_id":"…"}`；发送后关闭连接 |
 
 ```
 event: start
-data: {"turn_id":"42","request_id":"550e8400-e29b-41d4-a716-446655440000"}
+data: {"turn_id":"42","request_id":"req-stream-example"}
 
 event: delta
 data: {"text":"对方认为"}
@@ -509,6 +519,14 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 ```
 
 约束：只有最终事务提交成功才能发 `done`；数据库提交失败只能发 `error`，并按状态查询恢复。不做事件重放或断点续传；断线后先 `GET` 会话判定真实状态。每 15 秒发送注释行 `: keepalive`。代理层必须关闭缓冲并放宽读取超时，详见 [ARCHITECTURE](../architecture/ARCHITECTURE.md#eino-流式双轨管道)。
+
+**断线恢复与显式重试（计划契约）：**
+
+1. 收到 start 后保存 turn_id/request_id；turn_id 定位轮次，request_id 关联本次 HTTP 请求和排错信息，不是 client_request_id，也不是重试版本。丢弃未确认的 delta 展示，以数据库正式结果为准。
+2. 断线、流内 error、未收到 done 或刷新后，先 `GET /api/v1/debates/{id}`，读取该 Turn 最新 status/attempt_version；总结查询只提供总结版本，不能替代轮次版本。若 start 尚未收到，按发送前保留的 client_request_id 在详情 turns 中定位，不盲目重发。暂未查到时继续有限查询，仍无法确认则提示稍后查询，不自动生成或更换键。
+3. completed 读取正式消息；generating 按既有每 2 秒、最多 120 秒有限轮询，超时提示稍后查询；failed 才显示用户手动重试入口。
+4. 用户明确重试时，使用查询到的失败版本调用已有 `POST /api/v1/debates/{id}/turns/{turn_id}/retry`，请求体为 `{"expected_attempt_version":N}`，复用已保存原文，不重新 POST /turns/stream 或创建新幂等键。重试沿用现有 JSON 响应和查询流程，本次不新增流式重试端点。
+5. 202 继续查询；409 attempt_version_conflict 仅刷新状态，不自动换新版本重发。再次失败后，只有用户看过最新失败版本并再次明确重试才允许新尝试。SSE 事件或本地缓存不得作为最新版本事实来源。
 
 
 
@@ -539,13 +557,13 @@ AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek
 
 ## Phase 2 接口晋升说明
 
-原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 仍是可选设计，本次 OpenAPI 只描述冻结的 JSON 契约，不声明 `text/event-stream` 已实现。
+原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 已是 Phase 3 必要 P0，OpenAPI 标为 planned，不声明 text/event-stream 已实现；自主流派选择同样是创建接口的 planned 增量。
 
 ## 核对差异与待确认问题
 
 1. **健康路径差异已裁定**：2026 年 11 月 8 日负责人明确以 `/api/health/live`、`/api/health/ready` 为准；本轮同步前端、测试和当前运行文档。历史验收及学习笔记中的旧路径保留历史语境，不作为新契约，也不提供兼容别名。
 2. **Session Cookie 名已在 T03 具体化**：HTTP 开发为 `siyige_session_dev`，HTTPS 策略为 `__Host-siyige_session`；OpenAPI 占位符已替换，安全属性与 T01 一致。
-3. **后续契约范围**：Phase 2 仍为草案，不在本次机器规范的冻结范围中；完整三轮、显式重试、总结和分页不作为已实现交付。
+3. **当前契约与实现边界**：Phase 2 的赛制驱动轮次、显式重试、总结和分页已实现；Phase 3 SSE、自主流派选择和总结 V2 等目标增量尚未实现，须按 planned 标注。策略卡生成接口、额度与失败契约，以及 P1 谬误存储/API，仍须在各子项实施前细化。
 
 ## T01 文档任务的历史验证记录
 

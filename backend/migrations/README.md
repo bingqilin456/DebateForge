@@ -1,6 +1,6 @@
 # T02 版本化数据库迁移
 
-当前共十个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子。未实现业务 Repository/Handler，总结表留 T10。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；最新证据见 [种子与持久化记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十二个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/planning/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
@@ -49,8 +49,8 @@ Pop-Location
 | 00001 users | `username VARCHAR(32)` ASCII、不区分大小写唯一；应用在 T03 trim/小写归一化。`password_hash VARCHAR(255)` 保存 Argon2id 编码，`created_at`。 |
 | 00002 auth_sessions | `user_id` 外键；SHA-256 `token_hash BINARY(32)` 保存原始摘要字节并唯一；`csrf_token VARCHAR(128)` ASCII；`expires_at` 索引、`created_at`。不存 Session 原值。 |
 | 00003 topics | `title/description TEXT`、`enabled BOOLEAN` 默认 true 并 CHECK 0/1、`created_at`。初始版本不含种子，00010 插入五题。 |
-| 00004 debates | 用户/辩题外键；标题/描述快照 TEXT；pro/con、active/completed 使用区分大小写的 ASCII 字符串和 CHECK；完成轮数 0–3；创建/更新时间；索引 `(user_id,created_at,id)`。 |
-| 00005 debate_turns | 会话外键；轮号 1–3；规范 UUID `client_request_id CHAR(36)`；两组唯一键 `(debate_id,round_no)`、`(debate_id,client_request_id)`；三种状态 CHECK；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建时间；索引 `(status,lease_expires_at)`。 |
+| 00004 debates | 用户/辩题外键；标题/描述快照 TEXT；pro/con、active/completed 使用区分大小写的 ASCII 字符串和 CHECK；完成轮数 0–3（00012 放宽至 0–6）；创建/更新时间；索引 `(user_id,created_at,id)`。 |
+| 00005 debate_turns | 会话外键；轮号 1–3（00012 放宽至 1–6）；规范 UUID `client_request_id CHAR(36)`；两组唯一键 `(debate_id,round_no)`、`(debate_id,client_request_id)`；三种状态 CHECK；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建时间；索引 `(status,lease_expires_at)`。 |
 | 00006 messages | 轮次外键；user/assistant CHECK；`(turn_id,role)` 唯一；`content TEXT`、创建时间。 |
 | 00011 debate_summaries | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
 
@@ -64,12 +64,21 @@ Pop-Location
 | 00008 | debate_turns 的 generating/completed/failed 字节精确 CHECK |
 | 00009 | messages 的 user/assistant 字节精确 CHECK |
 | 00010 | topics 固定 ID 1–5，完整中文标题/双边立场描述，enabled=true |
+| 00012 | 轮次上限 `debates.completed_rounds` 0–3→0–6、`debate_turns.round_no` 1–3→1–6；新增 `debates.mode`（默认 `standard_4`）与 `debates.ai_style`（默认 `logical`）及字节精确 CHECK |
 
 00007–00009 每份仅一条 ALTER，保留原约束、列类型和状态集合；校验已有行，异常时失败且不改数据。CAST AS BINARY 可拒绝字段宽度内的尾随空格；MySQL 对超长尾随空格先截断，`assistant ` 存为规范 `assistant`，不能宣称 CHECK 拒绝所有原始请求，后续业务入口必须精确校验。
 
 00010 的幂等由历史和会话锁保证：重复 **up** 不再 INSERT，不是可绕过 Goose 手工重放的 SQL。DML 与版本登记在同一事务内；固定 ID 被占用时整笔失败，不覆盖数据或登记成功，无 IGNORE/REPLACE/UPSERT。包含五条题目的闭环已获负责人人工验收，内容见最新验收记录；未来修改须新增迁移。
 
-本轮从已有 1–6 的测试库实际新增 `applied=4`，重跑 `applied=0`；当前空库预期 `applied=10`，本轮未新建空库重测。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
+00012 是本项目第一份**约束放宽**迁移，也是第一份允许既有行取新列默认值的迁移。三点约束必须保留：
+
+- **上限放到 6 而不是 4。** 按模式的精确上限（`quick_3` 为 3、`standard_4` 为 4）由业务代码校验，数据库只做粗边界。这样新增赛制模式时不必再改 CHECK，避免把数据库变成第二个事实源。
+- **两段式默认值必须有。** 先 `ADD COLUMN mode ... DEFAULT 'quick_3'` 使既有行填充为 `quick_3`（历史三轮语义不变），随后 `ALTER COLUMN mode SET DEFAULT 'standard_4'` 使新插入行使用 4 轮标准赛制。两步都是元数据操作，不改写既有行；若只做一步，要么旧会话语义错，要么新赛制等于没上线。
+- **不含数据回填。** 既有 `completed_rounds` 原值保留，不回填、不补轮、不重算 `status`。历史会话按只读语义处理，新赛制只影响新建会话。
+
+滑轮次上限的同时，[迁移集成测试](../tools/migrate/integration_test.go) 中三条以“第 4 轮/4 轮必被拒”为断言的用例已改为以 7 为越界值，并补充 `mode`/`ai_style` 的合法值与 PAD SPACE 反例。CI 的预期版本计数同步为 `applied=12`。
+
+本轮从已有 1–11 的测试库实际新增 `applied=1`，重跑 `applied=0`；当前空库预期 `applied=12`，本轮未新建空库重测。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
 
 新增集成测试覆盖异常历史在 up/status 下拒绝、合法前缀继续、既有异常枚举阻止 ALTER 和种子冲突回滚。独立探针表保留且每次运行增加，不改正式历史，不清理旧数据。默认仍跳过真实数据库测试。
 

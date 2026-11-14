@@ -70,6 +70,8 @@ type Debate struct {
 	TopicTitleSnapshot       string    `json:"-"`
 	TopicDescriptionSnapshot string    `json:"-"`
 	UserStance               string    `json:"-"`
+	Mode                     string    `json:"-"`
+	AIStyle                  string    `json:"-"`
 	Status                   string    `json:"-"`
 	CompletedRounds          int       `json:"-"`
 	CreatedAt                time.Time `json:"-"`
@@ -83,6 +85,9 @@ type DebateDTO struct {
 	Topic           Topic     `json:"topic"`
 	UserStance      string    `json:"user_stance"`
 	AIStance        string    `json:"ai_stance"`
+	Mode            string    `json:"mode"`
+	AIStyle         string    `json:"ai_style"`
+	TotalRounds     int       `json:"total_rounds"`
 	Status          string    `json:"status"`
 	CompletedRounds int       `json:"completed_rounds"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -94,7 +99,20 @@ func (d Debate) DTO() DebateDTO {
 	if d.UserStance == "pro" {
 		opposite = "con"
 	}
-	return DebateDTO{ID: formatID(d.ID), Topic: Topic{formatID(d.TopicID), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	// 赛制与总轮数必须自洽：无法识别赛制时统一回退为 quick_3，
+	// 避免出现 mode 为空而 total_rounds 却为 3 的矛盾输出（前端会判为格式错误）。
+	mode := d.Mode
+	style := d.AIStyle
+	total := 3
+	if rounds, err := ai.RoundsFor(ai.Mode(mode)); err == nil {
+		total = rounds
+	} else {
+		mode = string(ai.ModeQuick3)
+	}
+	if !ai.AIStyle(style).Valid() {
+		style = string(ai.StyleLogical)
+	}
+	return DebateDTO{ID: formatID(d.ID), Topic: Topic{formatID(d.TopicID), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
 }
 
 type Turn struct {

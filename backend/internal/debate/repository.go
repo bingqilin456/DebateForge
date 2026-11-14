@@ -87,7 +87,18 @@ func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance string)
 		if e != nil {
 			return dependency(e, false)
 		}
-		d = Debate{UserID: uid, TopicID: topic.ID, TopicTitleSnapshot: topic.Title, TopicDescriptionSnapshot: topic.Description, UserStance: stance, Status: "active"}
+		// 赛制与流派由服务端固定：新会话一律 standard_4，不接受客户端传参覆盖。
+		// quick_3 仅供历史数据与隔离 E2E 使用，生产创建路径不提供该选项。
+		d = Debate{
+			UserID:                   uid,
+			TopicID:                  topic.ID,
+			TopicTitleSnapshot:       topic.Title,
+			TopicDescriptionSnapshot: topic.Description,
+			UserStance:               stance,
+			Mode:                     string(ai.ModeStandard4),
+			AIStyle:                  string(ai.StyleLogical),
+			Status:                   "active",
+		}
 		if e = tx.Create(&d).Error; e != nil {
 			return dependency(e, false)
 		}
@@ -177,7 +188,11 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 			d = existing
 			return nil
 		}
-		if row.Status != "active" || in.RoundNo < 1 || in.RoundNo > ai.TotalRounds || in.RoundNo != row.CompletedRounds+1 {
+		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
+		if e != nil {
+			return dependency(e, false)
+		}
+		if row.Status != "active" || in.RoundNo < 1 || in.RoundNo > rounds || in.RoundNo != row.CompletedRounds+1 {
 			return ErrRoundConflict
 		}
 		history, e := readTurns(tx, row, "")
@@ -247,7 +262,11 @@ func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expe
 			d = Detail{Debate: row, Turns: []Turn{turn}}
 			return nil
 		}
-		if row.Status != "active" || turn.RoundNo < 1 || turn.RoundNo > ai.TotalRounds || row.CompletedRounds != turn.RoundNo-1 || idx != len(all.Turns)-1 || len(all.Turns) != turn.RoundNo {
+		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
+		if e != nil {
+			return dependency(e, false)
+		}
+		if row.Status != "active" || turn.RoundNo < 1 || turn.RoundNo > rounds || row.CompletedRounds != turn.RoundNo-1 || idx != len(all.Turns)-1 || len(all.Turns) != turn.RoundNo {
 			return ErrRoundConflict
 		}
 		for i := 0; i < idx; i++ {
@@ -337,7 +356,11 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		if _, e = currentTurn(tx, row, t); e != nil {
 			return e
 		}
-		if row.Status != "active" || t.RoundNo < 1 || t.RoundNo > ai.TotalRounds || row.CompletedRounds != t.RoundNo-1 {
+		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
+		if e != nil {
+			return dependency(e, false)
+		}
+		if row.Status != "active" || t.RoundNo < 1 || t.RoundNo > rounds || row.CompletedRounds != t.RoundNo-1 {
 			return ErrRoundConflict
 		}
 		message := Message{TurnID: t.ID, Role: "assistant", Content: result.Content}
@@ -356,7 +379,7 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		}
 		newRounds := t.RoundNo
 		newStatus := "active"
-		if newRounds >= ai.TotalRounds {
+		if newRounds >= rounds {
 			newStatus = "completed"
 		}
 		now := r.now()
@@ -418,7 +441,11 @@ func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in 
 		if e != nil {
 			return e
 		}
-		if row.Status != "completed" || row.CompletedRounds != ai.TotalRounds {
+		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
+		if e != nil {
+			return dependency(e, false)
+		}
+		if row.Status != "completed" || row.CompletedRounds != rounds {
 			return ErrRoundConflict
 		}
 		existing, e := readSummary(tx, debateID, true)
@@ -433,7 +460,7 @@ func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in 
 			if e != nil {
 				return e
 			}
-			if len(history.Turns) != ai.TotalRounds {
+			if len(history.Turns) != rounds {
 				return ErrRoundConflict
 			}
 			for i := range history.Turns {
@@ -481,7 +508,7 @@ func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in 
 		if e != nil {
 			return e
 		}
-		if len(history.Turns) != ai.TotalRounds {
+		if len(history.Turns) != rounds {
 			return ErrRoundConflict
 		}
 		for i := range history.Turns {
@@ -545,7 +572,11 @@ func (r *Repository) CompleteSummary(ctx context.Context, uid uint64, d Debate, 
 		if saved, e = currentSummary(tx, row, s); e != nil {
 			return e
 		}
-		if row.Status != "completed" || row.CompletedRounds != ai.TotalRounds {
+		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
+		if e != nil {
+			return dependency(e, false)
+		}
+		if row.Status != "completed" || row.CompletedRounds != rounds {
 			return ErrRoundConflict
 		}
 		schemaVer := result.SchemaVersion

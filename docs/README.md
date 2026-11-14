@@ -47,6 +47,7 @@
 - T09 三轮状态机与失败恢复（含 T11 后端历史分页）见 [T09 验收记录](acceptance/T09_THREE_TURNS_RECOVERY_ACCEPTANCE.md)。
 - T10 结构化总结与重试见 [T10 验收记录](acceptance/T10_SUMMARY_RETRY_ACCEPTANCE.md)。
 - T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 Spec](planning/T12_DEBATE_INTEGRATION_SPEC.md) 和 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
+- Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [整合 Spec 与清单](planning/PHASE2_FINAL_INTEGRATION_SPEC.md) 和 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

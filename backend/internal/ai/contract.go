@@ -12,8 +12,80 @@ import (
 // 便于 T05 在 debate_turns.prompt_version 中留下可追溯记录。
 const PromptVersion = "debate-v1"
 
-// TotalRounds 是 MVP 固定的三轮辩论上限，AI 只承担完整回答，不改写轮次规则。
-const TotalRounds = 3
+// Mode 是会话的赛制模式标识。它是轮数上限的唯一事实来源：
+// 数据库 debates.mode 决定该会话跑几轮，代码不再保留固定的轮数常量。
+type Mode string
+
+const (
+	// ModeQuick3 是三轮快速赛制（立论/攻辩/结辩）。
+	// 仅用于历史数据兼容与隔离 E2E 测试，生产 API 不允许新建。
+	ModeQuick3 Mode = "quick_3"
+	// ModeStandard4 是四轮标准赛制（立论/驳立论/自由辩/结辩），新建会话的默认赛制。
+	ModeStandard4 Mode = "standard_4"
+)
+
+// roundsByMode 是赛制到轮数上限的唯一映射。新增赛制只在此处登记。
+var roundsByMode = map[Mode]int{
+	ModeQuick3:    3,
+	ModeStandard4: 4,
+}
+
+// Valid 报告赛制是否为已知枚举值。
+func (m Mode) Valid() bool {
+	_, ok := roundsByMode[m]
+	return ok
+}
+
+// RoundsFor 返回该赛制的正式轮数上限。未知赛制返回错误，
+// 不静默降级到任何默认轮数，避免用错误的上限推进状态机。
+func RoundsFor(m Mode) (int, error) {
+	rounds, ok := roundsByMode[m]
+	if !ok {
+		return 0, invalidInput("赛制模式必须是 quick_3 或 standard_4")
+	}
+	return rounds, nil
+}
+
+// MustRoundsFor 用于配置校验等已确知合法的场景；未知赛制属于编程错误，直接 panic。
+func MustRoundsFor(m Mode) int {
+	rounds, err := RoundsFor(m)
+	if err != nil {
+		panic("未知赛制模式: " + string(m))
+	}
+	return rounds
+}
+
+// AIStyle 是陪练 AI 的辩手流派，影响 Prompt 的论证风格描述。
+// 与赛制模式分开：流派改变话术风格，不改变轮数或状态机。
+type AIStyle string
+
+const (
+	// StyleLogical 逻辑型：循前提与推理推进，默认流派。
+	StyleLogical AIStyle = "logical"
+	// StyleAggressive 强攻型：高频质疑与压迫式追问。
+	StyleAggressive AIStyle = "aggressive"
+	// StyleEmpathic 共情型：先复述理解再指出分歧。
+	StyleEmpathic AIStyle = "empathic"
+	// StyleData 数据型：强调量化依据与可核验事实。
+	StyleData AIStyle = "data"
+)
+
+// styleLabels 是流派的固定中文描述，用于 Prompt。
+var styleLabels = map[AIStyle]string{
+	StyleLogical:    "逻辑型：按前提与推理逐层推进",
+	StyleAggressive: "强攻型：高频质疑并压迫式追问对方前提",
+	StyleEmpathic:   "共情型：先复述并承认合理处，再指出分歧",
+	StyleData:       "数据型：强调可核验的量化依据与事实",
+}
+
+// Valid 报告流派是否为已知枚举值。
+func (s AIStyle) Valid() bool {
+	_, ok := styleLabels[s]
+	return ok
+}
+
+// Label 返回流派的固定中文描述；未知流派返回空串，由调用方决定是否报错。
+func (s AIStyle) Label() string { return styleLabels[s] }
 
 const (
 	// MaxUserContentCodepoints 与 API 契约的 1–2000 Unicode 码点一致。
@@ -91,6 +163,8 @@ type CompletedTurn struct {
 type Request struct {
 	// UserID 来自认证会话，只用于真实试运行准入。
 	UserID         uint64
+	Mode           Mode
+	AIStyle        AIStyle
 	Topic          Topic
 	UserStance     Stance
 	RoundNo        int
@@ -224,8 +298,17 @@ func ValidateRequest(req Request) error {
 	if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
 		return err
 	}
-	if req.RoundNo < 1 || req.RoundNo > TotalRounds {
-		return invalidInput("轮次必须是 1 至 3")
+	// 轮数上限来自会话赛制，不从常量读取；未知赛制在 RoundsFor 处受控失败。
+	rounds, err := RoundsFor(req.Mode)
+	if err != nil {
+		return err
+	}
+	// 流派为空表示使用默认逻辑型；显式传入则必须是已知枚举。
+	if req.AIStyle != "" && !req.AIStyle.Valid() {
+		return invalidInput("辩手流派必须是 logical、aggressive、empathic 或 data")
+	}
+	if req.RoundNo < 1 || req.RoundNo > rounds {
+		return invalidInput(fmt.Sprintf("轮次必须是 1 至 %d", rounds))
 	}
 	if _, err := req.UserStance.Opposite(); err != nil {
 		return err

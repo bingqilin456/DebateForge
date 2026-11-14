@@ -28,7 +28,7 @@ func (s *testStore) List(context.Context, uint64, int, int) (DebateList, error) 
 }
 func (s *testStore) Detail(context.Context, uint64, uint64) (Detail, error) { return sample(), nil }
 func sample() Detail {
-	return Detail{Debate: Debate{ID: 3, UserID: 1, TopicID: 1, TopicTitleSnapshot: "题目", TopicDescriptionSnapshot: "说明", UserStance: "pro", Status: "active"}, Turns: []Turn{{ID: 4, DebateID: 3, RoundNo: 1, ClientRequestID: "550e8400-e29b-41d4-a716-446655440000", Status: "generating", AttemptVersion: 1, Messages: []Message{{ID: 5, Role: "user", Content: "原文"}}}}}
+	return Detail{Debate: Debate{ID: 3, UserID: 1, TopicID: 1, TopicTitleSnapshot: "题目", TopicDescriptionSnapshot: "说明", UserStance: "pro", Mode: string(ai.ModeStandard4), AIStyle: string(ai.StyleLogical), Status: "active"}, Turns: []Turn{{ID: 4, DebateID: 3, RoundNo: 1, ClientRequestID: "550e8400-e29b-41d4-a716-446655440000", Status: "generating", AttemptVersion: 1, Messages: []Message{{ID: 5, Role: "user", Content: "原文"}}}}}
 }
 func (s *testStore) Claim(_ context.Context, _, _ uint64, _ SubmitInput, admit func() error) (Detail, bool, error) {
 	s.claiming = true
@@ -198,6 +198,7 @@ func (m *memoryStore) allocID() uint64 {
 
 func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance string) (Debate, error) {
 	now := m.now().UTC()
+	// 与生产 Repository 保持一致：新会话固定 standard_4。
 	d := Debate{
 		ID:                       m.allocID(),
 		UserID:                   uid,
@@ -205,6 +206,8 @@ func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance string) 
 		TopicTitleSnapshot:       "大学课程是否应采用开放式考核",
 		TopicDescriptionSnapshot: "讨论学习效果与评价公平",
 		UserStance:               stance,
+		Mode:                     string(ai.ModeStandard4),
+		AIStyle:                  string(ai.StyleLogical),
 		Status:                   "active",
 		CompletedRounds:          0,
 		CreatedAt:                now,
@@ -212,6 +215,26 @@ func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance string) 
 	}
 	m.debates[d.ID] = d
 	return d, nil
+}
+
+// testRounds 为内存测试替身解析轮数；空赛制按 quick_3 处理，
+// 使未显式设置 Mode 的历史夹具保持原有三轮语义。
+func testRounds(mode string) int {
+	if mode == "" {
+		return 3
+	}
+	return ai.MustRoundsFor(ai.Mode(mode))
+}
+
+// setMode 直接把既有会话切换到指定赛制，仅用于验证历史兼容与多赛制分支。
+// 生产代码没有这个入口：赛制在创建时固定，之后不可修改。
+func (m *memoryStore) setMode(id uint64, mode string) {
+	d, ok := m.debates[id]
+	if !ok {
+		return
+	}
+	d.Mode = mode
+	m.debates[id] = d
 }
 
 func (m *memoryStore) List(_ context.Context, uid uint64, page, pageSize int) (DebateList, error) {
@@ -269,7 +292,7 @@ func (m *memoryStore) Claim(_ context.Context, uid, id uint64, in SubmitInput, a
 			return Detail{Debate: d, Turns: []Turn{t}}, false, nil
 		}
 	}
-	if d.Status != "active" || in.RoundNo < 1 || in.RoundNo > ai.TotalRounds || in.RoundNo != d.CompletedRounds+1 || len(turns) != in.RoundNo-1 {
+	if d.Status != "active" || in.RoundNo < 1 || in.RoundNo > testRounds(d.Mode) || in.RoundNo != d.CompletedRounds+1 || len(turns) != in.RoundNo-1 {
 		return Detail{}, false, ErrRoundConflict
 	}
 	if err := admit(); err != nil {
@@ -368,7 +391,7 @@ func (m *memoryStore) Complete(_ context.Context, uid uint64, d Debate, t Turn, 
 	turns[idx] = cur
 	m.turns[d.ID] = turns
 	curDebate.CompletedRounds = t.RoundNo
-	if curDebate.CompletedRounds >= ai.TotalRounds {
+	if curDebate.CompletedRounds >= testRounds(curDebate.Mode) {
 		curDebate.Status = "completed"
 	}
 	curDebate.UpdatedAt = m.now().UTC()
@@ -415,7 +438,8 @@ func (m *memoryStore) ClaimSummary(_ context.Context, uid, debateID uint64, in S
 	if !ok || d.UserID != uid {
 		return Detail{}, false, ErrNotFound
 	}
-	if d.Status != "completed" || d.CompletedRounds != ai.TotalRounds {
+	rounds := testRounds(d.Mode)
+	if d.Status != "completed" || d.CompletedRounds != rounds {
 		return Detail{}, false, ErrRoundConflict
 	}
 	turns := append([]Turn(nil), m.turns[debateID]...)
@@ -424,7 +448,7 @@ func (m *memoryStore) ClaimSummary(_ context.Context, uid, debateID uint64, in S
 		if in.Retry {
 			return Detail{}, false, ErrInvalidRequest
 		}
-		if len(turns) != ai.TotalRounds {
+		if len(turns) != rounds {
 			return Detail{}, false, ErrRoundConflict
 		}
 		if err := admit(); err != nil {
@@ -452,7 +476,7 @@ func (m *memoryStore) ClaimSummary(_ context.Context, uid, debateID uint64, in S
 		copySum := existing
 		return Detail{Debate: d, Summary: &copySum}, false, nil
 	}
-	if len(turns) != ai.TotalRounds {
+	if len(turns) != rounds {
 		return Detail{}, false, ErrRoundConflict
 	}
 	if err := admit(); err != nil {
@@ -554,6 +578,10 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 本用例验证三轮语义（第 4 轮被拒），显式改用 quick_3：
+	// 生产创建固定 standard_4，此处仅历史兼容与状态机边界测试需要三轮。
+	store.setMode(created.ID, string(ai.ModeQuick3))
+	created.Mode = string(ai.ModeQuick3)
 	// 第 1 轮成功
 	r1, status, err := service.Submit(context.Background(), 1, created.ID, SubmitInput{
 		RoundNo:         1,
@@ -677,6 +705,9 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 本用例沿用三轮六条消息的总结语义，显式改用 quick_3。
+	store.setMode(created.ID, string(ai.ModeQuick3))
+	created.Mode = string(ai.ModeQuick3)
 
 	// 未完成辩论拒绝生成总结（409 round_conflict），GET summary 返回 not_started
 	sumStatus, err := service.GetSummary(context.Background(), 1, created.ID)
@@ -770,6 +801,8 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 
 	// 验证第二个完成会话首次生成成功返回 201，以及过期 generating 总结租约回收
 	d2, _ := service.Create(context.Background(), 1, 1, "con")
+	// 第二场同样验证三轮语义，显式改用 quick_3。
+	store.setMode(d2.ID, string(ai.ModeQuick3))
 	service.generator = ai.NewFake()
 	for r := 1; r <= 3; r++ {
 		clock = clock.Add(time.Minute)

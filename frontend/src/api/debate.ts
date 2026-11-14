@@ -1,9 +1,11 @@
 import { authState } from '../auth/state'
 import type {
+  AIStyle,
   CreateDebateRequest,
   Debate,
   DebateDetail,
   DebateListResult,
+  DebateMode,
   DebateStatus,
   Message,
   MessageRole,
@@ -68,20 +70,38 @@ function date(value: unknown): value is string {
 function isTopic(value: unknown): value is Topic {
   return isRecord(value) && isEntityId(value.id) && text(value.title, 200) && typeof value.description === 'string' && [...value.description].length <= 2000
 }
+// 赛制上限由后端 DTO 的 total_rounds 提供，前端不保留第二份轮数常量。
+// 未知赛制或越界轮数一律判为格式错误，避免用错误上限推进界面状态机。
+const MAX_KNOWN_ROUNDS = 4
+
+function isMode(value: unknown): value is DebateMode {
+  return value === 'quick_3' || value === 'standard_4'
+}
+
+function isAIStyle(value: unknown): value is AIStyle {
+  return value === 'logical' || value === 'aggressive' || value === 'empathic' || value === 'data'
+}
+
 function isDebate(value: unknown): value is Debate {
-  return isRecord(value) && isEntityId(value.id) && isTopic(value.topic)
+  if (!(isRecord(value) && isEntityId(value.id) && isTopic(value.topic)
     && (value.user_stance === 'pro' || value.user_stance === 'con')
     && value.ai_stance === (value.user_stance === 'pro' ? 'con' : 'pro')
+    && isMode(value.mode) && isAIStyle(value.ai_style)
     && (value.status === 'active' || value.status === 'completed')
-    && Number.isInteger(value.completed_rounds) && Number(value.completed_rounds) >= 0 && Number(value.completed_rounds) <= 3
-    && date(value.created_at) && date(value.updated_at)
+    && Number.isInteger(value.total_rounds) && Number(value.total_rounds) >= 1 && Number(value.total_rounds) <= MAX_KNOWN_ROUNDS
+    && Number.isInteger(value.completed_rounds) && Number(value.completed_rounds) >= 0
+    && Number(value.completed_rounds) <= Number(value.total_rounds)
+    && date(value.created_at) && date(value.updated_at))) return false
+  // 赛制与总轮数必须自洽：quick_3 恒为 3，standard_4 恒为 4。
+  return (value.mode === 'quick_3' && Number(value.total_rounds) === 3)
+    || (value.mode === 'standard_4' && Number(value.total_rounds) === 4)
 }
 function isMessage(value: unknown): value is Message {
   return isRecord(value) && isEntityId(value.id) && (value.role === 'user' || value.role === 'assistant') && text(value.content, 2000) && date(value.created_at)
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 function isTurn(value: unknown): value is Turn {
-  if (!isRecord(value) || !isEntityId(value.id) || !Number.isInteger(value.round_no) || Number(value.round_no) < 1 || Number(value.round_no) > 3
+  if (!isRecord(value) || !isEntityId(value.id) || !Number.isInteger(value.round_no) || Number(value.round_no) < 1 || Number(value.round_no) > MAX_KNOWN_ROUNDS
     || typeof value.client_request_id !== 'string' || !uuid.test(value.client_request_id)
     || !Number.isSafeInteger(value.attempt_version) || Number(value.attempt_version) < 1
     || !Array.isArray(value.messages) || !value.messages.every(isMessage)) return false
@@ -92,21 +112,19 @@ function isTurn(value: unknown): value is Turn {
   return value.status === 'failed' && messages.length === 1 && typeof value.error_code === 'string'
     && errorCodes.includes(value.error_code)
 }
-function isSummaryPoint(value: unknown): value is SummaryPoint {
-  return isRecord(value) && Number.isInteger(value.round_no) && Number(value.round_no) >= 1 && Number(value.round_no) <= 3
-    && text(value.point, 300) && text(value.reason, 300)
-}
-function isSummarySuggestion(value: unknown): value is SummarySuggestion {
-  return isRecord(value) && Number.isInteger(value.round_no) && Number(value.round_no) >= 1 && Number(value.round_no) <= 3
-    && text(value.action, 300) && text(value.example, 300)
-}
-export function isSummaryContent(value: unknown): value is SummaryContent {
+export function isSummaryContent(value: unknown, totalRounds = MAX_KNOWN_ROUNDS): value is SummaryContent {
+  const inRange = (v: unknown): boolean =>
+    isRecord(v) && Number.isInteger(v.round_no) && Number(v.round_no) >= 1 && Number(v.round_no) <= totalRounds
+  const isPoint = (v: unknown): v is SummaryPoint =>
+    inRange(v) && text((v as Record<string, unknown>).point, 300) && text((v as Record<string, unknown>).reason, 300)
+  const isSuggestion = (v: unknown): v is SummarySuggestion =>
+    inRange(v) && text((v as Record<string, unknown>).action, 300) && text((v as Record<string, unknown>).example, 300)
   return isRecord(value)
-    && Array.isArray(value.strengths) && value.strengths.length >= 1 && value.strengths.length <= 3 && value.strengths.every(isSummaryPoint)
-    && Array.isArray(value.issues) && value.issues.length >= 1 && value.issues.length <= 3 && value.issues.every(isSummaryPoint)
-    && Array.isArray(value.suggestions) && value.suggestions.length >= 1 && value.suggestions.length <= 3 && value.suggestions.every(isSummarySuggestion)
+    && Array.isArray(value.strengths) && value.strengths.length >= 1 && value.strengths.length <= 3 && value.strengths.every(isPoint)
+    && Array.isArray(value.issues) && value.issues.length >= 1 && value.issues.length <= 3 && value.issues.every(isPoint)
+    && Array.isArray(value.suggestions) && value.suggestions.length >= 1 && value.suggestions.length <= 3 && value.suggestions.every(isSuggestion)
 }
-export function isSummaryStatus(value: unknown): value is SummaryStatus {
+export function isSummaryStatus(value: unknown, totalRounds = MAX_KNOWN_ROUNDS): value is SummaryStatus {
   if (!isRecord(value)) return false
   if (value.status === 'not_started') {
     return value.attempt_version === null && value.error_code === undefined && value.content === undefined
@@ -118,14 +136,17 @@ export function isSummaryStatus(value: unknown): value is SummaryStatus {
   if (value.status === 'failed') {
     return typeof value.error_code === 'string' && errorCodes.includes(value.error_code) && value.content === undefined
   }
-  return value.status === 'completed' && value.schema_version === 1 && isSummaryContent(value.content) && value.error_code === undefined
+  return value.status === 'completed' && value.schema_version === 1
+    && isSummaryContent(value.content, totalRounds) && value.error_code === undefined
 }
 function isDetail(value: unknown): value is DebateDetail {
-  return isRecord(value) && isDebate(value.debate) && Array.isArray(value.turns)
-    && value.turns.length <= 3 && value.turns.every(isTurn)
+  // 轮次数量与总结轮号上限都取自该会话自身的 total_rounds，而不是全局常量。
+  if (!(isRecord(value) && isDebate(value.debate) && Array.isArray(value.turns))) return false
+  const total = Number(value.debate.total_rounds)
+  return value.turns.length <= total && value.turns.every(isTurn)
     && value.turns.every((turn, index) => turn.round_no === index + 1)
     && value.turns.filter(turn => turn.status === 'completed').length === value.debate.completed_rounds
-    && isSummaryStatus(value.summary_status)
+    && isSummaryStatus(value.summary_status, total)
     && (value.debate.status === 'active' ? value.summary_status.status === 'not_started' : true)
 }
 
@@ -190,8 +211,9 @@ export function createDebateApi(client: ApiClient = authState.client) {
     createDebate,
     detail: getDebateDetail,
     getDebateDetail,
-    async send(id: string, content: string, requestId: string, roundNo = 1): Promise<TurnResult> {
-      if (!Number.isInteger(roundNo) || roundNo < 1 || roundNo > 3) {
+    async send(id: string, content: string, requestId: string, roundNo = 1, totalRounds = MAX_KNOWN_ROUNDS): Promise<TurnResult> {
+      // 轮次上限由调用方按会话的 total_rounds 传入，不再固定为 3。
+      if (!Number.isInteger(roundNo) || roundNo < 1 || roundNo > totalRounds) {
         throw new ApiError('format', '轮次编号无效。')
       }
       return client.request(`/api/v1/debates/${entityId(id)}/turns`, {
@@ -214,24 +236,27 @@ export function createDebateApi(client: ApiClient = authState.client) {
           && v.completed_rounds === (v.turn.status === 'completed' ? v.turn.round_no : v.turn.round_no - 1) && v.query_url === `/api/v1/debates/${id}`,
       })
     },
-    async summary(id: string): Promise<SummaryStatus> {
+    // 总结的合法轮号范围同样由该会话赛制决定，因此必须由调用方传入 total_rounds；
+    // 缺省时退回“所有已知赛制的最大轮数”，只作为格式防御，不作为业务上限。
+    async summary(id: string, totalRounds = MAX_KNOWN_ROUNDS): Promise<SummaryStatus> {
       return client.request(`/api/v1/debates/${entityId(id)}/summary`, {
         expectedStatus: 200,
-        validate: isSummaryStatus,
+        validate: (v): v is SummaryStatus => isSummaryStatus(v, totalRounds),
       })
     },
-    async requestSummary(id: string, options: { retry?: boolean; expectedAttemptVersion?: number } = {}): Promise<SummaryStatus> {
+    async requestSummary(id: string, options: { retry?: boolean; expectedAttemptVersion?: number; totalRounds?: number } = {}): Promise<SummaryStatus> {
       const retry = Boolean(options.retry)
       if (retry && (!Number.isSafeInteger(options.expectedAttemptVersion) || Number(options.expectedAttemptVersion) < 1)) {
         throw new ApiError('format', '总结重试版本号无效。')
       }
+      const totalRounds = options.totalRounds ?? MAX_KNOWN_ROUNDS
       const body = retry
         ? { retry: true, expected_attempt_version: options.expectedAttemptVersion }
         : { retry: false }
       return client.request(`/api/v1/debates/${entityId(id)}/summary`, {
         method: 'POST', expectedStatus: [200, 201, 202], timeoutMs: GENERATION_TIMEOUT_MS,
         body,
-        validate: (v): v is SummaryStatus => isSummaryStatus(v) && v.status !== 'not_started',
+        validate: (v): v is SummaryStatus => isSummaryStatus(v, totalRounds) && v.status !== 'not_started',
       })
     },
   }

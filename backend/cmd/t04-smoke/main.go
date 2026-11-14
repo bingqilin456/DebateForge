@@ -109,7 +109,7 @@ func createRecord(path string, value any) error {
 }
 
 func anonymousRequest() ai.Request {
-	return ai.Request{Topic: ai.Topic{Title: "大学课程是否应采用开放式考核", Description: "讨论学习效果与评价公平"}, UserStance: ai.StancePro, RoundNo: 1, UserContent: "开放式考核可以评估实际应用能力。请在120字以内回应。"}
+	return ai.Request{Mode: ai.ModeQuick3, Topic: ai.Topic{Title: "大学课程是否应采用开放式考核", Description: "讨论学习效果与评价公平"}, UserStance: ai.StancePro, RoundNo: 1, UserContent: "开放式考核可以评估实际应用能力。请在120字以内回应。"}
 }
 
 func anonymousWire() ([]byte, error) {

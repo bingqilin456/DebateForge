@@ -29,22 +29,26 @@ func EstimatePromptTokens(prompt Prompt) int {
 const messageOverheadTokens = 8
 
 // WorstCaseTurnPromptTokens 用真实最坏输入构造 Prompt 再估算，避免手写常量低估。
-// “最坏”同时覆盖：第三轮 system、两轮完整历史与本轮用户发言，全部取上限长度，
-// 正文使用 4 字节字符（每码点 4 字节），并按 API 上限堆满 2000 码点。
+// 轮数上限由赛制决定，因此取所有已知赛制中最坏的一个（四轮）：
+// 三轮完整历史加本轮发言，全部取上限长度，正文用 4 字节字符堆满 2000 码点。
+// 用四轮建模可覆盖 quick_3，因为 quick_3 的历史更短，其 Prompt 必然是四轮的子集。
 func WorstCaseTurnPromptTokens() int {
 	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
+	rounds := MaxRounds()
+	completed := make([]CompletedTurn, 0, rounds-1)
+	for round := 1; round < rounds; round++ {
+		completed = append(completed, CompletedTurn{RoundNo: round, UserContent: worst, AssistantContent: worst})
+	}
 	req := Request{
+		Mode: ModeStandard4,
 		Topic: Topic{
 			Title:       strings.Repeat("𠮷", MaxTopicTitleCodepoints),
 			Description: strings.Repeat("𠮷", MaxTopicDescriptionCodepoints),
 		},
-		UserStance:  StancePro,
-		RoundNo:     TotalRounds,
-		UserContent: worst,
-		CompletedTurns: []CompletedTurn{
-			{RoundNo: 1, UserContent: worst, AssistantContent: worst},
-			{RoundNo: 2, UserContent: worst, AssistantContent: worst},
-		},
+		UserStance:     StancePro,
+		RoundNo:        rounds,
+		UserContent:    worst,
+		CompletedTurns: completed,
 	}
 	prompt, err := BuildPrompt(req)
 	if err != nil {
@@ -54,16 +58,27 @@ func WorstCaseTurnPromptTokens() int {
 	return EstimatePromptTokens(prompt)
 }
 
-// WorstCaseSummaryPromptTokens 估算 T10 总结输入的最坏规模：总结需要完整的
-// 六条正式消息（含第三轮 assistant 回复）加辩题快照与总结指令。
+// MaxRounds 返回所有已知赛制中最大的轮数上限，用于按最坏情况估算预算。
+func MaxRounds() int {
+	max := 0
+	for _, rounds := range roundsByMode {
+		if rounds > max {
+			max = rounds
+		}
+	}
+	return max
+}
+
+// WorstCaseSummaryPromptTokens 估算总结输入的最坏规模：总结需要
+// 最坏赛制下全部轮次的正式消息（每轮一 user 一 assistant），加辩题快照与总结指令。
 func WorstCaseSummaryPromptTokens() int {
 	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
-	conversation := 6 * EstimateTokens(worst)
+	conversation := 2 * MaxRounds() * EstimateTokens(worst)
 	snapshot := EstimateTokens(strings.Repeat("𠮷", MaxTopicTitleCodepoints)) +
 		EstimateTokens(strings.Repeat("𠮷", MaxTopicDescriptionCodepoints))
 	// 总结指令段落按 2 KiB 上界计入，避免依赖具体措辞。
 	instructions := 2048
-	return conversation + snapshot + instructions + messageOverheadTokens*8
+	return conversation + snapshot + instructions + messageOverheadTokens*(2*MaxRounds()+2)
 }
 
 // WindowLimits 必须由调用方显式配置，未核实的能力不得被默认值掩盖。

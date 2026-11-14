@@ -1,4 +1,4 @@
-# 思弈阁 Lite 技术架构
+# 思弈阁 技术架构
 
 **当前 T07 费用准入（2026-11-09）。** 真实模型公网试运行遵循 [ADR-019](../decisions/DECISIONS.md#adr-019-受控公网模型费用准入)。以下 T04/T05 阶段快照中的旧硬预算门槛保留当时语境。
 
@@ -72,7 +72,7 @@ backend/
     auth/{handler,service,repository,model,dto}.go
     topic/{handler,service,repository,model,dto}.go
     debate/{handler,service,repository,model,dto}.go
-    debate/state.go                  # 三轮规则与状态转换
+    debate/state.go                  # 赛制轮数与环节规则、状态转换
     ai/{client,prompts,summary}.go    # 小接口、Eino 适配和结构校验
     platform/{config,database,router,middleware,health}.go
   migrations/                       # 有版本号的建表、种子和升级 SQL
@@ -102,14 +102,14 @@ docs/                               # 本阶段共享规划与后续验收记录
 | `users` | `id, username, password_hash, created_at` | 归一化后的 username 唯一；不采集其他身份信息 |
 | `auth_sessions` | `id, user_id, token_hash, csrf_token, expires_at, created_at` | token_hash 唯一；user_id 外键；expires_at 索引，退出删除对应行 |
 | `topics` | `id, title, description, enabled, created_at` | 版本化种子至少 5 条；已使用条目不物理删除 |
-| `debates` | `id, user_id, topic_id, topic_title_snapshot, topic_description_snapshot, user_stance, status, completed_rounds, created_at, updated_at` | user_id 与 topic_id 外键；索引 `(user_id, created_at, id)`；completed_rounds 为 0 至 3 |
-| `debate_turns` | `id, debate_id, round_no, client_request_id, status, attempt_version, lease_expires_at, error_code, model_name, prompt_version, input_tokens, output_tokens, latency_ms` | 唯一 `(debate_id, round_no)` 和 `(debate_id, client_request_id)`；debate_id 外键；status 与 lease_expires_at 索引 |
+| `debates` | `id, user_id, topic_id, topic_title_snapshot, topic_description_snapshot, user_stance, mode, ai_style, status, completed_rounds, created_at, updated_at` | user_id 与 topic_id 外键；索引 `(user_id, created_at, id)`；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`，均有字节精确 CHECK；`completed_rounds` 数据库粗边界 0–6，按模式的精确上限由业务代码校验 |
+| `debate_turns` | `id, debate_id, round_no, client_request_id, status, attempt_version, lease_expires_at, error_code, model_name, prompt_version, input_tokens, output_tokens, latency_ms` | 唯一 `(debate_id, round_no)` 和 `(debate_id, client_request_id)`；debate_id 外键；status 与 lease_expires_at 索引；`round_no` 数据库粗边界 1–6 |
 | `messages` | `id, turn_id, role, content, created_at` | turn_id 外键；role 只允许 user/assistant；唯一 `(turn_id, role)` |
 | `debate_summaries` | `id, debate_id, status, schema_version, content_json, attempt_version, lease_expires_at, error_code, model_name, prompt_version, input_tokens, output_tokens, latency_ms, updated_at` | debate_id 外键且唯一；content_json 仅在成功后有值；status 与 lease_expires_at 索引 |
 
 所有表有主键，迁移时补齐必要的创建时间。T02 以版本化种子写入至少 5 个经人工审阅的中文辩题。T05 在 `GET /api/v1/topics` 查询真实 MySQL 中启用的辩题并按 ID 升序返回，T06 和 T08 复用。创建会话时检查辩题可用并将文字快照写入 `debates`，从而保留旧会话的原题。API 的 `topic` 字段由 `topic_id` 和会话快照投影，`ai_stance` 由用户立场反转得到。
 
-关系为：User 1:N AuthSession，User 1:N Debate，Topic 1:N Debate，Debate 1:N Turn（最多 3），Turn 1:N Message（最多 2），Debate 1:0..1 Summary。`debate_turns` 独立保存生成状态与幂等标识，`messages` 保存正式内容，避免把半条流式回复当作历史消息。
+关系为：User 1:N AuthSession，User 1:N Debate，Topic 1:N Debate，Debate 1:N Turn（上限由该会话 `mode` 决定，3 或 4），Turn 1:N Message（最多 2），Debate 1:0..1 Summary。`debate_turns` 独立保存生成状态与幂等标识，`messages` 保存正式内容，避免把半条流式回复当作历史消息。
 
 使用版本化 SQL 迁移及种子文件，由受控流程执行；GORM 执行 CRUD 与事务。生产启动不运行 `AutoMigrate`，不自动重置或重建表。服务账户仅有必要业务读写权限，迁移使用单独权限。GORM 支持显式事务，跨表业务仍需自行定义事务边界。[GORM 事务文档](https://gorm.io/docs/transactions.html)
 
@@ -117,11 +117,22 @@ T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`
 
 ## 会话与轮次状态机
 
-`debates.status` 只取 `active`、`completed`。成功完成第 3 轮后立即成为 completed，与总结是否成功无关。总结状态为 `generating`、`completed`、`failed`，尚未请求时无总结行，API 统一返回 `not_started`。
+`debates.status` 只取 `active`、`completed`。达到该场赛制的轮数上限后立即成为 completed，与总结是否成功无关。总结状态为 `generating`、`completed`、`failed`，尚未请求时无总结行，API 统一返回 `not_started`。
+
+**赛制模式是轮数的唯一事实来源（[ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出)）。** 代码不保留固定轮数常量，一律经 `RoundsFor(mode)` 取得：
+
+| 赛制 `mode` | 轮数上限 | 环节序列 | 用途 |
+| --- | --- | --- | --- |
+| `quick_3` | 3 | 立论 / 攻辩 / 结辩 | 历史数据兼容与隔离 E2E 测试 |
+| `standard_4` | 4 | 立论 / 驳立论 / 自由辩 / 结辩 | 新建会话的默认赛制 |
+
+新建会话由服务端固定 `standard_4`，请求体传入的 `mode` 被忽略；`quick_3` 不开放生产创建入口。未知赛制一律受控失败，不静默降级到任何默认轮数。
+
+**环节由 `(赛制, 轮号)` 推导，不落库。** 第 3 轮是两种赛制的分叉点：`quick_3` 第 3 轮为结辩，`standard_4` 第 3 轮为自由辩、第 4 轮才是结辩。环节若单独存列会产生第二个事实源，一旦不一致即为脏数据，因此一律由推导函数计算，并按 `(赛制, 环节)` 分派该轮的 Prompt 指令。新增赛制只登记轮数与环节映射，不改状态机。
 
 `debate_turns.status` 只取 `generating`、`completed`、`failed`。初次接收发言即创建 generating 轮次及 user 消息；完整回复持久化才创建 assistant 消息。生成中的增量不作为正式消息保存。
 
-**T05 首轮范围。** 仅接受 `round_no=1`，保留轮次、消息、幂等键、租约与 `attempt_version`，完成首轮后会话仍为 `active`。处理可观察的模型失败、超时和请求取消。**T09 扩展范围。** 加入第 2/3 轮、第四轮拒绝、显式重试及过期租约回收。Phase 1 进程硬崩溃或数据库故障可能遗留 `generating`，客户端在有限轮询后提示稍后查询。
+**T05 首轮范围。** 仅接受 `round_no=1`，保留轮次、消息、幂等键、租约与 `attempt_version`，完成首轮后会话仍为 `active`。处理可观察的模型失败、超时和请求取消。**T09 扩展范围。** 加入第 2/3 轮、越界轮次拒绝、显式重试及过期租约回收。**赛制升级后**，每一处轮次校验（认领、重试认领、完成、总结认领、总结写回）都必须从该会话行读取 `mode` 后再取上限；任何使用全局常量或默认值的分支均属缺陷。Phase 1 进程硬崩溃或数据库故障可能遗留 `generating`，客户端在有限轮询后提示稍后查询。
 
 一次新轮次的处理顺序：
 
@@ -143,28 +154,34 @@ T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`
 
 ## Phase 2 API 草案
 
-Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。以下为 Phase 2 新增接口的设计草案，路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则。
+Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Phase 2 接口形成时的设计语义；历史分页、轮次重试与总结接口现已实现并晋升至 API/OpenAPI 正式路径，当前 DTO、状态与例子以 [API](../api/API.md) 为准。路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则；SSE 实现仍为后续 Phase 3 任务。
 
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |
 | `GET /debates?page=1&page_size=20` | page_size 最大 50 | 200，仅本人，按 created_at、id 倒序，返回 items、total、page、page_size |
+| `POST /debates` | 请求体仅 `topic_id`、`user_stance`；**不接受 `mode`/`ai_style`** | 201；服务端固定 `standard_4` + `logical`；客户端传入的赛制字段被忽略 |
 | `POST /debates/:id/turns/:turn_id/retry` | expected_attempt_version（必填）；无新内容；CSRF Header | failed 且版本匹配才认领；成功 200，进行中 202，已完成重放 200；失败版本已变化为 409，不调模型 |
 | `POST /debates/:id/summary` | `retry` 默认 false；为 true 时必填 expected_attempt_version | 仅 completed 辩论；首次成功 201，已完成重放 200，进行中 202；失败须 retry=true 且版本匹配才认领，版本冲突 409；not_started 时 retry=true 为 400 |
 | `GET /debates/:id/summary` | 本人会话 | 200，返回 status 和可选 content；未开始也返回 not_started |
+| `POST /debates/:id/turns/stream` | 与普通发送同体：`round_no`、`content`、`client_request_id`；`Accept: text/event-stream`；CSRF Header | 200 + `text/event-stream`，事件 `start`/`delta`/`done`/`error`；**复用同一认领内核**；鉴权/校验失败仍返回普通 JSON；生成中重复请求返回 202 JSON |
 
 重试接口也校验 `turn_id` 属于 URL 会话及当前用户。GET 仅查询已存状态。202 表示查到 `generating`，前端沿用 [API](../api/API.md#错误码与客户端恢复) 的查询规则。
+
+会话 DTO 增补 `mode`、`ai_style`、`total_rounds` 三个字段；`total_rounds` 由 `mode` 推导，前端据此确定轮次上限，**不自行硬编码轮数**。
 
 总结查询及会话详情的 `summary_status` 同时返回 `status` 和 `attempt_version`（`not_started` 时为 `null`），成功总结另含 `schema_version` 和 `content`。轮次与总结重试版本冲突用 `409 attempt_version_conflict` 和受控 `error.details` 提供当前状态、版本及查询地址。总结失败提供总结查询地址。Phase 2 实施时补齐这些新增接口的 JSON 示例。
 
 ## AI 上下文与总结
 
-先通过 Eino 的 ChatModel 组件调用 `Generate`，SSE 阶段再接入 `Stream`；不使用 Agent Runner 或工具循环。Eino 官方文档提供完整响应和流式响应两类接口，具体包及签名以实施时锁定版本为准。[Eino ChatModel 文档](https://www.cloudwego.cn/zh/docs/eino/core_modules/components/chat_model_guide/)
+先通过 Eino 的 ChatModel 组件调用 `Generate`；流式阶段接入同一 `ChatModel` 的 `Stream`，不使用 Agent Runner 或工具循环。Eino 官方文档提供完整响应和流式响应两类接口，具体包及签名以实施时锁定版本为准。[Eino ChatModel 文档](https://www.cloudwego.cn/zh/docs/eino/core_modules/components/chat_model_guide/)
 
-辩论上下文由服务器构建：固定 system 规则 + 辩题快照 + AI 相反立场 + 当前轮次与总轮数 + 本场已完成轮次的有序 user/assistant 消息 + 本轮 user 原文。system 不接受浏览器传入；不把其他会话、失败的 AI 片段或用户伪造的 role 纳入历史。三轮规模足够小，保留完整历史，不引入摘要压缩或向量检索。
+**`ai.Generator` 需要同时提供 `Generate` 与 `Stream`。** `Fake` 实现位于生产文件（`AI_MODE=fake` 由服务端装配），因此新增 `Stream` 时 `Fake` 必须同批实现，否则无收费回归链路直接编译失败。流式适配器与完整响应适配器共用同一 `Request` 构造与响应校验逻辑，不复制一份。
 
-Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇幅，不伪造引用或宣称已检索。用户要求“忽略规则”等属于发言数据；模型不决定用户权限、轮数或数据库写入。供应商输入窗口须覆盖完整三轮和总结提示，估算超限时明确报错，不静默丢弃历史。
+辩论上下文由服务器构建：固定 system 规则 + 辩题快照 + AI 相反立场与辩手流派 + 当前轮次与总轮数 + 当前环节指令 + 本场已完成轮次的有序 user/assistant 消息 + 本轮 user 原文。system 不接受浏览器传入；不把其他会话、失败的 AI 片段或用户伪造的 role 纳入历史。四轮规模仍然足够小，保留完整历史，不引入摘要压缩或向量检索。
 
-第三轮成功后前端调用独立总结接口；刷新 completed 会话时若总结 not_started，可自动补发一次。总结失败只显示明确的人工重试入口，不循环调用。总结生成同样使用短事务认领、事务外模型调用、版本检查写回和租约恢复；首次生成 attempt_version=1，失败后仅接受 retry=true 且 expected_attempt_version 匹配的显式重试。一场辩论只保存一份成功总结；retry=false 遇到 failed 仅返回失败状态，不重新生成。
+Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇幅、贴合当前环节，不伪造引用或宣称已检索。用户要求“忽略规则”等属于发言数据；模型不决定用户权限、轮数或数据库写入。供应商输入窗口须覆盖完整赛制（最坏为四轮）与总结提示，估算超限时明确报错，不静默丢弃历史。窗口按 `MaxRounds()` 建模最坏情况，因此四轮覆盖三轮，不因赛制变化而放宽校验。
+
+最后一轮成功后前端调用独立总结接口；刷新 completed 会话时若总结 not_started，可自动补发一次。总结失败只显示明确的人工重试入口，不循环调用。总结生成同样使用短事务认领、事务外模型调用、版本检查写回和租约恢复；首次生成 attempt_version=1，失败后仅接受 retry=true 且 expected_attempt_version 匹配的显式重试。一场辩论只保存一份成功总结；retry=false 遇到 failed 仅返回失败状态，不重新生成。总结的期望消息条数与合法轮号范围均由该会话 `mode` 推导。
 
 总结基于已持久化的六条消息和辩题快照，采用独立的“训练反馈者”Prompt，聚焦用户表现。目标 JSON schema_version 为 1：
 
@@ -176,22 +193,97 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 }
 ```
 
-三组各 1 至 3 项；round_no 必须为 1 至 3；每个文本字段 1 至 300 个 Unicode 字符，总 JSON 最大 16 KiB。若供应商支持结构化输出可启用，但服务端仍做 JSON 解析与字段校验；无效则 failed，不保存为成功，不自动追加修复调用。前端用固定组件展示字段，不直接展示原始 JSON 或执行模型 HTML。
+三组各 1 至 3 项；`round_no` 必须落在该赛制的合法范围内（`standard_4` 为 1 至 4，`quick_3` 为 1 至 3）；每个文本字段 1 至 300 个 Unicode 字符，总 JSON 最大 16 KiB。若供应商支持结构化输出可启用，但服务端仍做 JSON 解析与字段校验；无效则 failed，不保存为成功，不自动追加修复调用。前端用固定组件展示字段，不直接展示原始 JSON 或执行模型 HTML。
 
-每次调用记录 model_name、prompt_version、时延、供应商返回的 token 用量；未返回用量时记为未知而非 0。错误日志不保存完整 Prompt 或发言。默认一次成功训练对应 3 次辩论调用和 1 次总结调用，失败重试另计。
+每次调用记录 model_name、prompt_version、时延、供应商返回的 token 用量；未返回用量时记为未知而非 0。错误日志不保存完整 Prompt 或发言。单场成功训练的调用次数随赛制变化：`quick_3` 为 3 次辩论 + 1 次总结 = 4 次，`standard_4` 为 4 + 1 = 5 次，失败重试另计。
 
-## SSE 可选设计
+### 总结 Schema 升级（V2）
 
-SSE 仅用于辩论回复，首版总结保持普通 JSON。沿用发送和重试 POST，前端 `fetch` 携带 Cookie、CSRF Header 和 `Accept: text/event-stream`，消费 SSE 格式字节流；不使用无法直接承载该 POST body 的原生 EventSource 来发送发言。SSE 是服务端到客户端的单向事件机制。[MDN SSE 文档](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)
+`schema_version = 2` 在 V1 的三数组基础上**增量**增加四维训练维度参考值，其余字段与校验规则不变：
 
-- 鉴权、限流和请求校验在发送事件 Header 前完成；失败时用普通 HTTP JSON。生成中的重复请求仍按约定返回 202 JSON。
-- 新请求依次发送 `start`（turn_id、request_id）、`delta`（text）、`done`（持久化后的正式消息、完成轮数）。只有最终事务提交成功后才能发送 done；流内失败用 `error` 事件并关闭连接，此时不能再改 HTTP 状态。
-- UTF-8 使用流式解码；按空行解析完整事件，不把网络 chunk 当作一条 JSON。每 15 秒发送注释心跳，连接关闭时清理模型流和并发槽。
-- `delta` 为临时展示内容，刷新后以数据库正式结果为准。断线取消本次模型请求并尽力标记 failed；若完成事务已提交则保持 completed；崩溃残留由租约回收。
-- 不做事件重放、自动断点续传或事件日志表。断线后先 GET 会话，已完成读结果，generating 继续查，failed 才显示手动重试。
-- Nginx 对该响应关闭缓冲和压缩，设置适配的代理读取超时，返回 `Cache-Control: no-cache`；整个应用生成请求预算仍为 60 秒。Nginx 支持通过 proxy_buffering 或 X-Accel-Buffering 控制缓冲，读取超时指相邻读取间隔，不能替代应用总超时。[Nginx 代理文档](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+```json
+{
+  "schema_version": 2,
+  "strengths": [{"round_no": 2, "point": "具体优点", "reason": "与用户发言对应的依据"}],
+  "issues": [{"round_no": 3, "point": "具体问题", "reason": "为什么影响论证"}],
+  "suggestions": [{"round_no": 4, "action": "可执行的改进动作", "example": "针对原问题的表达示例"}],
+  "scores": {"argumentation": 62, "rebuttal": 55, "logic": 70, "presentation": 58}
+}
+```
 
-SSE 未通过直连、Nginx、中文分块及断线恢复验收时，关闭增强开关并保留普通 JSON 模式，不影响 P0 验收。
+- `scores` 四键固定为 `argumentation` / `rebuttal` / `logic` / `presentation`，各为 0–100 整数；**无综合总分、无胜负字段**。
+- 四维为**训练维度参考值**，受 PRD 六条硬约束：单场有效、不跨会话累计、不排名、不汇总为总分、不产生胜负、不用于任何评价或选拔。实现与验收须逐条对照（AC14）。
+- **版本为判别式而非断言式。** 客户端必须按 `schema_version` 分支处理：读到 `2` 渲染四维，读到 `1` **只渲染三栏并隐藏四维**，不得把 V1 判为格式错误。服务端保持向下兼容，既有 `content_json` 为 V1 的行继续可读。
+- **向前兼容无法靠代码实现。** 旧客户端读到 V2 会失败，只能靠发布顺序保证：前端先发布支持 V2 的版本，后端再切换输出 V2。
+
+### 逻辑谬误抽取 Schema（F11）
+
+谬误透视以独立分析结果返回，沿用同一「服务端解析 + 字段校验、无效即失败」的纪律：
+
+```json
+{
+  "fallacy_tags": [
+    {"type": "straw_man", "quote": "引用用户原文片段", "rebuttal": "建议的反驳切入点"}
+  ]
+}
+```
+
+- `type` 必须落在受控枚举内（如 `straw_man`、`false_dilemma`、`hasty_generalization`、`appeal_to_authority`、`slippery_slope`、`ad_hominem`）；未知类型判为无效，不放行。
+- `quote` 必须能在该轮用户原文中定位，否则视为伪造引用并拒绝——这是防止模型编造原文的关键约束。
+- `rebuttal` 非空且受长度上限约束。
+- 该结果**不参与轮次状态机**，不改变 `completed_rounds`；存储位置需独立迁移，不复用 `messages.content`。
+
+## Eino 流式双轨管道
+
+SSE 自 2026-11-14 起为 **P0 必做**（[ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出) 修订 [ADR-006](../decisions/DECISIONS.md#adr-006-普通-json-优先-sse-可选)）。核心原则是**推送与落库双轨、幂等只有一处**。
+
+```mermaid
+flowchart LR
+    C[浏览器 fetch + Cookie + CSRF] -->|POST /turns/stream| G[Go 单实例]
+    G -->|1. 鉴权/限流/校验| G
+    G -->|2. 复用同一认领内核| D[(MySQL: turn=generating)]
+    G -->|3. start 事件| C
+    G -->|4. Eino Stream| L[模型供应商]
+    L -->|chunk| G
+    G -->|5. delta 事件| C
+    G -->|6. 完整性校验 + 原子写入| D
+    D -->|7. 提交成功| G
+    G -->|8. done 事件| C
+```
+
+**双轨的职责边界。** `delta` 流只负责尽快把字符送到浏览器；`debates` / `debate_turns` / `messages` 的写入仍走与普通发送完全相同的短事务。两条轨不得各自维护状态：流式端点必须复用 `POST /turns` 的同一认领内核——`client_request_id` 幂等、`attempt_version` 版本检查、90 秒租约、并发配额。**禁止为流式另建第二套幂等键或第二张状态表**，否则会出现「流式成功但轮次未落库」或「两套版本各自推进」的双写风险。
+
+**事件序列（四个事件，缺一不可）。**
+
+| 事件 | 时机 | 载荷 | 约束 |
+| --- | --- | --- | --- |
+| `start` | 鉴权、限流、请求校验**全部通过且认领成功之后** | `turn_id`、`request_id` | 断线恢复的唯一句柄；此处之后失败不能再改 HTTP 状态 |
+| `delta` | 模型每个增量 | `text` | 临时展示内容，非正式消息；刷新后以数据库为准 |
+| `done` | 最终事务**提交成功之后** | 正式消息、`completed_rounds`、会话状态 | 未提交成功绝不能发 |
+| `error` | 流内任意失败 | 受控 `code`、`message` | 发送后关闭连接 |
+
+`start` 不得省略：没有它，前端在流期间拿不到 `turn_id` 与版本句柄，断线后只能盲查，也无法绑定重试版本。事件名固定为 `start`/`delta`/`done`/`error`，不使用 `chunk` 等别名。
+
+**持久化与顺序保证。**
+
+- 提交成功是 `done` 的**唯一**前提。数据库提交失败时不得报告完成，只能发 `error` 并按状态查询恢复。
+- 认证、限流、请求校验、并发配额在发送任何事件之前完成；这些阶段失败仍返回普通 HTTP JSON（可用正常状态码），因为此时尚未开始事件流。
+- 生成中的重复请求按约定返回 202 JSON，不进入流。
+
+**断线与取消。**
+
+- 连接断开即取消本次模型请求，并尽力在独立有界上下文内以 `generation_cancelled` 标记失败；若完成事务已提交则保持 `completed`。
+- 不做事件重放、自动断点续传或事件日志表。断线后先 `GET` 会话：已完成读结果，`generating` 继续查，`failed` 才显示手动重试。
+- 崩溃残留由既有租约扫描回收，流式不引入新的恢复机制。
+
+**代理层（AC12 硬门槛）。** 缓冲与超时必须在代理层单独处理，应用层无法弥补：
+
+- 为 `turns/stream` 单设 location，**`proxy_buffering off`**、`gzip off`，并返回 `Cache-Control: no-cache`。默认 buffering 为 on，会把整段响应攒齐再下发，导致「逐步显示增量」直接不成立。
+- `proxy_read_timeout` 必须长于「生成请求总预算 60s + 心跳间隔 + 落库余量」；当前通用片段为 68s，SSE 专用片段取 75s。读取超时指**相邻读取间隔**，不能替代应用总超时。
+- 每 15 秒发送注释心跳，避免中间层因空闲而断流。
+- 配置落点：[`deploy/nginx/proxy-sse.conf`](../../deploy/nginx/proxy-sse.conf) 与 [`site.conf.template`](../../deploy/nginx/site.conf.template) 的 SSE location；片段须被 [`deploy/Dockerfile`](../../deploy/Dockerfile) 复制进镜像，否则 include 失败、Nginx 无法启动。
+
+SSE 未通过直连、Nginx 中文分块及断线恢复验收时，按 AC12 不得宣称交付；普通 JSON 入口必须始终可用，不得因流式改造而削弱。
 
 ## 安全与资源控制
 

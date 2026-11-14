@@ -16,8 +16,10 @@ import (
 func ptrInt(v int) *int { return &v }
 
 // validRequest 构造一轮可以合法发起生成的最小请求，测试按需覆盖字段。
+// 默认使用 quick_3，使既有的“三轮/第 4 轮被拒”用例保持原有语义。
 func validRequest() Request {
 	return Request{
+		Mode: ModeQuick3,
 		Topic: Topic{
 			Title:       "大学课程是否应采用开放式考核",
 			Description: "讨论学习效果与评价公平",

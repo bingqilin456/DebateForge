@@ -41,7 +41,7 @@ it('恢复失败提供显式恢复入口；503 不伪装未登录', async () => 
 })
 
 it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯文本展示', async () => {
-  const debate = { id: '123', topic: { id: '1', title: '开放考核', description: '讨论学习' }, user_stance: 'con', ai_stance: 'pro', status: 'active', completed_rounds: 0, created_at: '2026-11-09T00:00:00Z', updated_at: '2026-11-09T00:00:00Z' }
+  const debate = { id: '123', topic: { id: '1', title: '开放考核', description: '讨论学习' }, user_stance: 'con', ai_stance: 'pro', mode: 'quick_3', ai_style: 'logical', total_rounds: 3, status: 'active', completed_rounds: 0, created_at: '2026-11-09T00:00:00Z', updated_at: '2026-11-09T00:00:00Z' }
   fetchMock.mockImplementation(async (url, init) => {
     if (String(url).endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'memory-only' })
     if (String(url).endsWith('/topics')) return response({ items: [debate.topic] })
@@ -64,7 +64,7 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
   expect(host.querySelector<HTMLButtonElement>('form[data-first-turn] button[type="submit"]')?.disabled).toBe(true)
   textarea.value = '原文'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
   host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-  await vi.waitFor(() => expect(host.textContent).toContain('首轮已完成'))
+  await vi.waitFor(() => expect(host.textContent).toContain('已完成 1 / 3 轮'))
   expect(host.textContent).toContain('<img src=x onerror=alert(1)>')
   expect(host.querySelector('img')).toBeNull()
   expect(location.hash).toBe('#debate=123')
@@ -88,6 +88,9 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
     topic: { id: '1', title: '开放考核', description: '讨论学习' },
     user_stance: 'pro',
     ai_stance: 'con',
+    mode: 'quick_3',
+    ai_style: 'logical',
+    total_rounds: 3,
     status: 'active' as 'active' | 'completed',
     completed_rounds: 0,
     created_at: time,
@@ -263,12 +266,15 @@ it('表单登录刚成功时即使 pending 尚在收尾，也必须读取辩题'
   await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
 })
 
-it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占位入口之间无缝切换并保留当前会话', async () => {
+it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保留当前会话', async () => {
   const debate = {
     id: '123',
     topic: { id: '1', title: '开放考核', description: '讨论学习' },
     user_stance: 'pro',
     ai_stance: 'con',
+    mode: 'quick_3',
+    ai_style: 'logical',
+    total_rounds: 3,
     status: 'active',
     completed_rounds: 0,
     created_at: '2026-11-09T00:00:00Z',
@@ -278,6 +284,7 @@ it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占�
     const u = String(url)
     if (u.endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
     if (u.endsWith('/topics')) return response({ items: [debate.topic] })
+    if (u.startsWith('/api/v1/debates?')) return response({ items: [debate], total: 1, page: 1, page_size: 20 })
     if (u.endsWith('/debates/123')) {
       return response({ debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
     }
@@ -287,19 +294,21 @@ it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占�
   mount()
   await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
 
-  // 从主视图切换到 TopicsView 占位页
+  // 从主视图切换到 TopicsView
   host.querySelector<HTMLButtonElement>('[data-view-tab="topics"]')!.click()
   await nextTick()
   expect(location.hash).toBe('#topics')
   expect(host.querySelector('[data-view="topics"]')).not.toBeNull()
-  expect(host.textContent).toContain('T08 页面占位')
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"]')).not.toBeNull())
+  expect(host.textContent).toContain('辩题列表与立场选择')
 
-  // 从 TopicsView 内部按钮切换到 HistoryView 占位页
+  // 从 TopicsView 内部按钮切换到 HistoryView
   host.querySelector<HTMLButtonElement>('[data-nav-history]')!.click()
   await nextTick()
   expect(location.hash).toBe('#history')
   expect(host.querySelector('[data-view="history"]')).not.toBeNull()
-  expect(host.textContent).toContain('T11 页面占位')
+  await vi.waitFor(() => expect(host.querySelector('[data-history-id="123"]')).not.toBeNull())
+  expect(host.textContent).toContain('本人历史会话')
 
   // 从 HistoryView 返回辩论主视图并创建会话 123
   host.querySelector<HTMLButtonElement>('[data-nav-debate]')!.click()
@@ -308,7 +317,7 @@ it('顶层视图骨架支持在辩论主视图、TopicsView 与 HistoryView 占�
   await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
   expect(location.hash).toBe('#debate=123')
 
-  // 在已打开会话 123 时切到历史占位页，再切回辩论主视图时自动恢复 #debate=123
+  // 在已打开会话 123 时切到历史页，再切回辩论主视图时自动恢复 #debate=123
   host.querySelector<HTMLButtonElement>('[data-view-tab="history"]')!.click()
   await nextTick()
   expect(location.hash).toBe('#history')

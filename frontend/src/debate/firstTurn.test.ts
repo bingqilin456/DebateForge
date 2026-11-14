@@ -3,11 +3,16 @@ import { createFirstTurnState } from './firstTurn'
 import { ApiError } from '../api/client'
 import type { Debate, DebateDetail, DebateApi, SummaryContent, Turn } from '../api/debate'
 
+// 主夹具沿用三轮 quick_3，使既有的三轮状态机用例保持原语义；
+// 四轮标准赛制的分支由文件末尾的专门用例覆盖。
 const debate: Debate = {
   id: '123',
   topic: { id: '1', title: '开放考核', description: '学习与公平' },
   user_stance: 'pro',
   ai_stance: 'con',
+  mode: 'quick_3',
+  ai_style: 'logical',
+  total_rounds: 3,
   status: 'active',
   completed_rounds: 0,
   created_at: '2026-11-09T00:00:00Z',
@@ -93,7 +98,7 @@ describe('三轮状态机、重试与总结恢复', () => {
     expect(state.detail.value?.debate.status).toBe('completed')
     expect(state.nextRound.value).toBeNull()
     expect(api.requestSummary).toHaveBeenCalledOnce()
-    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false })
+    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false, totalRounds: 3 })
     expect(state.detail.value?.summary_status.status).toBe('completed')
 
     await state.submit('第四轮越界')
@@ -211,25 +216,33 @@ describe('三轮状态机、重试与总结恢复', () => {
     vi.mocked(api.requestSummary).mockRejectedValueOnce(new ApiError('http', 'AI 回复生成失败，请查询会话状态。', { status: 502, code: 'model_error' }))
     await state.open('123')
     expect(api.requestSummary).toHaveBeenCalledOnce()
-    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false })
+    expect(api.requestSummary).toHaveBeenCalledWith('123', { retry: false, totalRounds: 3 })
     expect(state.detail.value?.summary_status).toEqual(completedFailedV1.summary_status)
     expect(state.canRetrySummary.value).toBe(true)
 
     // 2) 再次刷新已 failed 会话：不自动请求总结
-    vi.mocked(api.detail).mockResolvedValueOnce(completedFailedV1)
+    vi.mocked(api.detail).mockReset()
+    vi.mocked(api.detail).mockResolvedValue(completedFailedV1)
     await state.refresh()
     expect(api.requestSummary).toHaveBeenCalledOnce()
+    expect(state.detail.value?.summary_status.attempt_version).toBe(1)
 
-    // 3) 手动重试总结：携带当前所见版本 1，遇 409 只重查状态更新为版本 2，不自动换版本重发
+    // 3) 手动重试总结：携带当前所见版本 1；遇 409 只重查状态更新为版本 2，不自动换版本重发
     vi.mocked(api.requestSummary).mockRejectedValueOnce(new ApiError(
       'http',
       '重试版本已变化，请查询最新状态后再操作。',
       { status: 409, code: 'attempt_version_conflict' },
     ))
-    vi.mocked(api.detail).mockResolvedValueOnce(completedFailedV2)
+    vi.mocked(api.detail).mockResolvedValue(completedFailedV2)
+    const callsBeforeRetry = vi.mocked(api.requestSummary).mock.calls.length
     await state.retrySummary()
-    expect(api.requestSummary).toHaveBeenCalledTimes(2)
-    expect(api.requestSummary).toHaveBeenLastCalledWith('123', { retry: true, expectedAttemptVersion: 1 })
+    const retryCall = vi.mocked(api.requestSummary).mock.calls[callsBeforeRetry]?.[1] as {
+      retry: boolean; expectedAttemptVersion?: number; totalRounds?: number
+    }
+    // 断言“这一次重试携带了用户所见版本 1”，而不是队列末尾的调用。
+    expect(retryCall).toMatchObject({ retry: true, expectedAttemptVersion: 1, totalRounds: 3 })
+    // 一次 409 之后不得自动重发第二次，只允许查询状态。
+    expect(api.requestSummary).toHaveBeenCalledTimes(callsBeforeRetry + 1)
     expect(state.detail.value?.summary_status.attempt_version).toBe(2)
 
     // 4) 用户再次点击手动重试：使用新版本 2 成功完成
@@ -241,7 +254,7 @@ describe('三轮状态机、重试与总结恢复', () => {
     })
     await state.retrySummary()
     expect(api.requestSummary).toHaveBeenCalledTimes(3)
-    expect(api.requestSummary).toHaveBeenLastCalledWith('123', { retry: true, expectedAttemptVersion: 2 })
+    expect(api.requestSummary).toHaveBeenLastCalledWith('123', { retry: true, expectedAttemptVersion: 2, totalRounds: 3 })
     expect(state.detail.value?.summary_status.status).toBe('completed')
   })
 
@@ -286,7 +299,7 @@ describe('三轮状态机、重试与总结恢复', () => {
     expect(api.send).not.toHaveBeenCalled()
     expect(state.draft.value).toBe('')
     await state.submit('\u0085有效论点\u{FEFF}')
-    expect(api.send).toHaveBeenCalledWith('123', '\u0085有效论点\u{FEFF}', expect.any(String))
+    expect(api.send).toHaveBeenCalledWith('123', '\u0085有效论点\u{FEFF}', expect.any(String), 1, 3)
   })
 
   it('首轮提交返回生成中后启动查询，120 秒内不重发生成', async () => {
@@ -309,5 +322,74 @@ describe('三轮状态机、重试与总结恢复', () => {
     expect(state.canSend.value).toBe(false)
     expect(state.notice.value).toContain('稍后')
     state.dispose()
+  })
+})
+
+// 四轮标准赛制是新的生产默认；以下用例锁定“轮数由 total_rounds 驱动”这一约束，
+// 防止将来有人把上限重新写死成 3。
+describe('四轮标准赛制', () => {
+  const standard4: Debate = { ...debate, mode: 'standard_4', total_rounds: 4 }
+
+  function fourRoundFixture() {
+    const detailAt = (completed: number): DebateDetail => ({
+      debate: { ...standard4, completed_rounds: completed, status: completed >= 4 ? 'completed' : 'active' },
+      turns: Array.from({ length: completed }, (_, i) => makeTurn(i + 1, 'completed')),
+      summary_status: completed >= 4
+        ? { status: 'completed', attempt_version: 1, schema_version: 1, content: sampleSummary }
+        : { status: 'not_started', attempt_version: null },
+    })
+    const api: DebateApi = {
+      topics: vi.fn().mockResolvedValue([standard4.topic]),
+      list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
+      create: vi.fn().mockResolvedValue(standard4),
+      detail: vi.fn().mockImplementation(async () => detailAt(0)),
+      send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
+        turn: makeTurn(roundNo, 'completed', 1, content),
+        completed_rounds: roundNo,
+        query_url: '/api/v1/debates/123',
+      })),
+      retryTurn: vi.fn().mockResolvedValue({
+        turn: makeTurn(1, 'completed', 2, '原文'),
+        completed_rounds: 1,
+        query_url: '/api/v1/debates/123',
+      }),
+      requestSummary: vi.fn().mockResolvedValue({ status: 'completed', attempt_version: 1, schema_version: 1, content: sampleSummary }),
+      summary: vi.fn().mockResolvedValue({ status: 'not_started', attempt_version: null }),
+    }
+    return { api, state: createFirstTurnState(api) }
+  }
+
+  it('允许推进到第 4 轮，且第 4 轮完成后才请求总结', async () => {
+    const { api, state } = fourRoundFixture()
+    await state.start('1', 'pro')
+    expect(state.detail.value?.debate.total_rounds).toBe(4)
+
+    for (let round = 1; round <= 4; round += 1) {
+      expect(state.nextRound.value).toBe(round)
+      await state.submit(`第 ${round} 轮发言`)
+      // 轮次上限作为第 5 个参数传给 send，证明上限来自会话而非常量。
+      expect(vi.mocked(api.send).mock.calls[round - 1]?.[4]).toBe(4)
+      if (round < 4) expect(api.requestSummary).not.toHaveBeenCalled()
+    }
+    expect(state.nextRound.value).toBeNull()
+    expect(api.requestSummary).toHaveBeenCalledOnce()
+  })
+
+  it('四轮未完成时不请求总结', async () => {
+    const { api, state } = fourRoundFixture()
+    await state.start('1', 'pro')
+    for (let round = 1; round <= 3; round += 1) await state.submit(`第 ${round} 轮发言`)
+    expect(state.detail.value?.debate.status).toBe('active')
+    expect(state.nextRound.value).toBe(4)
+    expect(api.requestSummary).not.toHaveBeenCalled()
+  })
+
+  it('三轮会话不会因为全局上限放宽而接受第 4 轮', async () => {
+    const { api, state } = fixture()
+    await state.start('1', 'pro')
+    for (let round = 1; round <= 3; round += 1) await state.submit(`第 ${round} 轮发言`)
+    expect(state.nextRound.value).toBeNull()
+    expect(state.canSend.value).toBe(false)
+    expect(vi.mocked(api.send).mock.calls.every(call => call[4] === 3)).toBe(true)
   })
 })

@@ -327,6 +327,23 @@ func (f *debateFixture) create(t *testing.T) string {
 	}
 	return id
 }
+
+// markQuick3 把一个既有会话切换为三轮历史赛制，仅用于验证历史语义。
+// 生产创建接口固定 standard_4 且赛制不可由客户端指定，因此历史场景只能直接写库构造。
+func (f *debateFixture) markQuick3(t *testing.T, id string) {
+	t.Helper()
+	if err := f.db.ORM.Exec("UPDATE debates SET mode = ? WHERE id = ?", "quick_3", id).Error; err != nil {
+		t.Fatalf("切换历史赛制失败: %v", err)
+	}
+}
+
+// createQuick3 创建一个 history-compatible 的三轮会话。
+func (f *debateFixture) createQuick3(t *testing.T) string {
+	t.Helper()
+	id := f.create(t)
+	f.markQuick3(t, id)
+	return id
+}
 func submit(content, key string, round int) map[string]any {
 	return map[string]any{"content": content, "client_request_id": key, "round_no": round}
 }
@@ -452,7 +469,7 @@ func TestT09ThreeRoundsAndFourthRoundRejected(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, fake)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：三轮边界用例
 	path := "/api/v1/debates/" + id
 	for round := 1; round <= 3; round++ {
 		content := "第" + string(rune('0'+round)) + "轮用户发言"
@@ -566,7 +583,7 @@ func TestT10SummaryCreationReplayAndOwnership(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, fake)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：三轮边界用例
 	path := "/api/v1/debates/" + id
 
 	// 未开始总结查询返回 not_started 和 null；未完成会话请求总结返回 409 round_conflict

@@ -71,8 +71,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 12 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本。
-		t.Fatalf("版本历史条数 = %d，期望 12", len(before))
+	if len(before) != 13 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本。
+		t.Fatalf("版本历史条数 = %d，期望 13", len(before))
 	}
 	var tables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 7 {
@@ -85,8 +85,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 6 {
 		t.Fatal("冻结的六条外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 11").Scan(&historyIDs); err != nil || historyIDs != 11 {
-		t.Fatal("十一个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 12").Scan(&historyIDs); err != nil || historyIDs != 12 {
+		t.Fatal("十二个版本未逐一记录成功", err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -102,8 +102,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 11 {
-		t.Fatal("状态未显示十一个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 12 {
+		t.Fatal("状态未显示十二个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -176,7 +176,9 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	debateSQL := "INSERT INTO debates(user_id,topic_id,topic_title_snapshot,topic_description_snapshot,user_stance) VALUES (?,?,?,?,?)"
 	debate := insert(debateSQL, user, topic, "中文辩题🌱", "快照", "pro")
 	reject(1452, debateSQL, 0, topic, "x", "y", "pro")
-	reject(3819, "UPDATE debates SET completed_rounds=4 WHERE id=?", debate)
+	reject(3819, "UPDATE debates SET completed_rounds=7 WHERE id=?", debate)
+	reject(3819, "UPDATE debates SET mode='other' WHERE id=?", debate)
+	reject(3819, "UPDATE debates SET ai_style='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET user_stance='bad' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET status='other' WHERE id=?", debate)
 	turnSQL := "INSERT INTO debate_turns(debate_id,round_no,client_request_id,status,lease_expires_at) VALUES (?,?,?,?,'2026-11-08 00:00:00')"
@@ -187,7 +189,7 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	}
 	reject(1062, turnSQL, debate, 1, "550e8400-e29b-41d4-a716-446655440001", "generating")
 	reject(1062, turnSQL, debate, 2, "550e8400-e29b-41d4-a716-446655440000", "generating")
-	reject(3819, turnSQL, debate, 4, "550e8400-e29b-41d4-a716-446655440002", "generating")
+	reject(3819, turnSQL, debate, 7, "550e8400-e29b-41d4-a716-446655440002", "generating")
 	reject(3819, "UPDATE debate_turns SET attempt_version=0 WHERE id=?", turn)
 	reject(3819, "UPDATE debate_turns SET status='other' WHERE id=?", turn)
 	summarySQL := "INSERT INTO debate_summaries(debate_id,status,lease_expires_at) VALUES (?,?,'2026-11-08 00:00:00')"
@@ -211,6 +213,8 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		invalid       []string
 	}{
 		{"debates", "user_stance", debate, []string{"pro", "con"}, []string{"PRO", "Con", "", " pr"}},
+		{"debates", "mode", debate, []string{"quick_3", "standard_4"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 "}},
+		{"debates", "ai_style", debate, []string{"logical", "aggressive", "empathic", "data"}, []string{"LOGICAL", "Logical", "", " logical", "logical "}},
 		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
 		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_summaries", "status", summary, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},

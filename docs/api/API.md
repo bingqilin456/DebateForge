@@ -8,7 +8,7 @@
 
 ## 接口清单与实现状态
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口和 4 个 T05 业务接口。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 7 个辩论/历史/总结接口，共 14 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -20,14 +20,15 @@
 | GET | `/api/v1/auth/me` | 查询当前用户 | 已实现，认证验收已通过 | 200 |
 | GET | `/api/v1/topics` | 查询启用辩题 | 已实现，无收费范围复审与人工验收通过 | 200 |
 | GET | `/api/v1/debates` | 查询本人历史会话分页 | 已实现（T11） | 200 |
-| POST | `/api/v1/debates` | 创建会话 | 已实现，无收费范围复审与人工验收通过 | 201 |
-| POST | `/api/v1/debates/{id}/turns` | 提交轮次（1–3 轮）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
+| POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 已实现，无收费范围复审与人工验收通过 | 201 |
+| POST | `/api/v1/debates/{id}/turns` | 提交轮次（上限由会话赛制决定）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
+| POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 计划（P0，契约见下） | 200（`text/event-stream`） |
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
 | POST | `/api/v1/debates/{id}/summary` | 生成或显式重试结构化总结 | 已实现（T10） | 201、200、202 |
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
 
-本文与 OpenAPI `paths` 均为 **14 个已实现接口**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 三轮状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；真实模型验收仍待另行授权，未部署。
+本文与 OpenAPI `paths` 记录 **14 个已实现接口 + 1 个计划接口（流式轮次）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -96,7 +97,7 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
 | `CreateDebateRequest` | `topic_id` | string | 是 | 辩题 ID，正整数十进制字符串。 |
 | `CreateDebateRequest` | `user_stance` | string | 是 | `pro` 正方或 `con` 反方。 |
-| `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；允许 1–3 轮且须满足 `round_no = completed_rounds + 1`，第 4 轮或状态/轮序不允许时 409 `round_conflict`。 |
+| `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；须满足 `round_no = completed_rounds + 1` 且不超过该会话 `mode` 的轮数上限（`quick_3` 为 3、`standard_4` 为 4）；越界或状态/轮序不允许时 409 `round_conflict`。 |
 | `SubmitTurnRequest` | `content` | string | 是 | 1–2000 个 Unicode 码点，拒绝全空白，保存原文。 |
 | `SubmitTurnRequest` | `client_request_id` | string（UUID） | 是 | 解析后统一为小写带连字符形式；会话内唯一。 |
 | `RetryTurnRequest` | `expected_attempt_version` | integer | 是 | 正整数；必须匹配失败轮次当前的 `attempt_version`，缺失或非法返回 400。 |
@@ -114,10 +115,10 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `User` | `id`: EntityId；`username`: string | 用户名为归一化小写值，不返回口令或哈希。 |
 | `AuthData` | `user`: User；`csrf_token`: string | 登录及当前用户复用；Session 原值不在 JSON 中。 |
 | `Topic` | `id`: EntityId；`title`: string；`description`: string | 辩题列表为当前启用题目；会话中的 topic 为创建时快照。 |
-| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；状态为 `active/completed`；创建时 active、完成轮数 0，第 3 轮完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
+| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
 | `Turn` | `id`: EntityId；`round_no`: integer；`client_request_id`: string（UUID）；`status`: string；`attempt_version`: integer；`error_code`: string 或 null；`messages`: Message[] | 轮号和版本为正整数；状态 `generating/completed/failed`；错误枚举见详情节；按同轮 user、assistant 顺序返回消息。 |
 | `Message` | `id`: EntityId；`role`: string；`content`: string；`created_at`: string | role 仅 `user/assistant`；内容为原文或正式 AI 回复；时间为 UTC RFC 3339。 |
-| `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（1）与结构化 `content`（`strengths`、`issues`、`suggestions`）。 |
+| `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（`1` 或 `2`）与结构化 `content`（V1 为 `strengths`、`issues`、`suggestions`；V2 另含 `scores` 四维参考值）。客户端必须按 `schema_version` 分支渲染，不得把 V1 判为格式错误。 |
 | 错误信封 | `error`: object；`request_id`: string | error 必有 `code`、`message`；可选 `details`，受控错误码见下文。 |
 | `TurnFailureDetails` | 可选 `turn_id`: EntityId；`status`: string；`attempt_version`: integer；`query_url`: string | status 固定 `failed`；用于已确认持久化的失败轮次/总结或 `attempt_version_conflict`，提交结果不明时省略；轮次 `query_url` 为会话详情地址，总结 `query_url` 为 `/api/v1/debates/{id}/summary`。 |
 
@@ -477,7 +478,39 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 }
 ```
 
-### 错误码与客户端恢复
+### 13. POST /api/v1/debates/{id}/turns/stream（计划，P0）
+
+流式提交轮次。**请求体与 `POST /api/v1/debates/{id}/turns` 完全一致**，响应改为 `text/event-stream`。
+
+- `HEAD` 要求：`Accept: text/event-stream`；Cookie Session、`X-CSRF-Token`、正确 Origin 与普通写请求相同。
+- 成功：`200` + `Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`。
+- **复用同一认领内核**：`client_request_id` 幂等、`attempt_version` 版本检查、90 秒租约、并发配额与普通发送共用。禁止为流式另建幂等键。
+- 鉴权、限流、请求校验、并发配额**在发送任何事件之前**完成；这些阶段失败仍返回普通 HTTP JSON（信封同其余接口）。
+- `generating` 期间的重复请求按约定返回 `202` JSON，不进入事件流。
+
+事件序列固定四个，名称不得改为 `chunk` 等别名：
+
+| 事件 | 时机 | `data` 载荷 |
+| --- | --- | --- |
+| `start` | 认领成功后立即 | `{"turn_id":"…","request_id":"…"}`；断线恢复的唯一句柄 |
+| `delta` | 模型每个增量 | `{"text":"增量片段"}`；临时展示内容，非正式消息 |
+| `done` | 最终事务**提交成功后** | `{"turn":{…},"completed_rounds":3,"status":"active"}`；结构同普通提交的成功 `data` |
+| `error` | 流内失败 | `{"error":{"code":"…","message":"…"},"request_id":"…"}`；发送后关闭连接 |
+
+```
+event: start
+data: {"turn_id":"42","request_id":"550e8400-e29b-41d4-a716-446655440000"}
+
+event: delta
+data: {"text":"对方认为"}
+
+event: done
+data: {"turn":{...},"completed_rounds":3,"status":"active"}
+```
+
+约束：只有最终事务提交成功才能发 `done`；数据库提交失败只能发 `error`，并按状态查询恢复。不做事件重放或断点续传；断线后先 `GET` 会话判定真实状态。每 15 秒发送注释行 `: keepalive`。代理层必须关闭缓冲并放宽读取超时，详见 [ARCHITECTURE](../architecture/ARCHITECTURE.md#eino-流式双轨管道)。
+
+
 
 | HTTP | `error.code` | 适用情况 |
 | --- | --- | --- |

@@ -486,7 +486,7 @@ func TestT10SummaryRetryVersionConflictPendingAndLeaseRecovery(t *testing.T) {
 	f.gate = debate.NewGate(func() time.Time { return time.Unix(moment.Load(), 0) })
 	f.mount(t, gen)
 
-	id := f.create(t)
+	id := f.createQuick3(t) // 历史 quick_3 语义：三轮边界用例
 	path := "/api/v1/debates/" + id
 	for round := 1; round <= 3; round++ {
 		if r := f.request(t, "POST", path+"/turns", submit("第"+string(rune('0'+round))+"轮内容", uuid.NewString(), round)); r.status != 201 {

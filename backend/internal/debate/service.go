@@ -299,12 +299,17 @@ func (s *Service) summary(ctx context.Context, uid, debateID uint64, in SummaryI
 }
 
 func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail, successStatus int) (SummaryStatus, int, error) {
-	if d.Summary == nil || len(d.Turns) != ai.TotalRounds {
+	mode := ai.Mode(d.Debate.Mode)
+	rounds, e := ai.RoundsFor(mode)
+	if e != nil {
+		return SummaryStatus{}, 0, dependency(e, false)
+	}
+	if d.Summary == nil || len(d.Turns) != rounds {
 		return SummaryStatus{}, 0, dependency(nil, false)
 	}
 	summary := *d.Summary
-	completedTurns := make([]ai.CompletedTurn, 0, ai.TotalRounds)
-	for i := 0; i < ai.TotalRounds; i++ {
+	completedTurns := make([]ai.CompletedTurn, 0, rounds)
+	for i := 0; i < rounds; i++ {
 		pt := d.Turns[i]
 		if pt.RoundNo != i+1 || len(pt.Messages) != 2 || pt.Messages[0].Role != "user" || pt.Messages[1].Role != "assistant" {
 			return SummaryStatus{}, 0, dependency(nil, false)
@@ -317,6 +322,7 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 	}
 	result, genErr := s.generateSummary(ctx, ai.SummaryRequest{
 		UserID:     uid,
+		Mode:       mode,
 		Topic:      ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
 		UserStance: ai.Stance(d.Debate.UserStance),
 		Turns:      completedTurns,
@@ -392,6 +398,8 @@ func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, succe
 	}
 	result, genErr := s.generate(ctx, ai.Request{
 		UserID:         uid,
+		Mode:           ai.Mode(d.Debate.Mode),
+		AIStyle:        ai.AIStyle(d.Debate.AIStyle),
 		Topic:          ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
 		UserStance:     ai.Stance(d.Debate.UserStance),
 		RoundNo:        turn.RoundNo,

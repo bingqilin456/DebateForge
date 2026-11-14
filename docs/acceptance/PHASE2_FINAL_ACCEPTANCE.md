@@ -1,0 +1,56 @@
+# Phase 2 最终整合与结项验收
+
+日期：2026-11-14（Asia/Shanghai）。本记录补充并取代同日早先「仅后端闭环与辩论主链路，T08/T11 页面未闭环」的结项范围。历史 T09/T10/T12 记录继续作为原时点证据，不将旧三轮说明套用于新建四轮会话。
+
+## 来源、授权与整合结果
+
+- 远程基线：`codex/p3-format-stream` 的 `008d552a31dea26aeeae7965f070bbc1cdec1bb5`；队友分支 `feat/t08-t11-views` 的 `ad18f8c9e56eef185495fa8ffcc59c22a055390c`；同步时 `origin/main` 为 `7db7dd2`。
+- 开始时工作区干净；新建 `codex/phase2-final`，以普通 merge（`98718b1`）保留双方历史。Git 自动合并 `App.test.ts`，无文本冲突；两个来源提交均是整合分支祖先。整合修复与本地验收提交为 `e360c0d`。
+- 语义差异：B 的测试 DTO 缺少 `mode/ai_style/total_rounds`，类型检查明确失败；历史页固定显示 `/ 3`，混合三/四轮测试明确失败。补齐测试数据，页面读取每条会话 `total_rounds`，三轮 3/3 与四轮 4/4 同时通过。未回退 Batch 0–5、未改动本轮之外的业务实现。
+- 保留既有赛制前向迁移、轮数驱动、环节映射与 Prompt 指令、版本重试、租约、所有权、总结及已定流式契约/代理配置；本轮不实现 SSE 或其他 Phase 3 增量。
+- 本轮负责人明确授权必要分支、Commit、Push、PR 与 Merge，要求全部检查成功后合入 `main` 并正式结项。该授权不构成真实模型、部署或下一阶段授权，也不补记未发生的人工演示/成员互审。
+
+实施边界与测试矩阵见 [最终整合 Spec](../planning/PHASE2_FINAL_INTEGRATION_SPEC.md)。
+
+## 实际验证结果
+
+环境：Windows / PowerShell；Go 1.27.1、Node 24.11.1、npm 11.6.2；固定隔离 MySQL 8.4.13（`127.0.0.1:13307/siyige_test`）；Chromium / Playwright 1.65.1。普通回归清除数据库集成开关并设置 `AI_MODE=disabled`；真实本地浏览器链路显式 `AI_MODE=fake`，未配置真实模型调用。
+
+| 检查 | 实际命令/范围 | 结果 |
+| --- | --- | --- |
+| 后端普通回归 | `backend/`：`go test -p 1 -count=1 ./...`、`go vet ./...`、`go build ./...` | 全部通过；默认数据库集成跳过，与下行显式执行区分 |
+| 后端 MySQL 集成 | `SIYIGE_INTEGRATION=1`，固定测试账户与测试库，`go test -v -p 1 -count=1 ./tests/integration/...` | 通过；含 AC01–AC08、两种赛制上限与越界、重试/租约/迟到结果、幂等并发、输入边界、越权与历史分页 |
+| 迁移工具普通检查 | `backend/tools/migrate/`：`go test -p 1 -count=1 ./...`、`go vet ./...`、`go build ./...` | 全部通过 |
+| 迁移集成 | `SIYIGE_MIGRATION_TEST=1` 与测试迁移账户秘密文件，`go test -v -p 1 -count=1 ./...` | 通过；12 个正式迁移已存在，重复执行 `applied=0`；故障/历史/枚举/种子探针保留。原 SQL 迁移未改 |
+| 前端累计回归 | `npm run typecheck`、`npm run test`、`npm run build` | 通过；12 个单测文件、186 个用例 |
+| Chromium 页面 | `npm run test:e2e` | 9/9 通过；真实渲染，业务响应隔离，见下表 |
+| 真实本地全链路 | 先显式启动固定测试库的 Fake 后端，再设 `SIYIGE_BROWSER_LIVE=1`、`SIYIGE_BROWSER_RESTART=1`，运行 `npm run test:e2e:live` | 1/1 通过；真实 Vite 原路径代理→Go→MySQL→Fake，无拦截业务响应 |
+
+Chromium 页面验收分支：
+
+| 场景 | 观察结果 |
+| --- | --- |
+| T08 双立场 | 五题与说明；未选题禁提交；正/反各创建一次并打开详情；共享 CSRF 请求头可查 |
+| T11 分页 | 21 条分为 20+1；上下页边界禁用；刷新当前页、整页重载与打开详情通过；三轮/四轮展示正确 |
+| 空列表及移动端 | 空辩题禁创建；空历史引导选题、禁翻页；390px 宽无横向溢出 |
+| 503、断网、格式异常 | 两页均受控提示，不冒充空数据、不展示上游正文、不自动重试；点击后恢复 |
+| 创建响应丢失 | 不重发非幂等创建；禁再次提交并可转历史核实 |
+| 401 | 刷新历史时 Session 失效，清空记录并回到登录 |
+
+真实 Fake 链路使用新建合成账号，验证空历史、数据库五题、反方四轮八条消息与三栏总结、正方创建、21 条真实历史分页、详情打开、刷新及退出重登后重读。随后仅重启经镜像、Compose project/service、回环端口核实的 `siyige-t02/mysql-test`，保留卷，等待 ready=200 后重读八条消息与总结成功；开发库与其他容器未操作。服务/连接池重建与未完成会话继续由本轮后端 AC07 集成测试覆盖。
+
+浏览器成功截图位于本地忽略目录 `frontend/test-results/` 的 `four-round-summary.png`，合成账号及会话留在固定测试库，不清库。迁移故障探针按既有测试规则保留，不清理历史证据。受限沙箱下曾出现回环/代理权限失败，完整权限后同命令通过；浏览器脚本初版因宽泛拦截匹配 Vite 源码以及定位器歧义失败，收窄到 `/api/v1/` 和详情面板后通过，不伪装为业务故障修复。
+
+## CI 与正式结项门槛
+
+本轮新增的 9 项 Chromium 页面验收进入既有 GitHub Actions 前端门禁；原仓库静态门禁、后端无收费检查、全新隔离 MySQL 迁移/集成、前端类型/单测/构建继续保留。
+
+- 创建 PR 前，分支提交 `e360c0d` 的 [Actions Run 43545236891](https://github.com/bingqilin456/DebateForge/actions/runs/43545236891) 四项全部 `success`。云端确认前端 186 项单测和 9 项 Chromium 通过；MySQL 全新隔离库 `applied=12` 后重跑 `applied=0`，迁移与后端集成通过；Nginx 413 上游透传与脱敏日志专项通过。
+- 交付 PR：[Phase 2 最终整合 #17](https://github.com/bingqilin456/DebateForge/pull/17)，`codex/phase2-final` → `main`。PR 当前提交的全部检查成功是普通合并的必要前提；不使用绕过检查的管理合并。
+- **正式结项结论（随 PR #17 检查通过并合入 main 生效）**：T08–T12 在本轮无收费、隔离环境交付范围内完成，按负责人本轮明确授权正式结项。最终 merge SHA、合并时间与当前提交 CI 以 PR 的实际合并记录及 Checks 为准；本记录不伪造尚未发生的合并事件。
+
+## 依赖与已知边界
+
+新增开发依赖 `@playwright/test@1.65.1`（锁文件固定，Apache-2.0），用于可复现 Chromium 验收及 CI；复用其成熟测试 runner、浏览器隔离与断言。替代方案为仅 jsdom/手工浏览器，无法同等覆盖真实渲染和可重复验收；不引入产品运行时依赖。
+
+未执行真实模型调用、真实模型质量评测、公网 HTTPS/部署、生产迁移、生产恢复及公网费用准入；SSE 端点尚未实现，AC12 未通过，不把契约/代理配置当成流式交付。完整环节化界面、策略/流派选择、战报、谬误透视和 AI 互搏保留 Phase 3 规划且本轮未启动。既有 T02/T03 延期和 T07-COST-01 风险继续保留，不影响本轮隔离无收费 Phase 2 范围。

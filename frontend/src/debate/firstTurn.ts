@@ -32,10 +32,13 @@ export function createFirstTurnState(api: DebateApi) {
     const last = detail.value?.turns.at(-1)
     return last?.status === 'failed' ? last : null
   })
+  // 轮数上限来自会话自身的 total_rounds（由服务端按赛制给出），不硬编码 3。
+  const totalRounds = computed(() => detail.value?.debate.total_rounds ?? 0)
   const nextRound = computed<number | null>(() => {
     const current = detail.value
     if (!current || current.debate.status !== 'active') return null
-    if (current.debate.completed_rounds < 0 || current.debate.completed_rounds >= 3) return null
+    const total = current.debate.total_rounds
+    if (current.debate.completed_rounds < 0 || current.debate.completed_rounds >= total) return null
     if (current.turns.length !== current.debate.completed_rounds) return null
     return current.debate.completed_rounds + 1
   })
@@ -62,17 +65,19 @@ export function createFirstTurnState(api: DebateApi) {
       return `第 ${lastTurn.round_no} 轮生成失败，原文已保存（当前版本 v${lastTurn.attempt_version}）。可点击重试本轮。`
     }
     if (value.debate.status === 'completed') {
-      if (value.summary_status.status === 'completed') return '三轮辩论与结构化总结均已完成。'
+      if (value.summary_status.status === 'completed') return '辩论与结构化总结均已完成。'
       if (value.summary_status.status === 'failed') {
         return `总结生成失败（当前版本 v${value.summary_status.attempt_version}），辩论内容已完整保存，可手动重试总结。`
       }
-      return '三轮辩论已完成，正在准备结构化总结…'
+      return '辩论已完成，正在准备结构化总结…'
     }
     if (attempt) {
       return `${sendFailure} 尚未查到轮次。可以明确重发相同请求；不会更换原文或请求标识。`
     }
-    if (value.debate.completed_rounds === 1) return '首轮已完成，请继续发送第 2 轮发言。'
-    if (value.debate.completed_rounds === 2) return '第 2 轮已完成，请继续发送第 3 轮发言。'
+    const done = value.debate.completed_rounds
+    if (done >= 1 && done < value.debate.total_rounds) {
+      return `已完成 ${done} / ${value.debate.total_rounds} 轮，请继续发送第 ${done + 1} 轮发言。`
+    }
     return ''
   }
 
@@ -106,11 +111,12 @@ export function createFirstTurnState(api: DebateApi) {
     if (!active || busy.value || !id.value || typeof api.requestSummary !== 'function') return
     stopPolling()
     busy.value = true
-    notice.value = options.retry ? '正在重试生成总结，请稍候…' : '三轮辩论已完成，正在生成结构化总结…'
+    notice.value = options.retry ? '正在重试生成总结，请稍候…' : '辩论已完成，正在生成结构化总结…'
     let failureNotice = ''
     let needsQuery = false
     try {
-      const summaryStatus = await api.requestSummary(id.value, options)
+      // 把该会话的赛制轮数传给总结校验器，避免用全局上限接受越界轮号。
+      const summaryStatus = await api.requestSummary(id.value, { ...options, totalRounds: totalRounds.value })
       if (active && detail.value) {
         pollingSince = Date.now()
         accept({ ...detail.value, summary_status: summaryStatus })
@@ -196,12 +202,13 @@ export function createFirstTurnState(api: DebateApi) {
     let shouldAutoSummary = false
     try {
       const result = roundNo === 1
-        ? await api.send(id.value, attempt.content, attempt.key)
-        : await api.send(id.value, attempt.content, attempt.key, roundNo)
+        ? await api.send(id.value, attempt.content, attempt.key, 1, totalRounds.value)
+        : await api.send(id.value, attempt.content, attempt.key, roundNo, totalRounds.value)
       if (active && detail.value) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds
-        const status = completedRounds >= 3 ? 'completed' : detail.value.debate.status
+        // 完成判定按该会话的赛制轮数，而非固定三轮。
+        const status = completedRounds >= detail.value.debate.total_rounds ? 'completed' : detail.value.debate.status
         shouldAutoSummary = accept({
           ...detail.value,
           debate: { ...detail.value.debate, completed_rounds: completedRounds, status },
@@ -230,7 +237,7 @@ export function createFirstTurnState(api: DebateApi) {
       if (active && detail.value) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds
-        const status = completedRounds >= 3 ? 'completed' : detail.value.debate.status
+        const status = completedRounds >= detail.value.debate.total_rounds ? 'completed' : detail.value.debate.status
         shouldAutoSummary = accept({
           ...detail.value,
           debate: { ...detail.value.debate, completed_rounds: completedRounds, status },

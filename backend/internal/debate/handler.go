@@ -28,6 +28,7 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.GET("/debates", a.RequireAuth(), h.list)
 	group.POST("/debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.create)
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
+	group.POST("/debates/:id/turns/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.stream)
 	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
 	group.POST("/debates/:id/summary", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.summary)
 	group.GET("/debates/:id/summary", a.RequireAuth(), h.getSummary)

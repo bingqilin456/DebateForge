@@ -1,10 +1,10 @@
-# Phase 3 T14-STYLE 后端已实现；SSE 仍为计划契约，详见 API.md。
+# Phase 3 T14-STYLE 与 T15-Core 后端已实现，完整浏览器验收另计，详见 API.md。
 openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
   version: phase3-contract-2026-11-14
-  description: 文档快照日期 2026-11-14（Asia/Shanghai）。共 16 个操作已实现，另有 1 个计划操作（流式轮次 turns/stream）。
+  description: 文档快照日期 2026-11-15（Asia/Shanghai）。共 17 个操作已实现，含流式轮次 turns/stream；浏览器 AC12 待联调。
     已实现部分包含健康检查、T03 认证、T05 首轮、T09 轮次状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
     赛制自 2026-11-14 起由 debates.mode 驱动：quick_3 为三轮（历史兼容），standard_4 为四轮（新建默认），会话 DTO 增补 mode、ai_style、total_rounds。
     Phase 3 已实现创建时自主 ai_style 选择（可选，缺省 logical，创建后不可改）及策略 GET/POST。SSE 最新版本从详情查询获取。
@@ -617,7 +617,7 @@ paths:
   /api/v1/debates/{id}/turns/stream:
     post:
       operationId: submitTurnStream
-      summary: 流式提交轮次（SSE，计划中）
+      summary: 流式提交轮次（SSE）
       description: 请求体与 POST /api/v1/debates/{id}/turns 完全一致，响应改为 text/event-stream。
         必须复用同一认领内核（client_request_id 幂等、attempt_version、90 秒租约与并发配额），禁止另建幂等。
         鉴权/限流/校验失败仍返回普通 JSON；generating 期间重复请求返回 202 JSON。
@@ -638,7 +638,7 @@ paths:
           $ref: '#/components/schemas/ErrorEnvelope'
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-phase: Phase3
       security:
       - SessionCookie: []

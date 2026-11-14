@@ -246,6 +246,7 @@ type TurnData struct {
 	Turn            TurnDTO `json:"turn"`
 	CompletedRounds int     `json:"completed_rounds"`
 	QueryURL        string  `json:"query_url"`
+	DebateStatus    string  `json:"-"`
 }
 type SubmitInput struct {
 	RoundNo         int    `json:"round_no"`

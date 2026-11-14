@@ -63,7 +63,7 @@ func configuredTrialGenerator(ctx context.Context, logger *slog.Logger) (ai.Gene
 func configuredFakeGenerator() (ai.Generator, error) {
 	scenario := os.Getenv("T07_FAKE_SCENARIO")
 	if scenario == "" {
-		return ai.NewFake(), nil
+		return configuredT15Fake()
 	}
 	if os.Getenv("APP_ENV") != "deploy" {
 		return nil, errors.New("部署探针只能在部署模式启用")

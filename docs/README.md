@@ -12,7 +12,7 @@
 6. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖和门槛，TASKS 管当前分工、进度和风险，Phase 2 按轻量 SDD 推进。
 7. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
 
-Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)：按 PRD 拆分 P0/P1/P2、固定 10 场真实评测（调用另行授权）、创建前自主选择流派、SSE 通过详情查询获取最新重试版本。当前 A 首批已启动安全回归与契约定稿，功能实现仍未开始；任务分工和依赖以 TASKS 为准，历史验收记录不回写为新契约已实现。
+Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)：按 PRD 拆分 P0/P1/P2、固定 10 场真实评测（调用另行授权）、创建前自主选择流派、SSE 通过详情查询获取最新重试版本。当前 A1 安全回归技术通过，A2 策略后端与 T15-Core 后端已实现；完整前端验收、真实 Demo 和阶段结项待完成；任务分工和依赖以 TASKS 为准，历史验收记录不回写为新契约已实现。
 
 后续同日明确 Phase 3 必须交付真实模型可体验的本地浏览器 Demo（T15-DEMO-REAL，P0），见 [ADR-024](decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo) 与 [PRD](product/PRD.md#phase-3-真实模型可体验-demop0-交付目标尚未实现)。它包含用户真实交互、四轮 SSE、总结与历史重读，须单独明确模型、体验窗口及费用/调用上限后启用；公网正式交付仍属 Phase 4。此项区别于 P1 双 AI 演示，文档记录不等于已实现或已授权调用。
 
@@ -38,6 +38,8 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 模块专属 README 留在模块目录。上述操作说明是查阅入口，执行数据库、真实模型、部署或 Git 写操作仍须符合本轮明确授权。
 
 ## 历史计划与验收证据
+
+- T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。
 
 - 阶段 0 / PB：[INIT_ACCEPTANCE](acceptance/INIT_ACCEPTANCE.md)。
 - T02：[环境](acceptance/T02_MYSQL_ENV_ACCEPTANCE.md)、[后端连接](acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md)、[dotenv](acceptance/T02_DOTENV_ACCEPTANCE.md)、[配置修复](acceptance/T02_CONFIG_FIX_ACCEPTANCE.md)、[初始迁移](acceptance/T02_MIGRATIONS_ACCEPTANCE.md)、[种子与持久化](acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。

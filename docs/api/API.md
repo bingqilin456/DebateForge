@@ -10,7 +10,7 @@
 
 **2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。前端 AC16 整体验收待 B 联调与负责人确认；SSE 仍未实现。
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 9 个辩论/历史/总结/策略接口，共 16 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 10 个辩论/历史/总结/策略/流式接口，共 17 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -24,7 +24,7 @@
 | GET | `/api/v1/debates` | 查询本人历史会话分页 | 已实现（T11） | 200 |
 | POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 已实现（T05/T14-STYLE） | 201 |
 | POST | `/api/v1/debates/{id}/turns` | 提交轮次（上限由会话赛制决定）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
-| POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 计划（P0，契约见下） | 200（`text/event-stream`） |
+| POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 已实现（P0，后端专项已验证） | 200（`text/event-stream`） |
 | GET | `/api/v1/debates/{id}/strategy` | 只读策略状态与已保存结果 | 已实现（T14-STYLE 后端） | 200 |
 | POST | `/api/v1/debates/{id}/strategy` | 显式生成或版本绑定重试策略 | 已实现（T14-STYLE 后端） | 201、200、202 |
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
@@ -32,11 +32,11 @@
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
 
-本文与 OpenAPI `paths` 记录 **16 个已实现操作 + 1 个计划操作（流式轮次）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
+本文与 OpenAPI `paths` 记录 **17 个已实现操作**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
-**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；Demo 复用业务路径，不另设免鉴权演示入口；策略 GET/POST 已实现；SSE 仍为 planned。公网体验仍待 Phase 4。
+**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；Demo 复用业务路径，不另设免鉴权演示入口；策略 GET/POST 已实现；SSE 后端已实现；浏览器解析与完整 AC12 待 B 联调。公网体验仍待 Phase 4。
 
 ## 存活检查
 
@@ -496,7 +496,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 }
 ```
 
-### 13. POST /api/v1/debates/{id}/turns/stream（计划，P0）
+### 13. POST /api/v1/debates/{id}/turns/stream（P0）
 
 流式提交轮次。**请求体与 `POST /api/v1/debates/{id}/turns` 完全一致**，响应改为 `text/event-stream`。
 
@@ -529,7 +529,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 约束：只有最终事务提交成功才能发 `done`；数据库提交失败只能发 `error`，并按状态查询恢复。不做事件重放或断点续传；断线后先 `GET` 会话判定真实状态。每 15 秒发送注释行 `: keepalive`。代理层必须关闭缓冲并放宽读取超时，详见 [ARCHITECTURE](../architecture/ARCHITECTURE.md#eino-流式双轨管道)。
 
-**断线恢复与显式重试（计划契约）：**
+**断线恢复与显式重试：**
 
 1. 收到 start 后保存 turn_id/request_id；turn_id 定位轮次，request_id 关联本次 HTTP 请求和排错信息，不是 client_request_id，也不是重试版本。丢弃未确认的 delta 展示，以数据库正式结果为准。
 2. 断线、流内 error、未收到 done 或刷新后，先 `GET /api/v1/debates/{id}`，读取该 Turn 最新 status/attempt_version；总结查询只提供总结版本，不能替代轮次版本。若 start 尚未收到，按发送前保留的 client_request_id 在详情 turns 中定位，不盲目重发。暂未查到时继续有限查询，仍无法确认则提示稍后查询，不自动生成或更换键。
@@ -568,7 +568,7 @@ AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek
 
 ## Phase 2 接口晋升说明
 
-原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 已是 Phase 3 必要 P0，OpenAPI 标为 planned，不声明 text/event-stream 已实现；自主流派选择和策略 GET/POST 已按 T14-STYLE 实现。
+原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 已是 Phase 3 必要 P0，后端与本地代理已实现并验证，完整浏览器 AC12 仍待 B 联调，见 [专项记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)；自主流派选择和策略 GET/POST 已按 T14-STYLE 实现。
 
 ## 核对差异与待确认问题
 

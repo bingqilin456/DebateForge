@@ -11,6 +11,16 @@ import (
 )
 
 func TestHTTPBudgetsAndShorterParent(t *testing.T) {
+	t.Run("stream", func(t *testing.T) {
+		router := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+		router.POST("/api/v1/debates/:id/turns/stream", func(c *gin.Context) {
+			deadline, ok := c.Request.Context().Deadline()
+			if !ok || time.Until(deadline) < 59*time.Second {
+				t.Fatal("stream must receive the generation budget")
+			}
+		})
+		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/v1/debates/1/turns/stream", nil))
+	})
 	for _, tc := range []struct {
 		path, method string
 		budget       time.Duration

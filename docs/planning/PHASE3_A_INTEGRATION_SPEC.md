@@ -30,7 +30,9 @@ T13 技术结论以本地回归、有效历史证据与当前 PR 适用 CI 共�
 
 ## T15-Core 冻结契约与可复制样例
 
-该端点尚未注册；以下是未来实现的测试 fixture，不是本轮实跑流式结果。正式规范见 [API](../api/API.md#13-post-apiv1debatesidturnsstream计划p0) 与 [OpenAPI](../api/openapi.yaml)。B 可据此实现解析器和状态测试；A 负责唯一认领内核及 Eino 适配。请求使用 fetch POST、Cookie 和 CSRF，不能用只能 GET 的 EventSource 发送本接口。
+2026-11-15 实施增量：本轮已按成员 A 新授权完成后端与本地链路技术验证，见 [专项记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)。以下保留 A1 定稿时的历史语境，四事件与恢复契约不变。
+
+该端点尚未注册；以下是未来实现的测试 fixture，不是本轮实跑流式结果。正式规范见 [API](../api/API.md#13-post-apiv1debatesidturnsstreamp0) 与 [OpenAPI](../api/openapi.yaml)。B 可据此实现解析器和状态测试；A 负责唯一认领内核及 Eino 适配。请求使用 fetch POST、Cookie 和 CSRF，不能用只能 GET 的 EventSource 发送本接口。
 
 | 标识 | 来源/生命周期 | 用途 |
 | --- | --- | --- |

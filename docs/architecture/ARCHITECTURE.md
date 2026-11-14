@@ -159,7 +159,7 @@ Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Ph
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |
 | `GET /debates?page=1&page_size=20` | page_size 最大 50 | 200，仅本人，按 created_at、id 倒序，返回 items、total、page、page_size |
-| `POST /debates` | `topic_id`、`user_stance` 必填；Phase 3 目标新增可选 `ai_style`（四枚举、省略 logical），不接受客户端选择 mode | 201；赛制固定 standard_4；目标流派校验后持久化，非法值 400；当前 Phase 2 仍固定 logical，自主选择待 T14-STYLE 实现 |
+| `POST /debates` | `topic_id`、`user_stance` 必填；T14-STYLE 已支持可选 `ai_style`（四枚举、省略 logical），不接受客户端选择 mode | 201；赛制固定 standard_4；流派校验后持久化，非法值 400；创建零模型调用 |
 | `POST /debates/:id/turns/:turn_id/retry` | expected_attempt_version（必填）；无新内容；CSRF Header | failed 且版本匹配才认领；成功 200，进行中 202，已完成重放 200；失败版本已变化为 409，不调模型 |
 | `POST /debates/:id/summary` | `retry` 默认 false；为 true 时必填 expected_attempt_version | 仅 completed 辩论；首次成功 201，已完成重放 200，进行中 202；失败须 retry=true 且版本匹配才认领，版本冲突 409；not_started 时 retry=true 为 400 |
 | `GET /debates/:id/summary` | 本人会话 | 200，返回 status 和可选 content；未开始也返回 not_started |
@@ -169,9 +169,9 @@ Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Ph
 
 会话 DTO 增补 `mode`、`ai_style`、`total_rounds` 三个字段；`total_rounds` 由 `mode` 推导，前端据此确定轮次上限，**不自行硬编码轮数**。
 
-**Phase 3 自主流派选择契约（待实现，依据 ADR-023）：** 创建前用户可选 logical（逻辑型）、aggressive（进攻型）、empathic（共情型）、data（数据型）。Handler 解析可选 ai_style，必须区分字段缺失与显式 null；Service 对精确枚举校验，字段缺失才默认 logical，null/空串/未知值/非字符串返回 400 invalid_request 且无创建副作用。Repository 与辩题快照一起在创建事务保存 debates.ai_style，数据库已有该列及枚举约束，不因开放选择而另建迁移。创建后的会话流派不可改，详情/历史/后续 Prompt 与策略卡均读取该值；不信任后续发言请求传入的流派，不重新读取用户全局偏好。选择不改变相反立场、mode、轮次、状态机或额度，历史会话保持原值。
+**Phase 3 自主流派选择（T14-STYLE 后端已实现，依据 ADR-023）：** 创建前用户可选 logical（逻辑型）、aggressive（进攻型）、empathic（共情型）、data（数据型）。Handler 解析可选 ai_style，必须区分字段缺失与显式 null；Service 对精确枚举校验，字段缺失才默认 logical，null/空串/未知值/非字符串返回 400 invalid_request 且无创建副作用。Repository 与辩题快照一起在创建事务保存 debates.ai_style，数据库已有该列及枚举约束，不因开放选择而另建迁移。创建后的会话流派不可改，详情/历史/后续 Prompt 与策略卡均读取该值；不信任后续发言请求传入的流派，不重新读取用户全局偏好。选择不改变相反立场、mode、轮次、状态机或额度，历史会话保持原值。
 
-建会话不调用模型；策略卡生成不放入创建事务或隐式触发，其 API、触发时机、额度与失败契约在 T14-STYLE 实施前细化。本次只更新契约，当前代码仍固定 logical；接口和 OpenAPI 必须保留这一实现差距。总结 V2 战报为 P1，缺席不阻塞核心验收，交付时仍须遵守 V1 兼容与发布顺序。
+建会话不调用模型；策略卡通过显式 POST `/debates/:id/strategy` 生成、GET 只读恢复。单会话一份成功策略，保存到新增 00013 的 `debate_strategies`；共享 Gate、会话行锁、90 秒租约和版本条件写回，失败显式带查询版本重试，见 [T14 Spec](../planning/T14_STYLE_SPEC.md) 和 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。真实策略适配器已用合成 Transport 测试；现有试运行费用包装器不开放策略能力，真实装配仍待另行授权。总结 V2 战报为 P1，缺席不阻塞核心验收，交付时仍须遵守 V1 兼容与发布顺序。
 
 总结查询及会话详情的 `summary_status` 同时返回 `status` 和 `attempt_version`（`not_started` 时为 `null`），成功总结另含 `schema_version` 和 `content`。轮次与总结重试版本冲突用 `409 attempt_version_conflict` 和受控 `error.details` 提供当前状态、版本及查询地址。总结失败提供总结查询地址。Phase 2 实施时补齐这些新增接口的 JSON 示例。
 
@@ -193,7 +193,7 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 
 最后一轮成功后前端调用独立总结接口；刷新 completed 会话时若总结 not_started，可自动补发一次。总结失败只显示明确的人工重试入口，不循环调用。总结生成同样使用短事务认领、事务外模型调用、版本检查写回和租约恢复；首次生成 attempt_version=1，失败后仅接受 retry=true 且 expected_attempt_version 匹配的显式重试。一场辩论只保存一份成功总结；retry=false 遇到 failed 仅返回失败状态，不重新生成。总结的期望消息条数与合法轮号范围均由该会话 `mode` 推导。
 
-总结基于已持久化的六条消息和辩题快照，采用独立的“训练反馈者”Prompt，聚焦用户表现。目标 JSON schema_version 为 1：
+总结基于该会话 mode 对应的全部已持久化消息（quick_3 六条、standard_4 八条）和辩题快照，采用独立的“训练反馈者”Prompt，聚焦用户表现。目标 JSON schema_version 为 1：
 
 ```json
 {
@@ -242,6 +242,8 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 - `quote` 必须能在该轮用户原文中定位，否则视为伪造引用并拒绝——这是防止模型编造原文的关键约束。
 - `rebuttal` 非空且受长度上限约束。
 - 该结果**不参与轮次状态机**，不改变 `completed_rounds`；存储位置需独立迁移，不复用 `messages.content`。
+
+T14-STYLE 的自主流派与策略卡最小契约见 [Spec](../planning/T14_STYLE_SPEC.md)：创建零调用、显式 POST strategy、GET 只读、单份保存、查询版本重试，与轮次/总结共用 Gate。当前真实装配的 Linux/中继/单次账本限制与本地 Demo 最小增量见 [Phase 3 首批方案](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，不因适配器存在就视为真实总结/流式可用。
 
 ## Eino 流式双轨管道
 
@@ -320,7 +322,7 @@ Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回
 
 请求总预算 60 秒，模型 45 秒，数据库操作 3 秒；生成租约 90 秒，前端请求超时 70 秒，Nginx 代理读取超时暂定 75 秒。普通接口单独使用短超时；生成接口不套会截断 SSE 的通用短超时中间件。结果超长、空回复、非法结构或含供应商拒绝类型均转为受控失败，拒绝输出不伪装成成功训练。
 
-当前 PB 入口的 [HTTP `WriteTimeout`](../../backend/cmd/server/main.go) 为 5 秒，短于首轮的模型和请求预算。T05 真实 HTTP 联调前调整写期限以覆盖请求预算，推荐 70 秒，普通接口仍用独立短预算。验收用耗时超过 5 秒的 Fake 走真实 HTTP 并读到成功 JSON，另验证模型超时、取消与查询结果。T07 验证 Nginx、Go 和前端的超时配合。T01 仅登记该要求。
+当前 HTTP socket 写期限为 [HTTPWriteTimeout](../../backend/internal/platform/business.go) 的 65 秒；路由入口将生成请求限定为 60 秒，普通查询为 5 秒。策略 POST 已加入 60 秒生成预算名单，GET 保持 5 秒；SSE 尚未实现，后续实施须同步预算名单。历史 T05/T07 的长 Fake HTTP 与代理超时证据继续复用。
 
 ## 日志、错误与监控
 

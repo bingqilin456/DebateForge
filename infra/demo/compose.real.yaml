@@ -1,0 +1,30 @@
+# 仅准备配置，须另获调用授权；默认 Compose 无此网络、密钥或真实模式。
+services:
+  app:
+    environment:
+      AI_MODE: local-demo
+      T15_FAKE_SCENARIO: ""
+      DEMO_LEDGER: /var/lib/siyige/demo
+      DEEPSEEK_API_KEY_FILE: /run/secrets/model_key
+    secrets: [model_key]
+    networks: [demo, trial-relay]
+  trial-relay:
+    image: nginx:1.30.6-alpine-slim
+    entrypoint: [nginx, -c, /etc/nginx/trial-relay.conf, -g, "daemon off;"]
+    volumes:
+      - ../../deploy/nginx/trial-relay.conf:/etc/nginx/trial-relay.conf:ro
+    networks: [trial-relay, trial-egress]
+    read_only: true
+    tmpfs: [/tmp]
+    user: "101:101"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+networks:
+  trial-relay:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+  trial-egress: {}
+secrets:
+  model_key:
+    file: ${P3_DEMO_MODEL_KEY_FILE:?separately approved server key file}

@@ -246,6 +246,7 @@ type TurnData struct {
 	Turn            TurnDTO `json:"turn"`
 	CompletedRounds int     `json:"completed_rounds"`
 	QueryURL        string  `json:"query_url"`
+	DebateStatus    string  `json:"-"`
 }
 type SubmitInput struct {
 	RoundNo         int    `json:"round_no"`
@@ -356,7 +357,7 @@ func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
 
 // Store 将短事务和提交不确定性留在 Repository；admit 必须非阻塞且不调用模型。
 type Store interface {
-	Create(context.Context, uint64, uint64, string) (Debate, error)
+	Create(context.Context, uint64, uint64, string, string) (Debate, error)
 	List(context.Context, uint64, int, int) (DebateList, error)
 	Detail(context.Context, uint64, uint64) (Detail, error)
 	Claim(context.Context, uint64, uint64, SubmitInput, func() error) (Detail, bool, error)
@@ -367,5 +368,9 @@ type Store interface {
 	ClaimSummary(context.Context, uint64, uint64, SummaryInput, func() error) (Detail, bool, error)
 	CompleteSummary(context.Context, uint64, Debate, Summary, ai.SummaryResult) (Summary, error)
 	FailSummary(context.Context, uint64, Debate, Summary, string, ai.Usage, ai.Metadata) (Summary, error)
+	GetStrategy(context.Context, uint64, uint64) (StrategyState, error)
+	ClaimStrategy(context.Context, uint64, uint64, StrategyInput, func() error) (StrategyState, bool, error)
+	CompleteStrategy(context.Context, uint64, Debate, Strategy, ai.StrategyResult) (Strategy, error)
+	FailStrategy(context.Context, uint64, Debate, Strategy, string, ai.Usage, ai.Metadata) (Strategy, error)
 	RecoverExpiredLeases(context.Context) (int, error)
 }

@@ -90,7 +90,11 @@ func validTrialPayload(raw []byte) bool {
 		Model     string `json:"model"`
 		MaxTokens int    `json:"max_tokens"`
 		Stream    bool   `json:"stream"`
-		Thinking  struct {
+		// 流式请求必须显式要求 usage 汇总，否则无法核对计费；非流式不得携带。
+		StreamOptions *struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options"`
+		Thinking struct {
 			Type string `json:"type"`
 		} `json:"thinking"`
 		Messages []struct {
@@ -103,8 +107,15 @@ func validTrialPayload(raw []byte) bool {
 	if decoder.Decode(&payload) != nil || decoder.Decode(new(any)) != io.EOF {
 		return false
 	}
+	// 流式与非流式共用同一套费用约束，只按实际调用的传输形态放行真实协议字段：
+	// 流式要求 stream=true 且 include_usage=true，非流式要求不携带 stream_options。
+	streamShape := payload.Stream && payload.StreamOptions != nil && payload.StreamOptions.IncludeUsage
+	plainShape := !payload.Stream && payload.StreamOptions == nil
+	if !streamShape && !plainShape {
+		return false
+	}
 	return payload.Model == "deepseek-flash" && payload.MaxTokens == trialOutputTokens &&
-		!payload.Stream && payload.Thinking.Type == "disabled" &&
+		payload.Thinking.Type == "disabled" &&
 		len(payload.Messages) == 2 && payload.Messages[0].Role == "system" &&
 		payload.Messages[1].Role == "user" && payload.Messages[0].Content != "" &&
 		payload.Messages[1].Content != ""

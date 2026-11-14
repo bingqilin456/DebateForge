@@ -1,0 +1,93 @@
+name: siyige-p3-demo
+services:
+  app:
+    image: siyige-p3-demo-app:local
+    build:
+      context: ../..
+      dockerfile: infra/demo/Dockerfile
+    environment:
+      APP_ENV: demo
+      HTTP_ADDR: 0.0.0.0:8080
+      AUTH_ORIGIN: http://127.0.0.1:18081
+      DB_ADDR: mysql:3306
+      DB_NAME: siyige_demo
+      DB_USER: siyige_demo_app
+      DB_PASSWORD_FILE: /run/secrets/app_password
+      AI_MODE: fake
+      T15_FAKE_SCENARIO: slow
+    secrets: [app_password]
+    volumes: [demo-ledger:/var/lib/siyige/demo]
+    networks: [demo]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/api/health/ready]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  edge:
+    image: nginx:1.30.6-alpine-slim
+    entrypoint: [nginx, -g, "daemon off;"]
+    ports: ["127.0.0.1:18081:8080"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../../deploy/nginx/proxy-sse.conf:/etc/nginx/siyige/proxy-sse.conf:ro
+      - ../../frontend/dist:/usr/share/nginx/html:ro
+    networks: [ingress, demo]
+    read_only: true
+    tmpfs: [/tmp]
+    user: "101:101"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  mysql:
+    image: mysql:8.4.13
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_0900_ai_ci, --default-time-zone=+00:00, --mysqlx=0, --skip-name-resolve]
+    environment:
+      MYSQL_DATABASE: siyige_demo
+      MYSQL_APP_USER: siyige_demo_app
+      MYSQL_MIGRATION_USER: siyige_demo_migrator
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
+      MYSQL_ROOT_HOST: localhost
+    secrets: [root_password, app_password, migrator_password]
+    volumes:
+      - demo-data:/var/lib/mysql
+      - ./init-accounts.sh:/docker-entrypoint-initdb.d/10-accounts.sh:ro
+      - ./grant-app.sql:/opt/siyige/grant-app.sql:ro
+      - ../mysql/mysql-client.sh:/opt/siyige/mysql-client.sh:ro
+    networks: [demo]
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, bash, /opt/siyige/mysql-client.sh, migrator, "--execute=SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 40s
+  migrate:
+    profiles: [migration]
+    image: siyige-p3-demo-migrate:local
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+      target: migrate
+    entrypoint: [/usr/local/bin/migrate, -env, demo, -password-file, /run/secrets/migrator_password, -dir, /opt/siyige/migrations]
+    secrets: [migrator_password]
+    networks: [demo]
+    read_only: true
+networks:
+  ingress: {}
+  demo:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+volumes:
+  demo-data:
+  demo-ledger:
+secrets:
+  root_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/root.txt
+  app_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/app.txt
+  migrator_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/migrator.txt

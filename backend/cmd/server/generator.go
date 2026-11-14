@@ -28,8 +28,10 @@ func configuredGenerator(ctx context.Context, logger *slog.Logger) (ai.Generator
 		return configuredFakeGenerator()
 	case "deepseek":
 		return configuredTrialGenerator(ctx, logger)
+	case "local-demo":
+		return configuredDemoGenerator(ctx, logger)
 	default:
-		return nil, errors.New("AI_MODE 必须为 disabled、fake 或 deepseek")
+		return nil, errors.New("AI_MODE 必须为 disabled、fake、deepseek 或 local-demo")
 	}
 }
 
@@ -63,7 +65,7 @@ func configuredTrialGenerator(ctx context.Context, logger *slog.Logger) (ai.Gene
 func configuredFakeGenerator() (ai.Generator, error) {
 	scenario := os.Getenv("T07_FAKE_SCENARIO")
 	if scenario == "" {
-		return ai.NewFake(), nil
+		return configuredT15Fake()
 	}
 	if os.Getenv("APP_ENV") != "deploy" {
 		return nil, errors.New("部署探针只能在部署模式启用")

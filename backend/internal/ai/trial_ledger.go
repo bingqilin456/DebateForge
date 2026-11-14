@@ -116,6 +116,26 @@ type trialGenerator struct {
 func (g trialGenerator) Generate(ctx context.Context, req Request) (Result, error) {
 	call := &trialCall{user: req.UserID}
 	result, err := g.adapter.Generate(context.WithValue(ctx, trialCallKey{}, call), req)
+	return g.settle(ctx, call, result, err)
+}
+
+// Stream 显式实现可选流式能力，并复用与 Generate 完全相同的单次预留、
+// 账本写入、结果判定与完成标记路径：流式不得成为绕过试运行约束的旁路。
+// 增量只透传给上层展示，最终记录仍以校验通过的完整 Result 为准。
+func (g trialGenerator) Stream(ctx context.Context, req Request, emit func(text string) error) (Result, error) {
+	streamer, ok := g.adapter.(StreamGenerator)
+	if !ok {
+		// 内层不支持流式时必须 fail closed：不得退回普通生成整流后伪造 delta，
+		// 也不得为一次注定失败的调用消耗预留或发起真实请求。
+		return Result{}, &Error{Code: CodeModelUnavailable, Message: "当前生成器不支持流式输出"}
+	}
+	call := &trialCall{user: req.UserID}
+	result, err := streamer.Stream(context.WithValue(ctx, trialCallKey{}, call), req, emit)
+	return g.settle(ctx, call, result, err)
+}
+
+// settle 是 Generate 与 Stream 共用的结果判定与账本写回，保证两条路径同源。
+func (g trialGenerator) settle(ctx context.Context, call *trialCall, result Result, err error) (Result, error) {
 	if !call.reserved {
 		return result, err
 	}

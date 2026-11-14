@@ -108,14 +108,14 @@ func (s *Service) waitStartupScan(ctx context.Context) error {
 	}
 }
 
-func (s *Service) Create(ctx context.Context, uid, tid uint64, stance string) (Debate, error) {
-	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") {
+func (s *Service) Create(ctx context.Context, uid, tid uint64, stance, style string) (Debate, error) {
+	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") || !ai.AIStyle(style).Valid() {
 		return Debate{}, ErrInvalidRequest
 	}
 	if err := s.waitStartupScan(ctx); err != nil {
 		return Debate{}, dependency(err, false)
 	}
-	return s.store.Create(ctx, uid, tid, stance)
+	return s.store.Create(ctx, uid, tid, stance, style)
 }
 func (s *Service) List(ctx context.Context, uid uint64, page, pageSize int) (DebateList, error) {
 	if uid == 0 || page < 1 || page > MaxPage || pageSize < 1 || pageSize > MaxPageSize {
@@ -143,7 +143,7 @@ func (s *Service) GetSummary(ctx context.Context, uid, id uint64) (SummaryStatus
 	return summary.DTO(), nil
 }
 func turnData(d Detail, t Turn) TurnData {
-	return TurnData{t.DTO(), d.Debate.CompletedRounds, "/api/v1/debates/" + formatID(d.Debate.ID)}
+	return TurnData{t.DTO(), d.Debate.CompletedRounds, "/api/v1/debates/" + formatID(d.Debate.ID), d.Debate.Status}
 }
 func failedDetails(d Debate, t Turn) *FailureDetails {
 	return &FailureDetails{TurnID: formatID(t.ID), Status: "failed", AttemptVersion: t.AttemptVersion, QueryURL: "/api/v1/debates/" + formatID(d.ID)}
@@ -175,6 +175,16 @@ func (s *Service) Summary(ctx context.Context, uid, debateID uint64, in SummaryI
 
 // submit 由已完成 HTTP 防刷计数的 Handler 调用，避免有效请求被重复计数。
 func (s *Service) submit(ctx context.Context, uid, id uint64, in SubmitInput) (TurnData, int, error) {
+	return s.submitTurn(ctx, uid, id, in, nil)
+}
+
+// 流式只替换生成与临时输出，认领、配额、版本和最终事务共用同一路径。
+type turnStream struct {
+	start func(string) error
+	delta func(string) error
+}
+
+func (s *Service) submitTurn(ctx context.Context, uid, id uint64, in SubmitInput, stream *turnStream) (TurnData, int, error) {
 	in, err := ValidateSubmit(in)
 	if err != nil {
 		return TurnData{}, 0, err
@@ -210,7 +220,17 @@ func (s *Service) submit(ctx context.Context, uid, id uint64, in SubmitInput) (T
 		return TurnData{}, 0, dependency(nil, false)
 	}
 	consumed = true
-	return s.runGeneration(ctx, uid, d, 201)
+	if stream != nil {
+		if len(d.Turns) == 0 {
+			return TurnData{}, 0, dependency(nil, false)
+		}
+		turn := d.Turns[len(d.Turns)-1]
+		if err := stream.start(formatID(turn.ID)); err != nil {
+			return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, "generation_cancelled", 503, ai.Usage{}, ai.Metadata{}, err)
+		}
+		return s.runTurnGeneration(ctx, uid, d, 201, stream.delta)
+	}
+	return s.runTurnGeneration(ctx, uid, d, 201, nil)
 }
 
 // retry 仅在 status=failed 且 expected_attempt_version 匹配时认领并复用已存原文重新生成。
@@ -377,6 +397,10 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 }
 
 func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, successStatus int) (TurnData, int, error) {
+	return s.runTurnGeneration(ctx, uid, d, successStatus, nil)
+}
+
+func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, successStatus int, emit func(string) error) (TurnData, int, error) {
 	if len(d.Turns) == 0 {
 		return TurnData{}, 0, dependency(nil, false)
 	}
@@ -396,7 +420,7 @@ func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, succe
 			AssistantContent: pt.Messages[1].Content,
 		})
 	}
-	result, genErr := s.generate(ctx, ai.Request{
+	result, genErr := s.generateTurn(ctx, ai.Request{
 		UserID:         uid,
 		Mode:           ai.Mode(d.Debate.Mode),
 		AIStyle:        ai.AIStyle(d.Debate.AIStyle),
@@ -405,7 +429,7 @@ func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, succe
 		RoundNo:        turn.RoundNo,
 		CompletedTurns: completedTurns,
 		UserContent:    turn.Messages[0].Content,
-	})
+	}, emit)
 	if genErr == nil {
 		genErr = ai.ValidateReply(result.Content)
 		if failure, ok := genErr.(*ai.Error); ok {
@@ -438,6 +462,10 @@ func (s *Service) runGeneration(ctx context.Context, uid uint64, d Detail, succe
 	return turnData(completed, completed.Turns[0]), successStatus, nil
 }
 func (s *Service) generate(ctx context.Context, req ai.Request) (result ai.Result, err error) {
+	return s.generateTurn(ctx, req, nil)
+}
+
+func (s *Service) generateTurn(ctx context.Context, req ai.Request, emit func(string) error) (result ai.Result, err error) {
 	callCtx, cancel := context.WithTimeout(ctx, ai.DefaultModelTimeout)
 	defer cancel()
 	defer func() {
@@ -449,7 +477,13 @@ func (s *Service) generate(ctx context.Context, req ai.Request) (result ai.Resul
 	if s.generator == nil {
 		return result, &ai.Error{Code: ai.CodeModelUnavailable}
 	}
-	result, err = s.generator.Generate(callCtx, req)
+	if emit == nil {
+		result, err = s.generator.Generate(callCtx, req)
+	} else if generator, ok := s.generator.(ai.StreamGenerator); ok {
+		result, err = generator.Stream(callCtx, req, emit)
+	} else {
+		err = &ai.Error{Code: ai.CodeModelUnavailable}
+	}
 	if callCtx.Err() != nil {
 		err = generationContextError(err, result, callCtx.Err())
 	}

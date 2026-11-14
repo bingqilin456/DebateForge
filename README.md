@@ -2,11 +2,11 @@
 
 **思弈阁**是基于 **Go + Eino + MySQL** 与 **Vue 3 + TypeScript + Arco Design** 的专业中文 AI 辩论训练与对抗演练系统。为缺少练习对手的中文辩论学习者提供赛制化的文字对抗训练与结构化复盘反馈，由双人团队按阶段目标交付可访问、可维护、可测试、可答辩的工程实践项目。
 
-**当前状态（2026-11-14）。** Phase 0 与 Phase 1 已结项；Phase 2 最终整合覆盖 T08–T12，包含独立辩题选择页、本人历史分页页、会话详情、失败恢复与结构化总结。保留赛制升级：新建 `standard_4` 四轮标准赛，`quick_3` 仅历史兼容与隔离测试。实际证据与正式合并门槛见 [Phase 2 最终验收记录](docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)。SSE 已为 P0，当前仅契约与代理配置就绪；实现及专项验收属于尚未启动的 Phase 3。当前状态见 [TASKS](docs/planning/TASKS.md)。
+**当前状态（2026-11-14）。** Phase 0 与 Phase 1 已结项；Phase 2 最终整合覆盖 T08–T12，包含独立辩题选择页、本人历史分页页、会话详情、失败恢复与结构化总结。保留赛制升级：新建 `standard_4` 四轮标准赛，`quick_3` 仅历史兼容与隔离测试。实际证据与正式合并门槛见 [Phase 2 最终验收记录](docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)。SSE 已为 P0，当前仅契约与代理配置就绪；Phase 3 已启动，T14-STYLE 后端已完成 Fake/隔离 MySQL 技术验证，SSE 实现及专项验收尚未开始，见 [后端专项记录](docs/acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。当前状态见 [TASKS](docs/planning/TASKS.md)。
 
 ## 核心能力
 
-**Phase 3 明确交付目标：真实模型可体验 Demo（P0，尚未交付）。** 用户可在本地浏览器登录、选题/立场/AI 流派、查看策略，亲自输入并完成四轮真实模型 SSE 对辩、真实总结与历史重读；交付启动、配置、体验和停止说明，不能只提供 Fake、录屏或脚本。本地真实体验按单独明确的模型、参与人、体验窗口及次数/Token/费用上限启用，当前仍只更新文档，不执行真实调用。公网 ECS/HTTPS 与生产运维归 Phase 4。任务见 [T15-DEMO-REAL](docs/planning/TASKS.md)，阶段要求见 [PRD](docs/product/PRD.md#phase-3-真实模型可体验-demop0-交付目标尚未实现)。P1 双 AI 互搏是另一增强项，缺席不阻塞本产品 Demo。
+**Phase 3 明确交付目标：真实模型可体验 Demo（P0，尚未交付）。** 用户可在本地浏览器登录、选题/立场/AI 流派、查看策略，亲自输入并完成四轮真实模型 SSE 对辩、真实总结与历史重读；交付启动、配置、体验和停止说明，不能只提供 Fake、录屏或脚本。本地真实体验按单独明确的模型、参与人、体验窗口及次数/Token/费用上限启用，当前仅开放 Fake 联调，不执行真实调用。公网 ECS/HTTPS 与生产运维归 Phase 4。任务见 [T15-DEMO-REAL](docs/planning/TASKS.md)，阶段要求见 [PRD](docs/product/PRD.md#phase-3-真实模型可体验-demop0-交付目标尚未实现)。P1 双 AI 互搏是另一增强项，缺席不阻塞本产品 Demo。
 
 | 能力 | 说明 | 状态 |
 | --- | --- | --- |

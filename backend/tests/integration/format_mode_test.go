@@ -177,7 +177,7 @@ func TestCreateRejectsClientSuppliedMode(t *testing.T) {
 	if row.Mode != "standard_4" {
 		t.Fatalf("客户端传参不得修改赛制，实际 %q", row.Mode)
 	}
-	if row.AIStyle != "logical" {
-		t.Fatalf("客户端传参不得修改流派，实际 %q", row.AIStyle)
+	if row.AIStyle != "aggressive" {
+		t.Fatalf("T14 允许合法流派且不影响固定赛制，实际 %q", row.AIStyle)
 	}
 }

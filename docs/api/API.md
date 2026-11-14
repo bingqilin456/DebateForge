@@ -25,16 +25,18 @@
 | POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 基础已实现；自主 ai_style 为 T14-STYLE 计划增量 | 201 |
 | POST | `/api/v1/debates/{id}/turns` | 提交轮次（上限由会话赛制决定）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
 | POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 计划（P0，契约见下） | 200（`text/event-stream`） |
+| GET | `/api/v1/debates/{id}/strategy` | 只读策略状态与已保存结果 | 计划（T14-STYLE） | 200 |
+| POST | `/api/v1/debates/{id}/strategy` | 显式生成或版本绑定重试策略 | 计划（T14-STYLE） | 201、200、202 |
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
 | POST | `/api/v1/debates/{id}/summary` | 生成或显式重试结构化总结 | 已实现（T10） | 201、200、202 |
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
 
-本文与 OpenAPI `paths` 记录 **14 个已实现接口 + 1 个计划接口（流式轮次）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。
+本文与 OpenAPI `paths` 记录 **14 个已实现操作 + 3 个计划操作（流式轮次、策略 GET/POST）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
-**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；本次没有新增 HTTP 路径或请求/响应字段，OpenAPI 的实现状态保持不变。公网体验仍待 Phase 4。
+**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；Demo 复用业务路径，不另设免鉴权演示入口；本轮策略 GET/POST 与 SSE 仍为 planned。公网体验仍待 Phase 4。
 
 ## 存活检查
 
@@ -402,6 +404,9 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
       "topic": {"id":"7","title":"大学课程是否应采用开放式考核","description":"讨论学习效果与评价公平"},
       "user_stance": "pro",
       "ai_stance": "con",
+      "mode": "standard_4",
+      "ai_style": "logical",
+      "total_rounds": 4,
       "status": "active",
       "completed_rounds": 0,
       "created_at": "2026-11-06T08:00:00Z",
@@ -492,11 +497,12 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 流式提交轮次。**请求体与 `POST /api/v1/debates/{id}/turns` 完全一致**，响应改为 `text/event-stream`。
 
-- `HEAD` 要求：`Accept: text/event-stream`；Cookie Session、`X-CSRF-Token`、正确 Origin 与普通写请求相同。
+- 请求头要求：`Accept: text/event-stream`；Cookie Session、`X-CSRF-Token`、正确 Origin 与普通写请求相同。
 - 成功：`200` + `Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`。
 - **复用同一认领内核**：`client_request_id` 幂等、`attempt_version` 版本检查、90 秒租约、并发配额与普通发送共用。禁止为流式另建幂等键。
 - 鉴权、限流、请求校验、并发配额**在发送任何事件之前**完成；这些阶段失败仍返回普通 HTTP JSON（信封同其余接口）。
 - `generating` 期间的重复请求按约定返回 `202` JSON，不进入事件流。
+- completed 同键重放为 200 SSE `start` → `done`，复用已存结果，不调用模型或发送 delta；start 的 request_id 对应本次 HTTP。202 完整信封与普通发送一致；事件前错误包括 400/401/403/404/409/413/429/500/503，保持 JSON。可复制的完整四事件、202、普通错误及恢复 fixture 见 [跨成员样例](../planning/PHASE3_A_INTEGRATION_SPEC.md#t15-core-冻结契约与可复制样例)。
 
 事件序列固定四个，名称不得改为 `chunk` 等别名：
 
@@ -530,6 +536,8 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 
 
+## 错误码与客户端恢复
+
 | HTTP | `error.code` | 适用情况 |
 | --- | --- | --- |
 | 400 | `invalid_request` | 非法参数、ID、JSON、媒体类型或字段限制。 |
@@ -553,7 +561,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 八个辩论与辩题业务接口已装配到真实 main。HTTP 入口对轮次生成、轮次重试与总结生成请求使用 60 秒预算、模型 45 秒、数据库短事务 3 秒；普通查询接口保留 5 秒短预算。并发“全局 2”仅指单个 Go 进程内所有用户合计，不提供跨实例协调。分钟防刷 6 次也适用于重放，每日 20 次只计新认领（含显式重试与总结生成成功认领），失败也计入；内存计数重启会丢失。
 
-AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式复用 T04 Generator，另行授权后才可使用。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
+AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式目前装配 T07 单次 trialGenerator，仅 Linux/内部中继可用，尚不具备完整 Demo 所需总结与流式能力；最小改造方案见 [首批 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，真实调用仍需独立授权。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
 
 ## Phase 2 接口晋升说明
 
@@ -563,7 +571,29 @@ AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek
 
 1. **健康路径差异已裁定**：2026 年 11 月 8 日负责人明确以 `/api/health/live`、`/api/health/ready` 为准；本轮同步前端、测试和当前运行文档。历史验收及学习笔记中的旧路径保留历史语境，不作为新契约，也不提供兼容别名。
 2. **Session Cookie 名已在 T03 具体化**：HTTP 开发为 `siyige_session_dev`，HTTPS 策略为 `__Host-siyige_session`；OpenAPI 占位符已替换，安全属性与 T01 一致。
-3. **当前契约与实现边界**：Phase 2 的赛制驱动轮次、显式重试、总结和分页已实现；Phase 3 SSE、自主流派选择和总结 V2 等目标增量尚未实现，须按 planned 标注。策略卡生成接口、额度与失败契约，以及 P1 谬误存储/API，仍须在各子项实施前细化。
+3. **当前契约与实现边界**：Phase 2 的赛制驱动轮次、显式重试、总结和分页已实现；Phase 3 SSE、自主流派选择、策略卡和总结 V2 等目标增量尚未实现，须按 planned 标注。策略卡契约已在下节及 [T14 Spec](../planning/T14_STYLE_SPEC.md) 定稿；P1 谬误存储/API 仍待其子项细化。
+
+## 14. GET/POST /api/v1/debates/{id}/strategy（计划，T14-STYLE）
+
+策略是会话下的单份资源，帮助用户自身立场破题，结合已保存的对手 ai_style；不会成为正式消息或计轮。创建会话不调用模型；仅用户点击「生成赛前策略」才 POST。页面进入、刷新、历史及重登只 GET，未开始不自动生成。完整行为和验收见 [T14-STYLE Spec](../planning/T14_STYLE_SPEC.md)。
+
+GET 要求 Session/所有权；POST 额外要求精确 Origin/CSRF。不存在和越权统一 404。首次生成与失败重试仅在会话尚无任何 turn 时认领，否则 409 round_conflict；已完成重放和在途查询不受此新认领条件限制。
+
+POST `{}` 或 `{"retry":false}` 首次认领 version=1，成功 201；用户显式重试传 `{"retry":true,"expected_attempt_version":N}`，仅 failed 且匹配版本时 version+1，成功 200。retry 只允许布尔，true 必须有正整数版本，false 不允许版本，未知字段拒绝 400；not_started + retry=true 也为 400。completed 重放 200，generating 202，failed + retry=false 返回 200 失败状态，均不重新生成；failed 重试版本不符为 409 attempt_version_conflict，只查询不自动换版本。
+
+```json
+{"data":{"status":"not_started","attempt_version":null},"request_id":"req-strategy-get"}
+```
+
+generating 仅含 status/attempt_version；failed 增加受控 error_code（model_error/model_timeout/model_unavailable/dependency_unavailable/generation_cancelled）。成功结果：
+
+```json
+{"data":{"status":"completed","attempt_version":1,"schema_version":1,"prompt_version":"strategy-v1","ai_style":"aggressive","content":{"thesis":"开放式考核应兼顾应用能力与评价公平。","arguments":["用统一评分标准评估真实任务成果。"],"risks":["预先回应评分一致性与代做风险。"]}},"request_id":"req-strategy-complete"}
+```
+
+内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 为 strategy-v1，输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
+
+与轮次/总结共用 Gate：6/分钟、20/UTC 日、单用户并发 1、单进程全局 2；失败消耗认领额度，重放不消耗每日额度但受分钟限制。60 秒请求、45 秒模型、3 秒短事务、90 秒租约及版本条件写回；过期恢复同现有扫描。GET 不消费模型额度。标准 400/401/403/404/413/429/500 及模型 502/503/504 信封沿用；已确认失败或版本冲突附 `details:{status,attempt_version,query_url}`，query_url 为本策略 GET，无 turn_id；提交不明省略 details。策略计划接口不改变现有 Turn 错误结构。
 
 ## T01 文档任务的历史验证记录
 

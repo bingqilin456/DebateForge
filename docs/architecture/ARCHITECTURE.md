@@ -193,7 +193,7 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 
 最后一轮成功后前端调用独立总结接口；刷新 completed 会话时若总结 not_started，可自动补发一次。总结失败只显示明确的人工重试入口，不循环调用。总结生成同样使用短事务认领、事务外模型调用、版本检查写回和租约恢复；首次生成 attempt_version=1，失败后仅接受 retry=true 且 expected_attempt_version 匹配的显式重试。一场辩论只保存一份成功总结；retry=false 遇到 failed 仅返回失败状态，不重新生成。总结的期望消息条数与合法轮号范围均由该会话 `mode` 推导。
 
-总结基于已持久化的六条消息和辩题快照，采用独立的“训练反馈者”Prompt，聚焦用户表现。目标 JSON schema_version 为 1：
+总结基于该会话 mode 对应的全部已持久化消息（quick_3 六条、standard_4 八条）和辩题快照，采用独立的“训练反馈者”Prompt，聚焦用户表现。目标 JSON schema_version 为 1：
 
 ```json
 {
@@ -242,6 +242,8 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 - `quote` 必须能在该轮用户原文中定位，否则视为伪造引用并拒绝——这是防止模型编造原文的关键约束。
 - `rebuttal` 非空且受长度上限约束。
 - 该结果**不参与轮次状态机**，不改变 `completed_rounds`；存储位置需独立迁移，不复用 `messages.content`。
+
+T14-STYLE 的自主流派与策略卡最小契约见 [Spec](../planning/T14_STYLE_SPEC.md)：创建零调用、显式 POST strategy、GET 只读、单份保存、查询版本重试，与轮次/总结共用 Gate。当前真实装配的 Linux/中继/单次账本限制与本地 Demo 最小增量见 [Phase 3 首批方案](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，不因适配器存在就视为真实总结/流式可用。
 
 ## Eino 流式双轨管道
 
@@ -320,7 +322,7 @@ Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回
 
 请求总预算 60 秒，模型 45 秒，数据库操作 3 秒；生成租约 90 秒，前端请求超时 70 秒，Nginx 代理读取超时暂定 75 秒。普通接口单独使用短超时；生成接口不套会截断 SSE 的通用短超时中间件。结果超长、空回复、非法结构或含供应商拒绝类型均转为受控失败，拒绝输出不伪装成成功训练。
 
-当前 PB 入口的 [HTTP `WriteTimeout`](../../backend/cmd/server/main.go) 为 5 秒，短于首轮的模型和请求预算。T05 真实 HTTP 联调前调整写期限以覆盖请求预算，推荐 70 秒，普通接口仍用独立短预算。验收用耗时超过 5 秒的 Fake 走真实 HTTP 并读到成功 JSON，另验证模型超时、取消与查询结果。T07 验证 Nginx、Go 和前端的超时配合。T01 仅登记该要求。
+当前 HTTP socket 写期限为 [HTTPWriteTimeout](../../backend/internal/platform/business.go) 的 65 秒；路由入口将生成请求限定为 60 秒，普通查询为 5 秒。SSE 与策略路由尚未实现，实施时须加入生成请求预算名单，不能落入普通 5 秒预算。历史 T05/T07 的长 Fake HTTP 与代理超时证据继续复用。
 
 ## 日志、错误与监控
 

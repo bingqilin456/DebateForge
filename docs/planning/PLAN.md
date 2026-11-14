@@ -1,6 +1,6 @@
 # 思弈阁 阶段工程计划
 
-**2026-11-14 当前状态。** Phase 1 已于 2026-11-10 本地结项。本轮 Phase 2 最终整合补齐 T08 辩题选择页与 T11 本人历史分页页，累计无收费验证和 CI/合并门槛见 [最终验收记录](../acceptance/PHASE2_FINAL_ACCEPTANCE.md)。Batch 0–5 完整保留，新建会话默认四轮 `standard_4`，三轮 `quick_3` 仅历史兼容与隔离测试。SSE 为 Phase 3 P0，当前未实现，本轮不启动该阶段。正式 ECS、公网 HTTPS 与生产环境回退归 Phase 4；[T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失) 仍未关闭。
+**2026-11-14 当前状态。** Phase 1 本地结项，Phase 2 经 PR #17 合入 main 结项（见 [最终验收记录](../acceptance/PHASE2_FINAL_ACCEPTANCE.md)）。成员 A 已授权 Phase 3 首批 T13-Lite 与跨成员契约定稿，使用 `codex/p3-a-integration` 和持续草稿 PR，允许本轮 Commit/普通 Push，不合 main、不调用真实模型或部署。T13 本地技术回归通过，待负责人确认；[首批矩阵/样例与 Demo 最小方案](PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE Spec](T14_STYLE_SPEC.md) 已定稿，SSE/策略功能尚未实现。Batch 0–5 完整保留，standard_4 默认、quick_3 仅历史兼容与测试。Phase 3 未结项，公网仍属 Phase 4；[T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失) 未关闭。
 
 ## 历史阶段快照（2026-11-08）
 

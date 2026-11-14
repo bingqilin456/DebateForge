@@ -154,7 +154,7 @@ T02 优先交付首轮所需的 `users`、`auth_sessions`、`topics`、`debates`
 
 ## Phase 2 API 草案
 
-Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。以下为 Phase 2 新增接口的设计草案，路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则。
+Phase 1 的 8 个接口与健康路径见 [API](../api/API.md)。本节保留 Phase 2 接口形成时的设计语义；历史分页、轮次重试与总结接口现已实现并晋升至 API/OpenAPI 正式路径，当前 DTO、状态与例子以 [API](../api/API.md) 为准。路径统一带 `/api/v1` 前缀，复用 Phase 1 的 JSON 信封、Session、写请求 Origin/CSRF 和会话所有权规则；SSE 实现仍为后续 Phase 3 任务。
 
 | 方法与路径 | 请求要点 | 响应与行为 |
 | --- | --- | --- |

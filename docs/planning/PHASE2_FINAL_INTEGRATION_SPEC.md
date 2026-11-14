@@ -32,7 +32,8 @@
 - [x] 前端 typecheck、186 项单测、build；Chromium 页面测试及真实 Fake 联调全部通过。
 - [x] 后端 `go test -p 1 -count=1 ./...`、`go vet ./...`、`go build ./...`；迁移工具独立模块三项检查。
 - [x] 后端隔离 MySQL 与迁移集成测试通过，保留测试探针证据；原 SQL 迁移不改。
-- [ ] 更新文档并检查链接、空白、秘密与改动范围；Commit/Push，创建 PR 触发 Actions。
-- [ ] 当前 PR 全部门禁通过后普通 Merge 到 `main`，核对远程提交与主干 CI，登记正式结项；不进入 Phase 3。
+- [x] 更新文档并检查链接、空白、秘密与改动范围；Commit/Push；分支 Actions 四项通过后创建 PR #17。
+
+正式结项执行条件：PR #17 当前提交全部 Actions 成功后普通 Merge 到 `main`，核对远程提交与主干 CI；不进入 Phase 3。实际合并状态与提交以 [PR #17](https://github.com/bingqilin456/DebateForge/pull/17) 为准。
 
 逐项实际结果见 [最终整合验收记录](../acceptance/PHASE2_FINAL_ACCEPTANCE.md)。本清单中的授权来自负责人本轮指令，不延伸到后续阶段。

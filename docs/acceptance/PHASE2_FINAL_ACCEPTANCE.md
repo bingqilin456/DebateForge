@@ -5,7 +5,7 @@
 ## 来源、授权与整合结果
 
 - 远程基线：`codex/p3-format-stream` 的 `008d552a31dea26aeeae7965f070bbc1cdec1bb5`；队友分支 `feat/t08-t11-views` 的 `ad18f8c9e56eef185495fa8ffcc59c22a055390c`；同步时 `origin/main` 为 `7db7dd2`。
-- 开始时工作区干净；新建 `codex/phase2-final`，以普通 merge 保留双方历史。Git 自动合并 `App.test.ts`，无文本冲突；两个来源提交均是整合分支祖先。
+- 开始时工作区干净；新建 `codex/phase2-final`，以普通 merge（`98718b1`）保留双方历史。Git 自动合并 `App.test.ts`，无文本冲突；两个来源提交均是整合分支祖先。整合修复与本地验收提交为 `e360c0d`。
 - 语义差异：B 的测试 DTO 缺少 `mode/ai_style/total_rounds`，类型检查明确失败；历史页固定显示 `/ 3`，混合三/四轮测试明确失败。补齐测试数据，页面读取每条会话 `total_rounds`，三轮 3/3 与四轮 4/4 同时通过。未回退 Batch 0–5、未改动本轮之外的业务实现。
 - 保留既有赛制前向迁移、轮数驱动、环节映射与 Prompt 指令、版本重试、租约、所有权、总结及已定流式契约/代理配置；本轮不实现 SSE 或其他 Phase 3 增量。
 - 本轮负责人明确授权必要分支、Commit、Push、PR 与 Merge，要求全部检查成功后合入 `main` 并正式结项。该授权不构成真实模型、部署或下一阶段授权，也不补记未发生的人工演示/成员互审。
@@ -43,9 +43,11 @@ Chromium 页面验收分支：
 
 ## CI 与正式结项门槛
 
-本轮新增的 9 项 Chromium 页面验收进入既有 GitHub Actions 前端门禁；原仓库静态门禁、后端无收费检查、全新隔离 MySQL 迁移/集成、前端类型/单测/构建继续保留。PR 和运行链接在实际创建后登记，不把本地通过等同于云端通过。
+本轮新增的 9 项 Chromium 页面验收进入既有 GitHub Actions 前端门禁；原仓库静态门禁、后端无收费检查、全新隔离 MySQL 迁移/集成、前端类型/单测/构建继续保留。
 
-当前为本地技术验收通过，等待当前 PR 全部 Actions 成功并普通合入 `main`；达到该条件后依负责人本轮明确授权完成 Phase 2 正式结项。最终 merge SHA 以 GitHub PR 的实际合并记录为准。
+- 创建 PR 前，分支提交 `e360c0d` 的 [Actions Run 43545236891](https://github.com/bingqilin456/DebateForge/actions/runs/43545236891) 四项全部 `success`。云端确认前端 186 项单测和 9 项 Chromium 通过；MySQL 全新隔离库 `applied=12` 后重跑 `applied=0`，迁移与后端集成通过；Nginx 413 上游透传与脱敏日志专项通过。
+- 交付 PR：[Phase 2 最终整合 #17](https://github.com/bingqilin456/DebateForge/pull/17)，`codex/phase2-final` → `main`。PR 当前提交的全部检查成功是普通合并的必要前提；不使用绕过检查的管理合并。
+- **正式结项结论（随 PR #17 检查通过并合入 main 生效）**：T08–T12 在本轮无收费、隔离环境交付范围内完成，按负责人本轮明确授权正式结项。最终 merge SHA、合并时间与当前提交 CI 以 PR 的实际合并记录及 Checks 为准；本记录不伪造尚未发生的合并事件。
 
 ## 依赖与已知边界
 

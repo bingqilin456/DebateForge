@@ -15,11 +15,11 @@ func parseConfig(args []string) (config, error) {
 	var cfg config
 	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	flags.SetOutput(io.Discard) // flag 默认错误可能包含未知参数及其秘密值。
-	flags.StringVar(&cfg.Env, "env", "", "显式选择 dev/test/deploy")
+	flags.StringVar(&cfg.Env, "env", "", "显式选择 dev/test/deploy/demo")
 	flags.StringVar(&cfg.PasswordFile, "password-file", "", "迁移账户秘密文件绝对路径")
 	flags.StringVar(&cfg.Dir, "dir", "../../migrations", "已审阅 SQL 迁移目录")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
-		return config{}, errors.New("配置无效：用法 migrate -env dev|test|deploy -password-file <绝对路径> [-dir <目录>] up|status")
+		return config{}, errors.New("配置无效：用法 migrate -env dev|test|deploy|demo -password-file <绝对路径> [-dir <目录>] up|status")
 	}
 	cfg.Command = flags.Arg(0)
 	cfg.Addr = targetAddress(cfg.Env)
@@ -33,7 +33,7 @@ func targetAddress(env string) string {
 		return "127.0.0.1:13306"
 	case "test":
 		return "127.0.0.1:13307"
-	case "deploy":
+	case "deploy", "demo":
 		return "mysql:3306"
 	default:
 		return ""

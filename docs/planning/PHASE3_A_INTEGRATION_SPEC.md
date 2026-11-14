@@ -115,6 +115,8 @@ T15-Core 启动条件：T13 技术通过并经负责人确认、该契约与 API
 
 ## 本地完整 Demo 与 10 场评测的最小方案
 
+2026-11-15 实施增量：成员 A 已获本轮新授权实施下列受控多次调用方案，费用包装、独立本地 demo 环境和 Fake 验证见 [准备 Spec](T15_DEMO_PREP_SPEC.md)、[验收及等待项](../acceptance/T15_DEMO_PREP_ACCEPTANCE.md)。以下保留 A1 方案形成时的限制，实际新路径见 [运行说明](../../infra/demo/README.md)。B1/B2 负责人确认尚未完成，真实调用仍未授权；不把本次无收费准备记成完整 Demo 已交付。
+
 实际代码依据：`backend/cmd/server/generator.go`、`backend/internal/ai/trial.go`、`trial_ledger.go`、`summary.go`、`adapter.go`、`backend/internal/platform/business.go` 以及锁定 go.mod/go.sum。以下仅为下一切片方案，绝不通过放宽已有试运行闸门、删除账本或换目录来补调用次数。
 
 | 当前限制 | 对 Phase 3 的影响 | 最小实施增量（后续） |

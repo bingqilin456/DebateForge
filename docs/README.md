@@ -39,6 +39,8 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 
 ## 历史计划与验收证据
 
+- T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及 B1/B2/B3 等待项](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。A 准备技术通过，完整 A/B Fake 整合与真实体验均未验收。
+
 - T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。
 
 - 阶段 0 / PB：[INIT_ACCEPTANCE](acceptance/INIT_ACCEPTANCE.md)。

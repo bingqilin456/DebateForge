@@ -95,3 +95,17 @@ func TestDeployTargetIsFixed(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoTargetIsFixed(t *testing.T) {
+	cfg, err := parseConfig([]string{"-env", "demo", "-password-file", filepath.Join(t.TempDir(), "missing"), "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Addr != "mysql:3306" || cfg.Name != "siyige_demo" || cfg.User != "siyige_demo_migrator" {
+		t.Fatal("wrong demo target")
+	}
+	cfg.Name = "siyige_test"
+	if cfg.validate() == nil {
+		t.Fatal("demo migration redirected")
+	}
+}

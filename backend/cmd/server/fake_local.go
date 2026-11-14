@@ -15,8 +15,8 @@ func configuredT15Fake() (ai.Generator, error) {
 	if scenario == "" {
 		return ai.NewFake(), nil
 	}
-	if env := os.Getenv("APP_ENV"); env != "dev" && env != "test" {
-		return nil, errors.New("T15 Fake 场景只允许本地 dev/test")
+	if env := os.Getenv("APP_ENV"); env != "dev" && env != "test" && env != "demo" {
+		return nil, errors.New("T15 Fake 场景只允许本地 dev/test/demo")
 	}
 	switch scenario {
 	case "slow", "failure", "timeout", "heartbeat":

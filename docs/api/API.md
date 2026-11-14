@@ -8,7 +8,7 @@
 
 ## 接口清单与实现状态
 
-**2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。前端 AC16 整体验收待 B 联调与负责人确认；SSE 仍未实现。
+**2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。2026-11-15 A3 已交付 SSE 后端和本地代理；完整浏览器 AC12/AC16 待 B1/B2 交付后联调，真实体验未执行。
 
 以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 10 个辩论/历史/总结/策略/流式接口，共 17 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 

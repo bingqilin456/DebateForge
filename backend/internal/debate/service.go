@@ -108,14 +108,14 @@ func (s *Service) waitStartupScan(ctx context.Context) error {
 	}
 }
 
-func (s *Service) Create(ctx context.Context, uid, tid uint64, stance string) (Debate, error) {
-	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") {
+func (s *Service) Create(ctx context.Context, uid, tid uint64, stance, style string) (Debate, error) {
+	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") || !ai.AIStyle(style).Valid() {
 		return Debate{}, ErrInvalidRequest
 	}
 	if err := s.waitStartupScan(ctx); err != nil {
 		return Debate{}, dependency(err, false)
 	}
-	return s.store.Create(ctx, uid, tid, stance)
+	return s.store.Create(ctx, uid, tid, stance, style)
 }
 func (s *Service) List(ctx context.Context, uid uint64, page, pageSize int) (DebateList, error) {
 	if uid == 0 || page < 1 || page > MaxPage || pageSize < 1 || pageSize > MaxPageSize {

@@ -1,6 +1,6 @@
 # T14-STYLE 最小任务 Spec
 
-日期：2026-11-14。负责人 A：接口、校验、Prompt、存储；B：流派选择、策略卡展示与交互测试。本文定稿契约，功能尚未实现；实施与验收后才将 OpenAPI 的 `planned` 晋升为 `implemented`。依据 [PRD AC16](../product/PRD.md)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)，本轮只交付 Spec，不实现 T14-STYLE。
+日期：2026-11-14。负责人 A：接口、校验、Prompt、存储；B：流派选择、策略卡展示与交互测试。本文为 A1 定稿契约；A2 后端已实现，OpenAPI 已晋升为 `implemented`，专项证据及交接见 [后端验收记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。依据 [PRD AC16](../product/PRD.md)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)，A1 仅交付 Spec；A2 延续同分支实现后端，不修改 B 前端。完整 AC16 仍待 B 联调和负责人验收。
 
 ## 输入、触发与边界
 
@@ -9,7 +9,7 @@
 - 策略帮助**用户所持立场**破题；保存的 `ai_style` 描述陪练对手的风格和可能施压方式，不把策略写成 AI 相反立场的开场白。只使用辩题快照、双方立场、保存的流派及 mode，不读取其他用户数据，不执行工具或声称已检索事实。
 - 首次生成与失败重试只允许尚未存在任何 turn 的会话（包括 generating/failed turn 也算已开始）；否则 409 `round_conflict`。已完成策略始终可重读/重放，已有 generating 返回 202。会话锁下检查并认领，与第一轮认领串行，避免检查后并发插入 turn 的竞态。策略生成在途允许用户开始辩论，策略不推进或阻塞轮次；模型并发槽仍可能使发送暂时返回 429。
 
-## HTTP 契约（计划）
+## HTTP 契约
 
 路径为 `/api/v1/debates/{id}/strategy`，单会话最多一份成功策略。无独立策略 ID、无流式策略、无新 retry 路径。接口信封沿用 `data/request_id` 与 `error/request_id`，ID 字符串、时间 UTC，正文 32 KiB 上限。
 
@@ -52,7 +52,7 @@ POST 已确认失败或版本冲突的 details（提交结果不明省略 detail
 - 复用 `debate.Gate` 同一实例：6 次/分钟、20 次/UTC 日、单用户并发 1、单进程全局 2。策略、普通轮次、流式轮次、轮次重试、总结共享额度，不新增限流体系。每日额度仅新认领消耗，失败也计；确定回滚不计，不确定提交保守计一次。费用账本另在出网前持久预留，进程内 Gate 不能充当计费账本。
 - 每次显式新尝试最多一次模型调用；禁止 SDK 自动重试、模型修复 JSON 或 fallback。disabled 返回受控不可用；Fake 支持结构化成功、超时、非法结构与取消。真实模式仍要求另外授权并具备费用控制。
 - 沿用 60 秒请求、45 秒模型、3 秒短事务、90 秒租约；启动及每 30 秒扫描过期 generating，按状态和版本置 failed。失败/取消保留版本，不推进 completed_rounds、不写 messages，不混入总结。迟到输出须 status/version 条件写回，不能覆盖新尝试。
-- 新增单表 `debate_strategies`（实施时核对下一前向迁移号；当前下一个为 00013，不占用历史迁移）：唯一 debate_id、status、attempt_version、lease_expires_at、error_code、schema_version、prompt_version、model_name、content_json、生成用量及 UTC 时间。owner 经 debates 校验；无需复制 user_id。围绕会话行加锁、认领事务外调用、结果事务内提交。已成功结果不可再生成或因 Prompt 升版自动重写；历史重读返回保存版本。
+- 新增单表 `debate_strategies`（已核对并新增 `00013_create_debate_strategies.sql`，不修改历史迁移；后续编号从 00014 起再次核对）：唯一 debate_id、status、attempt_version、lease_expires_at、error_code、schema_version、prompt_version、model_name、content_json、生成用量及 UTC 时间。owner 经 debates 校验；无需复制 user_id。围绕会话行加锁、认领事务外调用、结果事务内提交。已成功结果不可再生成或因 Prompt 升版自动重写；历史重读返回保存版本。
 - 输出 schema 1 固定三键：`thesis` 为 1–300 Unicode 码点非空白字符串；`arguments/risks` 各 1–3 项，每项同上；完整 JSON ≤8 KiB，拒绝额外键、空白、错误类型和无效 UTF-8。前端逐字段转义展示，不渲染 HTML/Markdown 原文。无效输出变 failed，不保存成功内容。
 - 策略首版 Prompt 为 `strategy-v1`；轮次当前为 `debate-v1`，总结为 `summary-v1`。三者分别版本化，修改措辞/结构时升级对应版本；模型名与版本在服务端元数据可追溯，不由浏览器指定。对手流派会影响策略中的应对风险；轮次继续从会话行读取流派。
 
@@ -71,4 +71,4 @@ POST 已确认失败或版本冲突的 details（提交结果不明省略 detail
 | 崩溃/租约/迟到结果 | 恢复为 failed；旧输出不能覆盖新版本；成功后重读不重调 | A MySQL |
 | Gate/费用准入拒绝 | 429 带 Retry-After 或受控不可用；无隐式重试；共享额度与并发可测 | A |
 
-实施顺序：A 先补输入与持久化/Fake 接口，B 可按本 Spec 准备表单、状态展示及隔离响应测试；真实联调须等接口实现。前后端按适用检查验收，AC16 通过后才能标记功能完成。P1 战报/谬误/双 AI 不纳入此任务。
+实施顺序：A 先补输入与持久化/Fake 接口，B 可按本 Spec 准备表单、状态展示及隔离响应测试；Fake 联调可使用本分支接口；真实调用仍须独立授权与费用装配。前后端按适用检查验收，AC16 通过后才能标记功能完成。P1 战报/谬误/双 AI 不纳入此任务。

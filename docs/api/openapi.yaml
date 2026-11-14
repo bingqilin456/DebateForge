@@ -1,13 +1,13 @@
-# Phase 2 实现快照 + Phase 3 目标增量；ai_style 自主选择与 SSE 为计划契约，本轮仅改文档，详见 API.md。
+# Phase 3 T14-STYLE 后端已实现；SSE 仍为计划契约，详见 API.md。
 openapi: 3.1.1
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: DebateForge（思弈阁）API 契约与实现核对
   version: phase3-contract-2026-11-14
-  description: 文档快照日期 2026-11-14（Asia/Shanghai）。共 14 个操作已实现，另有 3 个计划操作（流式轮次 turns/stream 与策略 GET/POST）。
+  description: 文档快照日期 2026-11-14（Asia/Shanghai）。共 16 个操作已实现，另有 1 个计划操作（流式轮次 turns/stream）。
     已实现部分包含健康检查、T03 认证、T05 首轮、T09 轮次状态机与失败恢复（含显式重试与租约扫描）、T10 结构化总结与重试及 T11 本人历史分页接口。
     赛制自 2026-11-14 起由 debates.mode 驱动：quick_3 为三轮（历史兼容），standard_4 为四轮（新建默认），会话 DTO 增补 mode、ai_style、total_rounds。
-    Phase 3 目标新增创建时自主 ai_style 选择（可选，缺省 logical，创建后不可改），尚未实现；当前创建仍固定 logical。SSE 最新版本从详情查询获取。
+    Phase 3 已实现创建时自主 ai_style 选择（可选，缺省 logical，创建后不可改）及策略 GET/POST。SSE 最新版本从详情查询获取。
     默认关闭真实模型，可显式启用 Fake；健康路径为 /api/health/live、/api/health/ready。
 servers:
 - url: http://127.0.0.1:8080
@@ -376,14 +376,8 @@ paths:
       operationId: createDebate
       summary: 创建辩论会话
       description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
-        Phase 3 目标增量（尚未实现）支持可选 ai_style，省略默认 logical，显式 null、空串、非字符串或未知/大小写不符的枚举为 400 invalid_request 且不创建；校验后与会话一起保存并在响应、详情和历史返回，创建后不可修改。当前 Phase 2 仍固定 logical。
+        T14-STYLE 已实现可选 ai_style，省略默认 logical，显式 null、空串、非字符串或未知/大小写不符的枚举为 400 invalid_request 且不创建；校验后与会话一起保存并在响应、详情和历史返回，创建后不可修改。
         mode 仍由服务端固定 standard_4，客户端传入不生效；流派不改变轮次、立场、状态机或配额。策略生成与创建分离，不隐式调用模型。
-      x-planned-changes:
-        task: T14-STYLE
-        implementation-status: planned
-        fields:
-        - ai_style
-        current-behavior: 当前忽略客户端流派输入并固定 logical，目标枚举校验尚未实现。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -420,7 +414,7 @@ paths:
                   created_at: '2026-11-06T08:00:00Z'
                   updated_at: '2026-11-06T08:00:00Z'
                 request_id: req-create
-              x-example-implementation-status: planned
+              x-example-implementation-status: implemented
         '400':
           $ref: '#/components/responses/InvalidRequest'
         '403':
@@ -448,7 +442,7 @@ paths:
               topic_id: '7'
               user_stance: pro
               ai_style: aggressive
-            x-example-implementation-status: planned
+            x-example-implementation-status: implemented
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
@@ -1087,10 +1081,10 @@ paths:
   /api/v1/debates/{id}/strategy:
     get:
       operationId: getStrategy
-      summary: 只读策略状态和已保存结果（计划）
+      summary: 只读策略状态和已保存结果
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T14-STYLE
       description: 要求 Session 与所有权，不存在和非本人统一404。无记录 not_started；永不触发模型或消耗生成额度，返回保存的 Prompt/Schema 版本。
       security:
@@ -1156,10 +1150,10 @@ paths:
           $ref: '#/components/responses/DependencyUnavailable'
     post:
       operationId: generateStrategy
-      summary: 显式生成或版本绑定重试策略（计划）
+      summary: 显式生成或版本绑定重试策略
       tags:
       - 辩论
-      x-implementation-status: planned
+      x-implementation-status: implemented
       x-task: T14-STYLE
       description: 创建会话零模型调用；仅用户点击触发。会话下单份策略，用用户立场和保存的 ai_style 破题。首次与失败重试只允许无任何 turn 时认领；会话行锁与首轮串行检查。成功后不可重生成。共享 Gate 6/分钟、20/UTC日、单用户1/进程2并发；每次认领最多一次模型调用，失败计次。60秒请求/45秒模型/3秒事务/90秒租约，过期扫描与版本条件写回。GET/重放不调用模型。retry=false
         遇 failed 返回状态；retry=true 只在 failed 且版本匹配时新认领，否则冲突只查。提交不明省略 details。
@@ -1450,7 +1444,7 @@ components:
       - aggressive
       - empathic
       - data
-      description: 陪练 AI 的辩手流派，logical 逻辑型、aggressive 进攻型、empathic 共情型、data 数据型；仅改变话术/论证风格，不改变轮次、立场、状态机或配额。Phase 3 目标允许创建时自主选择，创建后不可修改；历史读取保存值。当前 Phase 2 创建仍固定 logical，选择增量尚未实现。
+      description: 陪练 AI 的辩手流派，logical 逻辑型、aggressive 进攻型、empathic 共情型、data 数据型；仅改变话术/论证风格，不改变轮次、立场、状态机或配额。创建时自主选择，创建后不可修改；历史读取保存值。
     Stance:
       type: string
       enum:
@@ -1733,8 +1727,8 @@ components:
         ai_style:
           $ref: '#/components/schemas/AIStyle'
           default: logical
-          description: Phase 3 计划字段，尚未实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
-          x-implementation-status: planned
+          description: T14-STYLE 已实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
+          x-implementation-status: implemented
           x-task: T14-STYLE
     Debate:
       type: object

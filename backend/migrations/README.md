@@ -1,6 +1,6 @@
 # T02 版本化数据库迁移
 
-当前共十二个版本：六张表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十三个版本：六张初始表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展及一张策略表。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/planning/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
@@ -76,9 +76,9 @@ Pop-Location
 - **两段式默认值必须有。** 先 `ADD COLUMN mode ... DEFAULT 'quick_3'` 使既有行填充为 `quick_3`（历史三轮语义不变），随后 `ALTER COLUMN mode SET DEFAULT 'standard_4'` 使新插入行使用 4 轮标准赛制。两步都是元数据操作，不改写既有行；若只做一步，要么旧会话语义错，要么新赛制等于没上线。
 - **不含数据回填。** 既有 `completed_rounds` 原值保留，不回填、不补轮、不重算 `status`。历史会话按只读语义处理，新赛制只影响新建会话。
 
-滑轮次上限的同时，[迁移集成测试](../tools/migrate/integration_test.go) 中三条以“第 4 轮/4 轮必被拒”为断言的用例已改为以 7 为越界值，并补充 `mode`/`ai_style` 的合法值与 PAD SPACE 反例。CI 的预期版本计数同步为 `applied=12`。
+滑轮次上限的同时，[迁移集成测试](../tools/migrate/integration_test.go) 中三条以“第 4 轮/4 轮必被拒”为断言的用例已改为以 7 为越界值，并补充 `mode`/`ai_style` 的合法值与 PAD SPACE 反例。00012 当时 CI 的预期版本计数为 `applied=12`，当前为 `applied=13`（见末节）。
 
-本轮从已有 1–11 的测试库实际新增 `applied=1`，重跑 `applied=0`；当前空库预期 `applied=12`，本轮未新建空库重测。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
+00012 阶段从已有 1–11 的测试库实际新增 `applied=1`，重跑 `applied=0`；当时空库预期 `applied=12`，未新建空库重测；当前空库预期为 13，交由 PR CI 实际验证。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
 
 新增集成测试覆盖异常历史在 up/status 下拒绝、合法前缀继续、既有异常枚举阻止 ALTER 和种子冲突回滚。独立探针表保留且每次运行增加，不改正式历史，不清理旧数据。默认仍跳过真实数据库测试。
 
@@ -126,3 +126,11 @@ Remove-Item Env:SIYIGE_MIGRATION_TEST, Env:SIYIGE_MIGRATION_PASSWORD_FILE
 Goose 根库运行时只引入其所需的少量通用包。`go mod tidy` 还会下载 Goose 自身测试使用的 SQLite 等元数据，本工具未导入 SQLite，不把它用于项目测试。完整锁定见工具 `go.mod/go.sum`。
 
 官方依据：[Goose v3.29.0](https://github.com/pressly/goose/tree/v3.29.0)、[Provider 与选项](https://github.com/pressly/goose/blob/v3.29.0/provider_options.go)、[SQL 注解](https://pressly.github.io/goose/documentation/annotations/)、[MySQL 原子 DDL 与隐式提交](https://dev.mysql.com/doc/refman/8.4/en/atomic-ddl.html)、[MySQL 命名锁](https://dev.mysql.com/doc/refman/8.4/en/locking-functions.html)、[驱动 Charset 选项](https://github.com/go-sql-driver/mysql/blob/v1.10.1/dsn.go)。
+
+## T14-STYLE / 00013 策略表
+
+2026-11-14 新增 `00013_create_debate_strategies.sql`，单条前向建表，复用总结表的状态、尝试版本、租约、模型/Prompt/用量与 UTC 元数据列；唯一 `debate_id`、RESTRICT 外键和字节精确状态 CHECK。策略不进入 messages，不改 completed_rounds。流派继续使用既有 debates.ai_style，无重复流派列。
+
+在固定 `127.0.0.1:13307/siyige_test`、`siyige_test_migrator` 实际从 12 升到 13，输出 `applied=1`；隔离迁移测试重跑 `applied=0`，历史共 0–13、八张业务表、七条外键。CI 空库预期同步为 `applied=13`，旧迁移文件保持原样。未迁移开发或生产库。后续下一候选编号为 00014，实施前再次核对远程分支。
+
+业务专项证据、测试环境与启动见 [后端验收记录](../../docs/acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。

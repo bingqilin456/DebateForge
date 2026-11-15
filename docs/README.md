@@ -39,6 +39,8 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 
 ## 历史计划与验收证据
 
+- Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。B1 两项真实故障联调待补，B2 未交付，完整 A4/B3 未通过；PR #19 已合并，无法恢复草稿。
+
 - T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及 B1/B2/B3 等待项](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。A 准备技术通过，完整 A/B Fake 整合与真实体验均未验收。
 
 - T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。

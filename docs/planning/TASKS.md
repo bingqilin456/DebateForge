@@ -179,6 +179,8 @@ T07-PREP-01 已修订 PLAN 当前状态与历史阶段快照。T07-PREP-02 已�
 
 ## Phase 3：赛制流式、破局亮点与质量攻坚
 
+2026-11-15 A 的 B1 补测支线：基于 72d2e3d，在独立 `codex/p3-a-strategy-fake` 实现仅本地 Fake 的按账号、逐会话首败后显式 retry 与延迟 generating/202 查询恢复装配；真实 Service/Repository/Gate/MySQL HTTP 技术验证通过，见 [专项交接](../acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md) 和 [运行说明](../../infra/strategy-fake/README.md)。本轮授权 Commit/普通 Push 此功能分支；不更新 PR #19、不整合、不真实调用、不部署。交由 A 整合窗口接入；B1 浏览器补测、负责人确认及 Phase 3 结项仍待完成。
+
 必要 P0 为 T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL；增强 P1 为 T14-REPORT、T15-B-FALLACY、T15-B-DEMO。T14-Plus、T15-B 仅保留为任务组名称，不再整体定级。Phase 2 已结项，A1 为 T13 与契约定稿；A2 已实现 T14-STYLE 后端，T15-Core 后端与本地三链路已技术验证；完整前端验收及阶段结项保持未完成。阶段门槛为安全与故障回归、无高优先级核心缺陷、10 场真实模型质量评测、流派选择与策略卡、SSE 专项及真实模型浏览器 Demo 验收通过。P1 缺席不阻塞 MVP 核心验收，须登记未交付范围；P2 仅留需求池。依据 [ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 与 [ADR-024](../decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。
 
 排序使用 Sprint S2 / S3 **目标窗口（非承诺工期）**，与 [PLAN](PLAN.md) 一致，不设固定日历期限。阶段内按依赖选择任务，不要求按编号串行。

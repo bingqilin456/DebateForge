@@ -1,0 +1,38 @@
+# A 独占本地后端验证；不启动 demo 的 edge，不依赖前端 dist。
+name: siyige-p3-a-strategy-fake
+services:
+  app:
+    extends:
+      file: ../demo/compose.yaml
+      service: app
+    image: siyige-p3-a-strategy-fake-app:local
+    ports: ["127.0.0.1:18081:8080"]
+    networks: [ingress, demo]
+    environment:
+      P3_STRATEGY_FAKE_FAILURE_USER_ID: ${P3_STRATEGY_FAKE_FAILURE_USER_ID:-}
+      P3_STRATEGY_FAKE_SLOW_USER_ID: ${P3_STRATEGY_FAKE_SLOW_USER_ID:-}
+  mysql:
+    extends:
+      file: ../demo/compose.yaml
+      service: mysql
+  migrate:
+    extends:
+      file: ../demo/compose.yaml
+      service: migrate
+    image: siyige-p3-a-strategy-fake-migrate:local
+networks:
+  ingress: {}
+  demo:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+volumes:
+  demo-data:
+  demo-ledger:
+secrets:
+  root_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/root.txt
+  app_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/app.txt
+  migrator_password:
+    file: ${P3_DEMO_SECRETS_DIR:?set P3_DEMO_SECRETS_DIR}/migrator.txt

@@ -11,11 +11,13 @@ const StrategySchemaVersion = 1
 const MaxStrategyJSONBytes = 8 << 10
 
 type StrategyRequest struct {
-	UserID     uint64
-	Mode       Mode
-	AIStyle    AIStyle
-	Topic      Topic
-	UserStance Stance
+	// AttemptVersion 来自服务端已认领策略行，仅供本地 Fake 确定性故障；不进入 Prompt。
+	AttemptVersion uint64
+	UserID         uint64
+	Mode           Mode
+	AIStyle        AIStyle
+	Topic          Topic
+	UserStance     Stance
 }
 type Strategy struct {
 	Thesis    string   `json:"thesis"`

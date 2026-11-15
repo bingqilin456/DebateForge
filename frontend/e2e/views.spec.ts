@@ -21,6 +21,7 @@ async function api(page: Page, handler: (route: Route, url: URL) => Promise<void
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     if (url.pathname === '/api/v1/auth/me') return json(route, session)
+    if (url.pathname.endsWith('/strategy') && route.request().method() === 'GET') return json(route, { status: 'not_started', attempt_version: null })
     await handler(route, url)
   })
 }
@@ -33,7 +34,7 @@ for (const stance of ['pro', 'con'] as const) {
       if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
       if (route.request().method() === 'POST') {
         creates++
-        expect(route.request().postDataJSON()).toEqual({ topic_id: '2', user_stance: stance })
+        expect(route.request().postDataJSON()).toEqual({ topic_id: '2', user_stance: stance, ai_style: 'logical' })
         expect(route.request().headers()['x-csrf-token']).toBe(session.csrf_token)
         return json(route, result, 201)
       }

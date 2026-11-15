@@ -91,7 +91,7 @@ describe('T08 辩题列表与立场选择', () => {
     await vi.waitFor(() => expect(created).toHaveBeenCalledWith(result))
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!
     expect(post[0]).toBe('/api/v1/debates')
-    expect(JSON.parse(String(post[1]?.body))).toEqual({ topic_id: '2', user_stance: stance })
+    expect(JSON.parse(String(post[1]?.body))).toEqual({ topic_id: '2', user_stance: stance, ai_style: 'logical' })
     expect(new Headers(post[1]?.headers).get('X-CSRF-Token')).toBe('csrf-test')
     expect(openDebate).not.toHaveBeenCalled()
     submit(host); await nextTick()

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
+import type { AIStyle } from '../../types/api'
+import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
 import { createDebateApi, hasNonWhitespace, isEntityId, type Topic, type Stance } from '../../api/debate'
 import { createFirstTurnState, feedback } from '../../debate/firstTurn'
 import SummaryPanel from './SummaryPanel.vue'
+import StrategyPanel from './StrategyPanel.vue'
 
 const props = defineProps<{ auth: AuthState; route: string }>()
 const emit = defineEmits<{
@@ -21,6 +24,7 @@ const {
 const topics = ref<Topic[]>([])
 const topicId = ref('')
 const stance = ref<Stance>('pro')
+const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
 const loadingTopics = ref(false)
 const topicError = ref('')
 const createAttempted = ref(false)
@@ -55,7 +59,7 @@ async function loadTopics() {
 async function create() {
   if (locked.value || !selectedTopic.value) return
   createAttempted.value = true
-  await panel.start(topicId.value, stance.value)
+  await panel.start(topicId.value, stance.value, aiStyle.value)
 }
 
 async function submit() {
@@ -112,6 +116,11 @@ onUnmounted(() => { active = false; panel.dispose() })
           <option value="pro">正方</option>
           <option value="con">反方</option>
         </select>
+        <label for="ai-style">AI 陪练流派</label>
+        <select id="ai-style" v-model="aiStyle" name="ai_style" :disabled="locked">
+          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+        <p class="muted">默认逻辑型，创建后固定，不提供赛制或流派修改入口。</p>
         <p class="muted">AI 将持相反立场，由你先发言，共进行 4 轮标准赛（立论/驳立论/自由辩/结辩）与复盘总结。</p>
         <Button type="primary" html-type="submit" :loading="busy" :disabled="locked || !selectedTopic">
           {{ createAttempted && !busy ? '另建新会话' : '创建会话' }}
@@ -127,10 +136,13 @@ onUnmounted(() => { active = false; panel.dispose() })
       <p v-if="detail" class="muted">
         你：{{ detail.debate.user_stance === 'pro' ? '正方' : '反方' }} ·
         AI：{{ detail.debate.ai_stance === 'pro' ? '正方' : '反方' }} ·
+        <span :data-ai-style="detail.debate.ai_style">流派：{{ AI_STYLE_LABELS[detail.debate.ai_style] }}（{{ detail.debate.ai_style }}）</span> ·
         赛制：{{ detail.debate.mode === 'standard_4' ? '四轮标准赛' : '三轮快速赛' }} ·
         已完成 {{ detail.debate.completed_rounds }} / {{ detail.debate.total_rounds }} 轮
       </p>
       <p class="muted">会话 {{ id }} · 刷新可恢复当前会话</p>
+
+      <StrategyPanel v-if="detail" :auth="auth" :detail="detail" :disabled="locked || uncertain" />
 
       <div v-for="turn in detail?.turns" :key="turn.id" class="turn-block" :data-round-no="turn.round_no">
         <div class="round-title">第 {{ turn.round_no }} 轮（尝试 v{{ turn.attempt_version }}）</div>

@@ -1,6 +1,8 @@
 import { authState } from '../auth/state'
 import type {
   AIStyle,
+  StrategyStatus,
+  StrategyRequest,
   CreateDebateRequest,
   Debate,
   DebateDetail,
@@ -150,6 +152,21 @@ function isDetail(value: unknown): value is DebateDetail {
     && (value.debate.status === 'active' ? value.summary_status.status === 'not_started' : true)
 }
 
+function isStrategyStatus(value: unknown): value is StrategyStatus {
+  if (!isRecord(value)) return false
+  const keys = Object.keys(value).length
+  if (value.status === 'not_started') return keys === 2 && value.attempt_version === null
+  if (!Number.isSafeInteger(value.attempt_version) || Number(value.attempt_version) < 1) return false
+  if (value.status === 'generating') return keys === 2
+  if (value.status === 'failed') return keys === 3 && typeof value.error_code === 'string' && errorCodes.includes(value.error_code)
+  if (value.status !== 'completed' || keys !== 6 || value.schema_version !== 1 || typeof value.prompt_version !== 'string' || value.prompt_version.length === 0
+    || !isAIStyle(value.ai_style) || !isRecord(value.content) || Object.keys(value.content).length !== 3) return false
+  const validText = (v: unknown): v is string => text(v, 300)
+    && [...v].every(char => { const point = char.codePointAt(0)!; return point < 0xd800 || point > 0xdfff })
+  const validList = (v: unknown): v is string[] => Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(validText)
+  return validText(value.content.thesis) && validList(value.content.arguments) && validList(value.content.risks)
+    && new TextEncoder().encode(JSON.stringify(value.content)).length <= 8192
+}
 export function createDebateApi(client: ApiClient = authState.client) {
   async function listTopics(): Promise<Topic[]> {
     const data = await client.request('/api/v1/topics', {
@@ -169,9 +186,9 @@ export function createDebateApi(client: ApiClient = authState.client) {
     })
   }
 
-  function createDebate(topicId: string, stance: Stance): Promise<Debate>
+  function createDebate(topicId: string, stance: Stance, aiStyle?: AIStyle): Promise<Debate>
   function createDebate(request: CreateDebateRequest): Promise<Debate>
-  async function createDebate(topicOrRequest: string | CreateDebateRequest, stance?: Stance): Promise<Debate> {
+  async function createDebate(topicOrRequest: string | CreateDebateRequest, stance?: Stance, aiStyle?: AIStyle): Promise<Debate> {
     const topicId = typeof topicOrRequest === 'string'
       ? topicOrRequest
       : isRecord(topicOrRequest) && typeof topicOrRequest.topic_id === 'string'
@@ -182,6 +199,8 @@ export function createDebateApi(client: ApiClient = authState.client) {
       : isRecord(topicOrRequest)
         ? topicOrRequest.user_stance
         : undefined
+    const resolvedStyle = typeof topicOrRequest === 'string' ? aiStyle : topicOrRequest?.ai_style
+    if (resolvedStyle !== undefined && !isAIStyle(resolvedStyle)) throw new ApiError('format', 'AI 流派参数无效。')
     const validTopicId = entityId(topicId)
     if (!isStance(resolvedStance)) {
       throw new ApiError('format', '立场参数无效。')
@@ -189,7 +208,7 @@ export function createDebateApi(client: ApiClient = authState.client) {
     return client.request('/api/v1/debates', {
       method: 'POST',
       expectedStatus: 201,
-      body: { topic_id: validTopicId, user_stance: resolvedStance },
+      body: { topic_id: validTopicId, user_stance: resolvedStance, ...(resolvedStyle === undefined ? {} : { ai_style: resolvedStyle }) },
       validate: isDebate,
     })
   }
@@ -201,13 +220,26 @@ export function createDebateApi(client: ApiClient = authState.client) {
   }
 
   return {
+    async getStrategy(id: string): Promise<StrategyStatus> {
+      return client.request(`/api/v1/debates/${entityId(id)}/strategy`, { expectedStatus: 200, validate: isStrategyStatus })
+    },
+    async generateStrategy(id: string, body: StrategyRequest = {}): Promise<StrategyStatus> {
+      // 精确遵守新接口的严格输入；不复用总结的 Boolean() 强制转换。
+      if (!isRecord(body) || Object.keys(body).some(key => key !== 'retry' && key !== 'expected_attempt_version')
+        || (body.retry !== undefined && typeof body.retry !== 'boolean')
+        || (body.retry === true
+          ? !Number.isSafeInteger(body.expected_attempt_version) || body.expected_attempt_version < 1
+          : 'expected_attempt_version' in body)) throw new ApiError('format', '策略重试参数无效。')
+      return client.request(`/api/v1/debates/${entityId(id)}/strategy`, {
+        method: 'POST', expectedStatus: [200, 201, 202], timeoutMs: GENERATION_TIMEOUT_MS, body,
+        validate: (value): value is StrategyStatus => isStrategyStatus(value) && value.status !== 'not_started',
+      })
+    },
     topics: listTopics,
     listTopics,
     list: listDebates,
     listDebates,
-    create(topicId: string, stance: Stance): Promise<Debate> {
-      return createDebate(topicId, stance)
-    },
+    create: createDebate,
     createDebate,
     detail: getDebateDetail,
     getDebateDetail,

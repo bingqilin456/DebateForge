@@ -1,3 +1,4 @@
+import type { AIStyle } from '../types/api'
 import { computed, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { hasNonWhitespace, type DebateApi, type DebateDetail, type Stance, type Turn } from '../api/debate'
@@ -165,12 +166,12 @@ export function createFirstTurnState(api: DebateApi) {
     await query()
   }
 
-  async function start(topicId: string, stance: Stance) {
+  async function start(topicId: string, stance: Stance, aiStyle?: AIStyle) {
     if (!active || busy.value || id.value) return
     busy.value = true
     notice.value = ''
     try {
-      const debate = await api.create(topicId, stance)
+      const debate = aiStyle === undefined ? await api.create(topicId, stance) : await api.create(topicId, stance, aiStyle)
       if (active) {
         id.value = debate.id
         autoSummaryForId = null

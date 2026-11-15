@@ -69,7 +69,7 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
   expect(host.querySelector('img')).toBeNull()
   expect(location.hash).toBe('#debate=123')
   expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/debates'))).toHaveLength(1)
-  expect(fetchMock.mock.calls.find(([url]) => String(url).endsWith('/debates'))?.[1]?.body).toBe('{"topic_id":"1","user_stance":"con"}')
+  expect(fetchMock.mock.calls.find(([url]) => String(url).endsWith('/debates'))?.[1]?.body).toBe('{"topic_id":"1","user_stance":"con","ai_style":"logical"}')
   click('退出登录')
   await vi.waitFor(() => expect(host.textContent).toContain('退出结果'))
   click('恢复登录状态')

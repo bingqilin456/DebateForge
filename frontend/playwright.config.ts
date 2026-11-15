@@ -12,6 +12,9 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:5173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // 本地可复用已安装的浏览器；不设置时继续使用 CI 原有 Chromium。
+    launchOptions: process.env.SIYIGE_BROWSER_EXECUTABLE
+      ? { executablePath: process.env.SIYIGE_BROWSER_EXECUTABLE } : undefined,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

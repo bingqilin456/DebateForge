@@ -21,11 +21,19 @@ func (unavailableGenerator) Generate(context.Context, ai.Request) (ai.Result, er
 }
 
 func configuredGenerator(ctx context.Context, logger *slog.Logger) (ai.Generator, error) {
+	failureUser, slowUser, err := strategyFakeUsers()
+	if err != nil {
+		return nil, err
+	}
 	switch os.Getenv("AI_MODE") {
 	case "", "disabled":
 		return unavailableGenerator{}, nil
 	case "fake":
-		return configuredFakeGenerator()
+		g, err := configuredFakeGenerator()
+		if err != nil || (failureUser == 0 && slowUser == 0) {
+			return g, err
+		}
+		return localStrategyFake{localFakeCapabilities: g.(localFakeCapabilities), failureUser: failureUser, slowUser: slowUser, delay: 8 * time.Second}, nil
 	case "deepseek":
 		return configuredTrialGenerator(ctx, logger)
 	case "local-demo":

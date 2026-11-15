@@ -2,7 +2,7 @@
 
 当前任务状态以各阶段表格的「当前状态」栏为准，阶段目标和前置门槛见 [PLAN](PLAN.md)，验收编号见 [PRD](../product/PRD.md)。具体验收及授权执行记录见 [验收与交接导航](../README.md#历史计划与验收证据)。
 
-T06/T07/Phase 1 已结项，Phase 2 经 PR #17 合入 main 结项。2026-11-15 在 A 基线 `72d2e3d20a62396fb245282e18c736e145d6cd25` 上无冲突合入 B1 指定 `a1e613b6c04243e6599316fa580a9242aa2d8060`，保留 A 后端、契约与费用保护成果；前端 typecheck、255 项单测、build 和 11 项浏览器 Mock 通过，见 [整合记录](../acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)。B1 两项真实故障联调待补，B2 未交付，完整 A4/B3 未通过；真实 Demo/10 场评测未执行，Phase 3 未结项。PR #19 已于北京时间 2026-11-15 01:58:56 合并，无法恢复草稿，本轮只更新说明，不合 main、不真实调用、不部署，不修改另一窗口 Fake 装配或重启/重置共享服务与数据库。T02/T03 延期、T04 结算边界与 T07-COST-01 保留。
+T06/T07/Phase 1 已结项，Phase 2 经 PR #17 合入 main 结项。2026-11-15 在 A 基线 `72d2e3d20a62396fb245282e18c736e145d6cd25` 上无冲突合入 B1 指定 `a1e613b6c04243e6599316fa580a9242aa2d8060`，保留 A 后端、契约与费用保护成果；前端 typecheck、255 项单测、build 和 11 项浏览器 Mock 通过，见 [整合记录](../acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)。策略故障装配指定 `4c5ffbbb8bfb797243b6bb84d7fa28312e78e917` 已接入，并在 APP_ENV=test / 127.0.0.1:13307/siyige_test / AI_MODE=fake 实测失败重试、generating/202、取消恢复及兼容 SSE；见 [固定 test 复核](../acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md#整合后固定-test-目标复核)。B1 两项真实浏览器补测待 B，B2 未交付，完整 A4/B3 未通过；真实 Demo/10 场评测未执行，Phase 3 未结项。PR #19 已于北京时间 2026-11-15 01:58:56 合并，无法恢复草稿，本轮只更新说明，不合 main、不真实调用、不部署，不修改另一窗口 Fake 装配或重启/重置共享服务与数据库。T02/T03 延期、T04 结算边界与 T07-COST-01 保留。
 
 T05/T08 的接口分工以本清单为准。历史实施小节中的状态、授权和待办仅对应当时的实施边界，后续结论见任务表和对应验收记录。现行健康端点见 [API](../api/API.md) 和 [ADR-012](../decisions/DECISIONS.md#adr-012-健康端点统一为当前-gin-路径)。
 
@@ -178,6 +178,8 @@ T07-PREP-01 已修订 PLAN 当前状态与历史阶段快照。T07-PREP-02 已�
 前端不必等待全部后端完成才准备页面，但最终验收必须使用真实链路。A 修改 API 时同步 DTO、示例和受影响页面，不静默改字段；T09/T10 上线即复用既有限额和权限机制。
 
 ## Phase 3：赛制流式、破局亮点与质量攻坚
+
+2026-11-15 A 的 B1 补测支线：基于 72d2e3d，在独立 `codex/p3-a-strategy-fake` 实现仅本地 Fake 的按账号、逐会话首败后显式 retry 与延迟 generating/202 查询恢复装配；真实 Service/Repository/Gate/MySQL HTTP 技术验证通过，见 [专项交接](../acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md) 和 [运行说明](../../infra/strategy-fake/README.md)。源支线当时仅授权 Commit/普通 Push 功能分支。后续固定基线交接已将指定 4c5ffbb 合入 A，固定 test 库与 Fake 的后端 HTTP 复核通过，具体见上述记录末节；PR #19 仅更新说明（已合并，不能恢复草稿），不合 main、不真实调用、不部署。B1 浏览器补测、B2/B3、完整 A4、负责人确认及 Phase 3 结项仍待完成。
 
 必要 P0 为 T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL；增强 P1 为 T14-REPORT、T15-B-FALLACY、T15-B-DEMO。T14-Plus、T15-B 仅保留为任务组名称，不再整体定级。Phase 2 已结项，A1 为 T13 与契约定稿；A2 已实现 T14-STYLE 后端，T15-Core 后端与本地三链路已技术验证；完整前端验收及阶段结项保持未完成。阶段门槛为安全与故障回归、无高优先级核心缺陷、10 场真实模型质量评测、流派选择与策略卡、SSE 专项及真实模型浏览器 Demo 验收通过。P1 缺席不阻塞 MVP 核心验收，须登记未交付范围；P2 仅留需求池。依据 [ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 与 [ADR-024](../decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。
 

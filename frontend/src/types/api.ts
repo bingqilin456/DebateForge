@@ -146,3 +146,8 @@ export type StrategyStatus =
 export type StrategyRequest =
   | { retry?: false }
   | { retry: true; expected_attempt_version: number }
+
+export interface StreamStart { turn_id: string; request_id: string }
+export interface StreamDone { turn: Turn; completed_rounds: number; status: DebateStatus }
+export type StreamUpdate = ({ type: 'start' } & StreamStart) | { type: 'delta'; text: string }
+export type TurnStreamResult = { kind: 'done'; data: StreamDone } | { kind: 'pending'; data: TurnResult }

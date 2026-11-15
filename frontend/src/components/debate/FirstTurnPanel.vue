@@ -18,7 +18,7 @@ const emit = defineEmits<{
 const api = createDebateApi(props.auth.client)
 const panel = createFirstTurnState(api)
 const {
-  detail, busy, uncertain, draft, notice, id,
+  detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
 } = panel
 const topics = ref<Topic[]>([])
@@ -170,6 +170,14 @@ onUnmounted(() => { active = false; panel.dispose() })
         </div>
       </div>
 
+      <section v-if="streaming" class="stream-preview" data-stream-preview aria-label="实时回复预览" :aria-busy="streaming">
+        <h3>第 {{ streamRound }} 轮 · 正在接收回复</h3>
+        <p class="muted">以下为临时片段，尚未确认保存；提交确认后才计入正式消息和完成轮数。</p>
+        <p class="stream-text" data-stream-text aria-live="polite">{{ streamText || '正在等待首个回复片段…' }}</p>
+        <Button data-stop-stream :disabled="props.auth.state.pending" @click="panel.cancelStream">停止等待并查询</Button>
+        <p class="muted">断线或停止等待后先查询已保存状态，不自动重新生成。</p>
+      </section>
+
       <form v-if="detail && nextRound !== null" data-first-turn @submit.prevent="submit">
         <label for="first-content">{{ nextRound === 1 ? '第一轮发言' : `第 ${nextRound} 轮发言` }}</label>
         <textarea
@@ -229,6 +237,9 @@ time { color: #526578; font-size: 12px; }
 .turn-generating { color: #234f72; font-size: 14px; }
 .turn-failed { margin: 12px 0; padding: 16px; border: 1px solid #e6b8be; border-radius: 10px; background: #fff5f6; color: #8a2330; }
 .turn-failed p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.stream-preview { margin: 20px 0; padding: 18px; border: 1px dashed #7296b5; border-radius: 10px; background: #f5faff; }
+.stream-preview h3 { margin-top: 0; }
+.stream-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 3em; }
 .heading-actions, .panel-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .panel-actions { margin-top: 24px; }
 </style>

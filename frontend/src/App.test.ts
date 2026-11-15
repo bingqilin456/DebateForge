@@ -3,12 +3,19 @@ import { createApp, h, nextTick, type App as VueApp } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App.vue'
 import { createAuthState } from './auth/state'
+import type { Turn } from './types/api'
 
 const fetchMock = vi.fn<typeof fetch>()
 let app: VueApp | undefined
 let host: HTMLDivElement
 function response(data: unknown, status = 200) {
   return new Response(JSON.stringify({ data, request_id: 'req-app' }), { status, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-app' } })
+}
+function streamResponse(turn: Turn, completed: number, total: number) {
+  const frame = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+  return new Response(frame('start', { turn_id: turn.id, request_id: 'req-app' })
+    + frame('done', { turn, completed_rounds: completed, status: completed === total ? 'completed' : 'active' }),
+  { headers: { 'Content-Type': 'text/event-stream', 'X-Request-ID': 'req-app' } })
 }
 function failure(status: number, code: string) {
   return new Response(JSON.stringify({ error: { code, message: '受控错误' }, request_id: 'req-app' }), { status, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-app' } })
@@ -47,9 +54,10 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
     if (String(url).endsWith('/topics')) return response({ items: [debate.topic] })
     if (String(url).endsWith('/auth/logout')) return failure(503, 'dependency_unavailable')
     if (String(url).endsWith('/debates/123')) return response({ debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
-    if (String(url).endsWith('/turns')) {
-      const body = JSON.parse(String(init?.body))
-      return response({ turn: { id: '2', round_no: 1, client_request_id: body.client_request_id, status: 'completed', attempt_version: 1, error_code: null, messages: [ { id: '3', role: 'user', content: body.content, created_at: debate.created_at }, { id: '4', role: 'assistant', content: '<img src=x onerror=alert(1)>', created_at: debate.created_at } ] }, completed_rounds: 1, query_url: '/api/v1/debates/123' }, 201)
+    if (String(url).endsWith('/strategy')) return response({ status: 'not_started', attempt_version: null })
+    if (String(url).endsWith('/turns/stream')) {
+      const body = JSON.parse(String(init?.body)) as { client_request_id: string; content: string }
+      return streamResponse({ id: '2', round_no: 1, client_request_id: body.client_request_id, status: 'completed', attempt_version: 1, error_code: null, messages: [ { id: '3', role: 'user', content: body.content, created_at: debate.created_at }, { id: '4', role: 'assistant', content: '<img src=x onerror=alert(1)>', created_at: debate.created_at } ] }, 1, debate.total_rounds)
     }
     return response(debate, 201)
   })
@@ -112,7 +120,8 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
     if (u.endsWith('/debates/123')) {
       return response({ debate: baseDebate, turns, summary_status: summaryState })
     }
-    if (u.endsWith('/debates/123/turns')) {
+    if (u.endsWith('/strategy')) return response({ status: 'not_started', attempt_version: null })
+    if (u.endsWith('/debates/123/turns/stream')) {
       const body = JSON.parse(String(init?.body))
       const rNo = Number(body.round_no)
       if (rNo === 2 && turns.length === 1) {
@@ -138,7 +147,7 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
       turns.push(turn)
       baseDebate.completed_rounds = rNo
       if (rNo === 3) baseDebate.status = 'completed'
-      return response({ turn, completed_rounds: rNo, query_url: '/api/v1/debates/123' }, 201)
+      return streamResponse(turn, rNo, baseDebate.total_rounds)
     }
     if (u.endsWith('/debates/123/turns/22/retry')) {
       const turn = {

@@ -1,6 +1,10 @@
+import { readSSE } from './sse'
 import { authState } from '../auth/state'
 import type {
   AIStyle,
+  StreamDone,
+  StreamUpdate,
+  TurnStreamResult,
   StrategyStatus,
   StrategyRequest,
   CreateDebateRequest,
@@ -22,7 +26,7 @@ import type {
   TurnResult,
   TurnStatus,
 } from '../types/api'
-import { ApiError, GENERATION_TIMEOUT_MS, isRecord, type ApiClient } from './client'
+import { ApiError, GENERATION_TIMEOUT_MS, isRecord, streamError, type ApiClient } from './client'
 
 export type {
   CreateDebateRequest,
@@ -220,6 +224,54 @@ export function createDebateApi(client: ApiClient = authState.client) {
   }
 
   return {
+    async stream(id: string, content: string, key: string, roundNo: number, totalRounds: number,
+      update: (event: StreamUpdate) => void, signal?: AbortSignal): Promise<TurnStreamResult> {
+      const debateId = entityId(id)
+      if (!Number.isInteger(roundNo) || roundNo < 1 || roundNo > totalRounds || !uuid.test(key)
+        || !text(content, 2000)) throw new ApiError('format', '轮次输入或请求标识无效。')
+      const belongs = (value: unknown): value is Turn => isTurn(value) && value.round_no === roundNo
+        && value.client_request_id === key && value.messages[0]?.content === content
+      return client.requestStream<StreamDone, TurnResult>('/api/v1/debates/' + debateId + '/turns/stream', {
+        body: { round_no: roundNo, content, client_request_id: key }, signal,
+        validatePending: (value): value is TurnResult => isRecord(value) && belongs(value.turn)
+          && value.turn.status === 'generating' && value.completed_rounds === roundNo - 1
+          && value.query_url === '/api/v1/debates/' + debateId,
+        consume: async (response, requestId, abort) => {
+          let started: string | null = null
+          let result: StreamDone | null = null
+          let characters = 0
+          const invalid = () => new ApiError('format', '流式事件不符合当前会话约定，请查询状态。')
+          if (!response.body) throw invalid()
+          await readSSE(response.body, (name, value) => {
+            if (!isRecord(value)) throw invalid()
+            if (name === 'start') {
+              if (started || Object.keys(value).length !== 2 || !isEntityId(value.turn_id) || value.request_id !== requestId) throw invalid()
+              started = value.turn_id
+              update({ type: 'start', turn_id: started, request_id: requestId })
+            } else if (name === 'delta') {
+              if (!started || Object.keys(value).length !== 1 || typeof value.text !== 'string'
+                || [...value.text].some(char => { const point = char.codePointAt(0)!; return point >= 0xd800 && point <= 0xdfff })) throw invalid()
+              characters += [...value.text].length
+              if (characters > 2000) throw invalid()
+              update({ type: 'delta', text: value.text })
+            } else if (name === 'done') {
+              if (!started || Object.keys(value).length !== 3 || !belongs(value.turn) || value.turn.id !== started
+                || value.turn.status !== 'completed' || !Number.isInteger(value.completed_rounds)
+                || Number(value.completed_rounds) < roundNo || Number(value.completed_rounds) > totalRounds
+                || value.status !== (value.completed_rounds === totalRounds ? 'completed' : 'active')) throw invalid()
+              result = { turn: value.turn, completed_rounds: Number(value.completed_rounds), status: value.completed_rounds === totalRounds ? 'completed' : 'active' }
+              return true
+            } else if (name === 'error') {
+              if (value.request_id !== requestId || !isRecord(value.error) || typeof value.error.code !== 'string'
+                || !value.error.code.trim() || typeof value.error.message !== 'string' || !value.error.message.trim()) throw invalid()
+              throw streamError(value.error.code, requestId)
+            } else throw invalid()
+          }, abort)
+          if (!result) throw new ApiError('network', '连接结束但未收到提交确认，请查询已保存状态。')
+          return result
+        },
+      })
+    },
     async getStrategy(id: string): Promise<StrategyStatus> {
       return client.request(`/api/v1/debates/${entityId(id)}/strategy`, { expectedStatus: 200, validate: isStrategyStatus })
     },
@@ -334,5 +386,5 @@ export type DebateApi = Pick<
   'topics' | 'list' | 'create' | 'detail' | 'send' | 'retryTurn' | 'summary' | 'requestSummary'
 > & Partial<Pick<
   ReturnType<typeof createDebateApi>,
-  'listTopics' | 'listDebates' | 'createDebate' | 'getDebateDetail'
+  'listTopics' | 'listDebates' | 'createDebate' | 'getDebateDetail' | 'stream'
 >>

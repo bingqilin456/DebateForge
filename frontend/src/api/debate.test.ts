@@ -5,6 +5,7 @@ import {
   getDebateDetail,
   listDebates,
   listTopics,
+  isSummaryContent,
   type SummaryContent,
 } from './debate'
 import { createApiClient } from './client'
@@ -38,18 +39,18 @@ function reply(data: unknown, status = 200) {
 describe('辩论与总结 API 边界', () => {
   it('拒绝无效实体与不可信详情，禁止静默展示损坏响应', async () => {
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: { items: [{ id: '0', title: '题', description: '' }] }, request_id: 'req' }), { headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req' } }))
-    try { await expect(createDebateApi(createApiClient()).topics()).rejects.toMatchObject({ kind: 'format' }) } finally { fetcher.mockRestore() }
+    try { await expect(createDebateApi(createApiClient()).listTopics()).rejects.toMatchObject({ kind: 'format' }) } finally { fetcher.mockRestore() }
   })
 
   it('生成使用 70 秒预算、按会话赛制校验轮次上限与 202，且保留输入原文和相同请求标识', async () => {
     const request = vi.fn().mockResolvedValue({})
     const api = createDebateApi({ request, requestStream: vi.fn() })
-    await api.send('123', ' 原文 ', key)
+    await api.send('123', ' 原文 ', key, 1, 4)
     expect(request).toHaveBeenCalledWith('/api/v1/debates/123/turns', expect.objectContaining({
       timeoutMs: 70_000, expectedStatus: [200, 201, 202],
       body: { round_no: 1, content: ' 原文 ', client_request_id: key },
     }))
-    await api.send('123', '第二轮', key, 2)
+    await api.send('123', '第二轮', key, 2, 4)
     expect(request).toHaveBeenCalledWith('/api/v1/debates/123/turns', expect.objectContaining({
       body: { round_no: 2, content: '第二轮', client_request_id: key },
     }))
@@ -64,11 +65,29 @@ describe('辩论与总结 API 边界', () => {
     await expect(api.detail('../auth/me')).rejects.toMatchObject({ kind: 'format' })
   })
 
+  it.each([NaN, Infinity, 0, -1, 3.5])('拒绝无效会话总轮数 %s，不发起生成', async total => {
+    const request = vi.fn()
+    const api = createDebateApi({ request, requestStream: vi.fn() })
+    await expect(api.send('123', '原文', key, 1, total)).rejects.toMatchObject({ kind: 'format' })
+    await expect(api.stream('123', '原文', key, 1, total, vi.fn())).rejects.toMatchObject({ kind: 'format' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('普通发送与流式入口都拒绝 2001 码点，接受 2000 emoji 原文', async () => {
+    const request = vi.fn().mockResolvedValue({})
+    const api = createDebateApi({ request, requestStream: vi.fn() })
+    await expect(api.send('123', '😀'.repeat(2001), key, 1, 4)).rejects.toMatchObject({ kind: 'format' })
+    await expect(api.stream('123', '😀'.repeat(2001), key, 1, 4, vi.fn())).rejects.toMatchObject({ kind: 'format' })
+    expect(request).not.toHaveBeenCalled()
+    await api.send('123', '😀'.repeat(2000), key, 1, 4)
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('真实 client 接受 202 生成中 DTO，不误判完成', async () => {
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(result(2), 202))
     try {
       const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
-      await expect(api.send('123', '原文', key, 2)).resolves.toMatchObject({ completed_rounds: 1, turn: { round_no: 2, status: 'generating' } })
+      await expect(api.send('123', '原文', key, 2, 4)).resolves.toMatchObject({ completed_rounds: 1, turn: { round_no: 2, status: 'generating' } })
     } finally { fetcher.mockRestore() }
   })
 
@@ -78,7 +97,7 @@ describe('辩论与总结 API 边界', () => {
     if (fault === 'content') data.turn.messages[0]!.content = '另一个请求的原文'
     if (fault === 'messages') data.turn.messages[0]!.role = 'assistant'
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(data, 202))
-    try { await expect(createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' })).send('123', '原文', key)).rejects.toMatchObject({ kind: 'format' }) }
+    try { await expect(createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' })).send('123', '原文', key, 1, 4)).rejects.toMatchObject({ kind: 'format' }) }
     finally { fetcher.mockRestore() }
   })
 
@@ -113,11 +132,11 @@ describe('辩论与总结 API 边界', () => {
       }), { status: 409, headers: { 'Content-Type': 'application/json', 'X-Request-ID': 'req-conflict' } }))
     try {
       const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
-      await expect(api.retryTurn('123', '2', 0)).rejects.toMatchObject({ kind: 'format' })
-      const ok = await api.retryTurn('123', '2', 1)
+      await expect(api.retryTurn('123', '2', 0, 3)).rejects.toMatchObject({ kind: 'format' })
+      const ok = await api.retryTurn('123', '2', 1, 3)
       expect(ok.turn.attempt_version).toBe(2)
       expect(fetcher.mock.calls[0]?.[1]?.body).toBe('{"expected_attempt_version":1}')
-      await expect(api.retryTurn('123', '2', 1)).rejects.toMatchObject({
+      await expect(api.retryTurn('123', '2', 1, 3)).rejects.toMatchObject({
         kind: 'http', status: 409, code: 'attempt_version_conflict',
       })
     } finally { fetcher.mockRestore() }
@@ -135,11 +154,11 @@ describe('辩论与总结 API 边界', () => {
       }, 200))
     try {
       const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
-      await expect(api.requestSummary('123', { retry: true })).rejects.toMatchObject({ kind: 'format' })
-      const created = await api.requestSummary('123')
+      await expect(api.requestSummary('123', { retry: true, totalRounds: 3 })).rejects.toMatchObject({ kind: 'format' })
+      const created = await api.requestSummary('123', { totalRounds: 3 })
       expect(created.status).toBe('completed')
       expect(fetcher.mock.calls[0]?.[1]?.body).toBe('{"retry":false}')
-      await expect(api.requestSummary('123', { retry: true, expectedAttemptVersion: 1 })).rejects.toMatchObject({ kind: 'format' })
+      await expect(api.requestSummary('123', { retry: true, expectedAttemptVersion: 1, totalRounds: 3 })).rejects.toMatchObject({ kind: 'format' })
       expect(fetcher.mock.calls[1]?.[1]?.body).toBe('{"retry":true,"expected_attempt_version":1}')
     } finally { fetcher.mockRestore() }
   })
@@ -161,6 +180,29 @@ describe('辩论与总结 API 边界', () => {
       expect(ok.status).toBe('completed')
     } finally { fetcher.mockRestore() }
   })
+  it.each([3, 4])('重试响应也按当前会话 %s 轮校验上下界', async total => {
+    const data = result(total)
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(data, 202))
+    try {
+      const api = createDebateApi(createApiClient({ getCsrfToken: () => 'test-csrf' }))
+      await expect(api.retryTurn('123', '2', 1, total)).resolves.toMatchObject({ turn: { round_no: total } })
+      fetcher.mockResolvedValue(reply(result(total + 1), 202))
+      await expect(api.retryTurn('123', '2', 1, total)).rejects.toMatchObject({ kind: 'format' })
+      fetcher.mockResolvedValue(reply(result(0), 202))
+      await expect(api.retryTurn('123', '2', 1, total)).rejects.toMatchObject({ kind: 'format' })
+    } finally { fetcher.mockRestore() }
+  })
+
+  it.each([300, 301])('总结单段 %s 码点按独立限制校验', length => {
+    const content = { ...sampleSummary, strengths: [{ round_no: 1, point: '😀'.repeat(length), reason: '保留边界' }] }
+    expect(isSummaryContent(content, 4)).toBe(length === 300)
+  })
+
+  it.each([3, 4])('总结每栏 %s 条，条数与赛制轮数分开校验', count => {
+    const content = { ...sampleSummary, strengths: Array.from({ length: count }, () => sampleSummary.strengths[0]!) }
+    expect(isSummaryContent(content, 4)).toBe(count === 3)
+  })
+
   it('本人历史列表校验分页参数与返回结构', async () => {
     const debateItem = { id: '123', topic, user_stance: 'pro', ai_stance: 'con', mode: 'quick_3', ai_style: 'logical', total_rounds: 3, status: 'completed', completed_rounds: 3, created_at: time, updated_at: time }
     const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply({
@@ -168,9 +210,9 @@ describe('辩论与总结 API 边界', () => {
     }))
     try {
       const api = createDebateApi(createApiClient())
-      await expect(api.list(0, 10)).rejects.toMatchObject({ kind: 'format' })
-      await expect(api.list(1, 51)).rejects.toMatchObject({ kind: 'format' })
-      const list = await api.list(1, 10)
+      await expect(api.listDebates(0, 10)).rejects.toMatchObject({ kind: 'format' })
+      await expect(api.listDebates(1, 51)).rejects.toMatchObject({ kind: 'format' })
+      const list = await api.listDebates(1, 10)
       expect(list.items).toHaveLength(1)
       expect(list.total).toBe(1)
     } finally { fetcher.mockRestore() }

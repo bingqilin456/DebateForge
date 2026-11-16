@@ -43,9 +43,6 @@ const generating: DebateDetail = { ...empty, turns: [makeTurn(1, 'generating', 1
 
 function fixture() {
   const api: DebateApi = {
-    topics: vi.fn().mockResolvedValue([debate.topic]),
-    list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
-    create: vi.fn().mockResolvedValue(debate),
     detail: vi.fn().mockResolvedValue(empty),
     send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
       turn: makeTurn(roundNo, 'completed', 1, content),
@@ -72,9 +69,9 @@ function fixture() {
 afterEach(() => { vi.useRealTimers() })
 
 describe('三轮状态机、重试与总结恢复', () => {
-  it('创建不调用生成；连续完成三轮后自动请求一次总结，并禁止第四轮提交', async () => {
+  it('打开已保存会话不调用生成；连续完成三轮后自动请求一次总结，并禁止第四轮提交', async () => {
     const { api, state } = fixture()
-    await state.start('1', 'pro')
+    await state.open('123')
     expect(api.send).not.toHaveBeenCalled()
 
     const first = state.submit('第一轮观点')
@@ -107,7 +104,7 @@ describe('三轮状态机、重试与总结恢复', () => {
 
   it('按 Unicode 码点校验，全空白与 2001 码点不请求，2000 emoji 可发送', async () => {
     const { api, state } = fixture()
-    await state.start('1', 'con')
+    await state.open('123')
     await state.submit('  \n')
     await state.submit('😀'.repeat(2001))
     expect(api.send).not.toHaveBeenCalled()
@@ -118,8 +115,8 @@ describe('三轮状态机、重试与总结恢复', () => {
   it('丢失生成响应先查详情；不自动重新生成，查询失败仍锁定原文', async () => {
     const { api, state } = fixture()
     vi.mocked(api.send).mockRejectedValue(new ApiError('network', '网络失败'))
+    await state.open('123')
     vi.mocked(api.detail).mockRejectedValue(new ApiError('network', '查询失败'))
-    await state.start('1', 'pro')
     await state.submit('原文')
     expect(api.detail).toHaveBeenCalledWith('123')
     expect(state.uncertain.value).toBe(true)
@@ -179,7 +176,7 @@ describe('三轮状态机、重试与总结恢复', () => {
 
     await state.retryTurn()
     expect(api.retryTurn).toHaveBeenCalledOnce()
-    expect(api.retryTurn).toHaveBeenCalledWith('123', '3', 1)
+    expect(api.retryTurn).toHaveBeenCalledWith('123', '3', 1, 3)
     expect(api.detail).toHaveBeenCalledTimes(2)
     expect(state.detail.value?.turns[1]?.attempt_version).toBe(2)
     expect(state.notice.value).toContain('重试版本已变化')
@@ -191,7 +188,7 @@ describe('三轮状态机、重试与总结恢复', () => {
     })
     await state.retryTurn()
     expect(api.retryTurn).toHaveBeenCalledTimes(2)
-    expect(api.retryTurn).toHaveBeenLastCalledWith('123', '3', 2)
+    expect(api.retryTurn).toHaveBeenLastCalledWith('123', '3', 2, 3)
     expect(state.detail.value?.debate.completed_rounds).toBe(2)
   })
 
@@ -261,7 +258,7 @@ describe('三轮状态机、重试与总结恢复', () => {
   it('确认未落库后仅由用户重发原文与原键，保留 429 等失败反馈', async () => {
     const { api, state } = fixture()
     vi.mocked(api.send).mockRejectedValueOnce(new ApiError('http', '请在 60 秒后重试。', { status: 429, code: 'rate_limited' }))
-    await state.start('1', 'pro')
+    await state.open('123')
     await state.submit(' 原文 ')
     expect(state.notice.value).toContain('60 秒')
     expect(state.canSend.value).toBe(true)
@@ -294,7 +291,7 @@ describe('三轮状态机、重试与总结恢复', () => {
 
   it.each(['\u0085', '\u0085\u{FEFF}\u{2000}\n', '\u{FEFF}', '\u{3000}'])('拒绝后端视为空白的输入 %#，不绑定原文且仍能修改后提交', async content => {
     const { api, state } = fixture()
-    await state.start('1', 'pro')
+    await state.open('123')
     await state.submit(content)
     expect(api.send).not.toHaveBeenCalled()
     expect(state.draft.value).toBe('')
@@ -306,8 +303,8 @@ describe('三轮状态机、重试与总结恢复', () => {
     vi.useFakeTimers()
     const { api, state } = fixture()
     vi.mocked(api.send).mockResolvedValue({ turn: generating.turns[0]!, completed_rounds: 0, query_url: '/api/v1/debates/123' })
-    vi.mocked(api.detail).mockResolvedValue(generating)
-    await state.start('1', 'pro')
+    await state.open('123')
+    vi.mocked(api.detail).mockClear().mockResolvedValue(generating)
     await state.submit('原文')
     expect(api.detail).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1999)
@@ -339,9 +336,6 @@ describe('四轮标准赛制', () => {
         : { status: 'not_started', attempt_version: null },
     })
     const api: DebateApi = {
-      topics: vi.fn().mockResolvedValue([standard4.topic]),
-      list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
-      create: vi.fn().mockResolvedValue(standard4),
       detail: vi.fn().mockImplementation(async () => detailAt(0)),
       send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
         turn: makeTurn(roundNo, 'completed', 1, content),
@@ -361,7 +355,7 @@ describe('四轮标准赛制', () => {
 
   it('允许推进到第 4 轮，且第 4 轮完成后才请求总结', async () => {
     const { api, state } = fourRoundFixture()
-    await state.start('1', 'pro')
+    await state.open('123')
     expect(state.detail.value?.debate.total_rounds).toBe(4)
 
     for (let round = 1; round <= 4; round += 1) {
@@ -377,7 +371,7 @@ describe('四轮标准赛制', () => {
 
   it('四轮未完成时不请求总结', async () => {
     const { api, state } = fourRoundFixture()
-    await state.start('1', 'pro')
+    await state.open('123')
     for (let round = 1; round <= 3; round += 1) await state.submit(`第 ${round} 轮发言`)
     expect(state.detail.value?.debate.status).toBe('active')
     expect(state.nextRound.value).toBe(4)
@@ -386,7 +380,7 @@ describe('四轮标准赛制', () => {
 
   it('三轮会话不会因为全局上限放宽而接受第 4 轮', async () => {
     const { api, state } = fixture()
-    await state.start('1', 'pro')
+    await state.open('123')
     for (let round = 1; round <= 3; round += 1) await state.submit(`第 ${round} 轮发言`)
     expect(state.nextRound.value).toBeNull()
     expect(state.canSend.value).toBe(false)

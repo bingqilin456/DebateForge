@@ -52,6 +52,7 @@ test('T14 真实 Fake：四流派持久化、默认/非法值、防重复、跳�
       await page.locator('[data-topic-id="1"] input').check()
       await page.locator('input[value="pro"]').check()
     }
+    await page.locator('[data-topic-id="1"] input').check()
     await expect(page.getByLabel('AI 陪练流派', { exact: true })).toHaveValue('logical')
     await page.getByLabel('AI 陪练流派', { exact: true }).selectOption(style)
     const count = createBodies.length

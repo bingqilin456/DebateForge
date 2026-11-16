@@ -15,8 +15,8 @@ const props = withDefaults(defineProps<TopicsViewProps>(), { disabled: false })
 const emit = defineEmits<{
   /** 创建辩论会话成功后触发，交由顶层视图切换至辩论主视图并加载该会话 */
   created: [debate: Debate]
-  /** 按会话 ID 切换至辩论主视图并打开对应会话 */
-  'open-debate': [debateId: string]
+  creating: [value: boolean]
+  uncertain: [value: boolean]
   /** 切换至本人历史会话视图（T11） */
   'open-history': []
   /** 返回当前辩论主视图 */
@@ -40,6 +40,8 @@ const creationUncertain = ref(false)
 const id = useId()
 const formDisabled = computed(() => blocked.value || loading.value || creating.value || !!createdDebate.value || creationUncertain.value)
 const navigationDisabled = computed(() => blocked.value || creating.value || !!createdDebate.value)
+watch(creating, value => emit('creating', value), { flush: 'sync' })
+watch(creationUncertain, value => emit('uncertain', value), { flush: 'sync' })
 let version = 0
 let disposed = false
 function current(request: number) { return !disposed && request === version }
@@ -75,13 +77,14 @@ async function create() {
     const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
-    // 不再同时发 open-debate，否则顶层会对同一结果打开两次。
     emit('created', debate)
   } catch (error) {
     if (!current(request)) return
-    createError.value = error instanceof ApiError ? error.message : '创建会话失败，请稍后再试。'
-    // 创建不是幂等操作。丢失/损坏响应或 5xx 时先去历史核实，不能盲目重发。
-    creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http' || (error.status ?? 500) >= 500
+    createError.value = error instanceof ApiError ? error.message : '创建会话未获确认。'
+    // 创建不是幂等操作；仅明确在创建前拒绝的状态允许修正/手动重提，其余先查历史。
+    creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http'
+      || ![400, 401, 403, 404, 429].includes(error.status ?? 0)
+    if (creationUncertain.value) createError.value = '未能确认创建结果，请先查看历史会话，避免重复创建。'
   } finally { if (current(request)) creating.value = false }
 }
 function openHistory() { if (!navigationDisabled.value) emit('open-history') }
@@ -147,17 +150,17 @@ onUnmounted(() => { disposed = true; version++ })
 .view-header, .view-actions, .stance-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .view-header { justify-content: space-between; }
 .view-header h2 { margin-bottom: 0; }
-.muted, .description { color: #526578; font-size: 13px; line-height: 1.8; }
+.muted, .description { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
 fieldset { min-width: 0; padding: 0; margin: 20px 0; border: 0; }
 legend { margin-bottom: 12px; font-weight: 600; }
 .topic-options { display: grid; gap: 10px; }
-.topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid #e3e8ee; border-radius: 8px; overflow-wrap: anywhere; }
-.topic-option.selected { border-color: #165dff; background: #f3f7ff; }
+.topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.topic-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
 .topic-option input { flex: none; margin-top: 4px; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
 .view-actions { margin-top: 20px; }
 [role="alert"] { margin-bottom: 16px; }
 .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
-.style-field select { width: 100%; padding: 10px; border: 1px solid #879aab; border-radius: 8px; background: #fff; color: #172b3a; }
+.style-field select { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
 </style>

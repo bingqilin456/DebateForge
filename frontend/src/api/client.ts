@@ -27,7 +27,7 @@ export const DEFAULT_TIMEOUT_MS = 5_000
 export const GENERATION_TIMEOUT_MS = 70_000
 
 // 计时覆盖 fetch 和响应体读取；即使读取器迟迟不结束，也必须按总预算返回。
-async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, health = false, external?: AbortSignal): Promise<T> {
+async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, external?: AbortSignal): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ApiError('format', '请求超时配置无效。')
   const cancelledError = () => new ApiError('network', '流式连接已中止，请查询已保存状态。')
   if (external?.aborted) throw cancelledError()
@@ -37,7 +37,7 @@ async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, 
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort()
-      reject(new ApiError('timeout', health ? '检查超时，请确认后端已启动后重试。' : '请求超时，请稍后手动重试。'))
+      reject(new ApiError('timeout', '请求超时，请稍后手动重试。'))
     }, timeoutMs)
   })
   const cancellation = new Promise<never>((_, reject) => {
@@ -50,9 +50,9 @@ async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, 
     if (error instanceof ApiError) throw error
     if (external?.aborted) throw cancelledError()
     if (controller.signal.aborted) {
-      throw new ApiError('timeout', health ? '检查超时，请确认后端已启动后重试。' : '请求超时，请稍后手动重试。')
+      throw new ApiError('timeout', '请求超时，请稍后手动重试。')
     }
-    throw new ApiError('network', health ? '无法连接服务，请确认前后端已启动后重试。' : '无法连接服务，请稍后手动重试。')
+    throw new ApiError('network', '无法连接服务，请稍后手动重试。')
   } finally {
     clearTimeout(timer)
     if (cancel) external?.removeEventListener('abort', cancel)
@@ -71,17 +71,6 @@ async function readJson(response: Response): Promise<unknown> {
     if (!(error instanceof SyntaxError)) throw error
     throw new ApiError('format', '服务返回了无效 JSON，请检查后端响应。')
   }
-}
-
-// 保留 PB 的无业务信封健康请求、默认 3 秒超时及受控 HTTP 提示。
-export async function requestJson(url: string, timeoutMs = 3000): Promise<unknown> {
-  return withinTimeout(async (signal) => {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal,
-    })
-    if (!response.ok) throw new ApiError('http', `服务返回 HTTP ${response.status}，请确认后端已启动后重试。`)
-    return readJson(response)
-  }, timeoutMs, true)
 }
 
 interface ClientHooks {
@@ -206,7 +195,7 @@ export function createApiClient(hooks: ClientHooks = {}) {
         return value
       }
       return consume(response, envelope, signal)
-    }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, false, external)
+    }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, external)
   }
 
   async function request<T>(path: string, options: JsonRequestOptions<T>): Promise<T>

@@ -80,6 +80,29 @@ describe('T14 策略卡的显式生成与恢复', () => {
     await vi.waitFor(() => expect(host.querySelector('[data-strategy-completed]')).not.toBeNull())
     expect(posts()).toHaveLength(1); expect(gets).toBe(2)
   })
+  it('每 2 秒只读查询，120 秒预算耗尽后停止，手动查询才重启', async () => {
+    vi.useFakeTimers()
+    const { host } = await mount(async () => reply({ status: 'generating', attempt_version: 1 }))
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+    expect(host.textContent).toContain('策略生成中')
+    const initial = fetcher.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(fetcher).toHaveBeenCalledTimes(initial)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetcher).toHaveBeenCalledTimes(initial + 1)
+    await vi.advanceTimersByTimeAsync(118_000)
+    expect(host.textContent).toContain('稍后手动查询')
+    const stopped = fetcher.mock.calls.length
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(fetcher).toHaveBeenCalledTimes(stopped)
+    expect(posts()).toHaveLength(0)
+    button(host, '查询策略状态').click()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(fetcher.mock.calls.length).toBeGreaterThan(stopped + 1)
+    expect(posts()).toHaveLength(0)
+  })
   it('409 恢复查询是 generating，详情查询较慢时不会丢掉只读轮询', async () => {
     vi.useFakeTimers()
     let gets = 0, details = 0

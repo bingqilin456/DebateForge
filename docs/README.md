@@ -9,8 +9,10 @@
 3. [PRD](product/PRD.md)：MVP 做什么、不做什么，以及 AC 验收标准。
 4. [ARCHITECTURE](architecture/ARCHITECTURE.md)：模块职责、数据关系、状态机及安全约束；区分已实现内容与目标设计。
 5. [API](api/API.md) 与 [OpenAPI](api/openapi.yaml)：HTTP 契约、DTO、错误处理和接口实施边界。
-6. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖和门槛，TASKS 管当前分工、进度和风险，Phase 2 按轻量 SDD 推进。
+6. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖、门槛与[现行功能分工原则](planning/PLAN.md#现行功能分工原则)，TASKS 管当前任务的功能负责人、进度和风险，Phase 2 按轻量 SDD 推进。
 7. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
+
+分工规则入口为 [PLAN 现行功能分工原则](planning/PLAN.md#现行功能分工原则)，决策见 [ADR-026](decisions/DECISIONS.md#adr-026-功能负责人端到端交付)：自 2026-11-16 起一功能一负责人端到端交付，可跨前后端，任务负责人以 [TASKS](planning/TASKS.md) 为准。
 
 Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)，真实模型浏览器 Demo 的交付目标及阶段边界见 [ADR-024](decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。当前实现、已执行验证、待负责人确认及阶段结项统一见 [TASKS](planning/TASKS.md)。
 
@@ -24,8 +26,8 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 | [architecture/](architecture/) | 当前架构与目标设计：[ARCHITECTURE](architecture/ARCHITECTURE.md) |
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
-| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)；历史实施计划按原文件名保留 |
-| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境 |
+| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)（含[现行功能分工原则](planning/PLAN.md#现行功能分工原则)）、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)；历史实施计划按原文件名保留 |
+| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md) |
 | [guides/](guides/) | [协作教程](guides/Codex团队协作实战教程.md)与[阶段 0 学习笔记](guides/学习笔记/)；学习资料不能替代当前契约或验收证据 |
 
 ## 启动与操作
@@ -62,6 +64,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)、[T14-STYLE 后端专项与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)；后续前端与故障验证分别见 B1/B2 记录，不回写早期证据为完整 AC16 通过。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、浏览器 Fake 结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；实现与实测不替代负责人签收及阶段结项，当前待确认项查 TASKS。
 - 确认废弃代码清理：[删除依据、保留原因与验证](acceptance/REMOVE_UNUSED_CODE_ACCEPTANCE.md)；单项结果待负责人确认，不改变阶段验收状态。
+- 功能负责人分工变更（2026-11-16）：[本轮范围、验证与授权边界](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)；仅改文档，不代替 Phase 3 结项或 V2 决策。
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。

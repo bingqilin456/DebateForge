@@ -2,7 +2,7 @@
 
 **思弈阁**是基于 **Go + Eino + MySQL** 与 **Vue 3 + TypeScript + Arco Design** 的专业中文 AI 辩论训练与对抗演练系统。为缺少练习对手的中文辩论学习者提供赛制化的文字对抗训练与结构化复盘反馈，由双人团队按阶段目标交付可访问、可维护、可测试、可答辩的工程实践项目。
 
-当前进度、验证边界、负责人确认与阶段结项统一见 [TASKS](docs/planning/TASKS.md)。SSE 前后端已实现并有 Fake 整合验证；实现与技术验证不等于完整验收，后续门槛以 TASKS 为准。
+当前进度、验证边界、负责人确认与阶段结项统一见 [TASKS](docs/planning/TASKS.md)。SSE 前后端已实现并有 Fake 整合验证；实现与技术验证不等于完整验收，后续门槛以 TASKS 为准。分工按[一功能一负责人](docs/planning/PLAN.md#现行功能分工原则)端到端交付，任务归属以 TASKS 为准。
 
 ## 核心能力
 
@@ -175,19 +175,19 @@ npm run build
 | 文档 | 用途 |
 | --- | --- |
 | [文档导航](docs/README.md) | 推荐阅读顺序、分类入口、状态差异及本次路径迁移对照 |
-| [AGENTS.md](AGENTS.md) | 协作规范、操作授权规则、安全及验收边界 |
+| [AGENTS.md](AGENTS.md) | 协作规范、功能负责人分工、操作授权规则、安全及验收边界 |
 | [PRD](docs/product/PRD.md) | 完整 MVP 产品范围与验收标准 |
 | [ARCHITECTURE](docs/architecture/ARCHITECTURE.md) | 模块职责、技术实现与目标设计边界 |
 | [API](docs/api/API.md) | 健康、认证、辩论、总结、策略与流式接口契约 |
 | [OpenAPI 3.1](docs/api/openapi.yaml) | 机器可读接口契约、示例及各操作实现标记；验收状态查 TASKS |
 | [T03 认证记录](docs/acceptance/T03_AUTH_ACCEPTANCE.md) | Codex/DSH 分工、技术验证、复核命令、问题与独立审查/人工验收状态 |
-| [PLAN](docs/planning/PLAN.md) / [TASKS](docs/planning/TASKS.md) | 阶段依赖与门槛 / 当前任务进度、风险、验证与负责人确认 |
+| [PLAN](docs/planning/PLAN.md) / [TASKS](docs/planning/TASKS.md) | 阶段依赖与门槛（含[现行功能分工原则](docs/planning/PLAN.md#现行功能分工原则)） / 当前任务进度、风险、功能负责人、验证与负责人确认 |
 | [DECISIONS](docs/decisions/DECISIONS.md) | 选型理由、授权增量、未落实假设 |
 | [T05 / T06-B 集成](docs/acceptance/T05_T06_B_GIT_INTEGRATION.md) | Git 基线、合并关系、冲突处理与本轮验证边界 |
 | [T06-B 交接](docs/acceptance/T06_B_HANDOFF.md) | 统一 client、认证状态/独立表单、本地预览与 A 接线；不代表 T06 整体验收 |
 | [INIT_ACCEPTANCE](docs/acceptance/INIT_ACCEPTANCE.md) | 实际命令、结果、失败恢复和人工门槛 |
 
-A 负责后端与集成，B 负责明确的前端与测试任务，后续独立完成并理解辩题与历史页面。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。
+A 为功能负责人提供技术支持与风险把关，B 负责的功能同样须端到端完整交付。自 2026-11-16 起任务按[一功能一负责人](docs/planning/PLAN.md#现行功能分工原则)端到端交付：单一负责人统筹该功能的前端、后端、测试与必要文档，A 保留认证、持久化、生成认领、费用与部署的技术支持与风险把关，但不是只准 A 改，也不要求每个小改动强制互审；答辩按实际负责功能讲解，见 [ADR-026](docs/decisions/DECISIONS.md#adr-026-功能负责人端到端交付)。自 T01 起取消强制 A/B 互审和正式契约讲解登记，保留 Codex 技术审查、必要的自动化测试、相关高风险专项验证与项目负责人最终验收，见 [ADR-011](docs/decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项)。AI 生成和测试不能替代成员理解。references 仅供本地参考，不纳入版本管理。
 
 数据库、认证、AI 辩论、生产部署及 Git 提交、推送、合并均需对应授权。
 

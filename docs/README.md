@@ -39,10 +39,10 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 
 ## 历史计划与验收证据
 
-- Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。B1 两项真实故障联调待补，B2 未交付，完整 A4/B3 未通过；PR #19 已合并，无法恢复草稿。
-- B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；已合入 A，含固定 test 库启动章节与 HTTP 复核，完整 B1 浏览器验收待完成。
+- Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。该条保留 B1 当时范围；两项真实故障补测和 B2 已随后整合，见下方固定 SHA 的 B2 记录。完整 A4/B3 未签收；PR #19 已合并。
+- B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；已合入 A，含固定 test 库启动章节与 HTTP 复核；两项真实 Fake 浏览器结果已登记在后续 B2 整合记录。
 
-- T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及 B1/B2/B3 等待项](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。A 准备技术通过，完整 A/B Fake 整合与真实体验均未验收。
+- T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及 B1/B2/B3 等待项](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。A 准备技术通过，B1/B2 的 Fake 整合已有技术证据；B3/完整 A4 和真实体验仍待各自验收。
 
 - T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。
 
@@ -61,6 +61,7 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 - Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [整合 Spec 与清单](planning/PHASE2_FINAL_INTEGRATION_SPEC.md) 和 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)。A1 仅 T13 技术回归及契约；A2 的 [T14-STYLE 后端专项验收与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md) 已交付本地技术证据，完整 AC16 与负责人确认待完成，真实调用未执行。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、真实 Fake 浏览器结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。B2 正式验收待负责人确认，B3、完整 A4、A5 与真实评测未标通过，Phase 3 进行中。
+- Phase 3 B3：[浏览器补验结果、证据与边界](acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md)、[操作说明及 10 场真实评测准备](guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)。固定基线 134b845，新增真实 Fake/Nginx 浏览器 2/2 与最终只读启停 1/1 通过；B3 待负责人确认，真实模型评测保持未授权/未执行。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

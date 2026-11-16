@@ -39,6 +39,8 @@ Phase 3 启动前的决策见 [ADR-023](decisions/DECISIONS.md#adr-023-phase-3-�
 
 ## 历史计划与验收证据
 
+- main 强制质量门禁：[规则 JSON、实际 CI 名称、触发核查及待确认远端配置](acceptance/MAIN_REQUIRED_CHECKS_ACCEPTANCE.md)；配置准备不代表已启用远端保护。
+
 - Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。B1 两项真实故障联调待补，B2 未交付，完整 A4/B3 未通过；PR #19 已合并，无法恢复草稿。
 - B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；已合入 A，含固定 test 库启动章节与 HTTP 复核，完整 B1 浏览器验收待完成。
 

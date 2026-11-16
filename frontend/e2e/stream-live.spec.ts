@@ -76,7 +76,10 @@ test('B2 真实 Fake：Vite 逐块显示、四轮提交、总结与刷新，双�
   const saved = (await result.json() as { data: DebateDetail }).data
   expect(saved.turns).toHaveLength(4)
   expect(new Set(saved.turns.map(turn => turn.client_request_id)).size).toBe(4)
+  expect(new Set(saved.turns.flatMap(turn => turn.messages.map(message => message.id))).size).toBe(8)
+  expect(saved.summary_status).toMatchObject({ status: 'completed', attempt_version: 1 })
   for (const turn of saved.turns) {
+    expect(turn.attempt_version).toBe(1)
     expect(turn.status).toBe('completed'); expect(turn.messages).toHaveLength(2)
     await expect(page.locator(`[data-round-no="${turn.round_no}"] .message.assistant p`)).toHaveText(turn.messages[1]!.content)
   }
@@ -86,6 +89,17 @@ test('B2 真实 Fake：Vite 逐块显示、四轮提交、总结与刷新，双�
   await expect(page.locator('[data-summary-completed]')).toBeVisible()
   fs.writeFileSync(evidence('stream-incremental-timing', 'json'), JSON.stringify({ base_sha: '270eed81ee9a29f53bc25c25cb9a9992e8b50252', timing, streams, ordinary, completed_rounds: 4 }, null, 2))
   await page.screenshot({ path: evidence('four-stream-rounds-saved'), fullPage: true })
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await login(page, 'stream')
+  await page.locator('[data-view-tab="history"]').click()
+  await expect(page.locator(`[data-history-id="${id}"]`)).toContainText('4 / 4 轮')
+  await page.locator(`[data-debate-id="${id}"]`).click()
+  await expect(page.locator('.message')).toHaveCount(8)
+  await expect(page.locator('[data-summary-completed]')).toBeVisible()
+  const reread = (await (await page.request.get(`/api/v1/debates/${id}`)).json() as { data: DebateDetail }).data
+  expect(reread).toEqual(saved)
+  expect(streams).toBe(4); expect(ordinary).toBe(0)
+  await page.screenshot({ path: evidence('four-rounds-relogin-history'), fullPage: true })
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
 })
 
@@ -109,6 +123,8 @@ test('B2 真实取消：断线先 GET，持久失败后按查询版本 JSON 重�
   const failed = saved.turns[0]!
   expect(failed.status).toBe('failed')
   expect(failed.error_code).toBe('generation_cancelled')
+  expect(failed.attempt_version).toBe(1)
+  expect(failed.messages).toHaveLength(1)
   await expect(retry).toContainText(`v${failed.attempt_version}`)
   await page.screenshot({ path: evidence('stream-cancelled-query-failed'), fullPage: true })
   const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname.endsWith(`/turns/${failed.id}/retry`))
@@ -117,7 +133,13 @@ test('B2 真实取消：断线先 GET，持久失败后按查询版本 JSON 重�
   expect(retried.status()).toBe(200)
   expect(retried.request().postDataJSON()).toEqual({ expected_attempt_version: failed.attempt_version })
   await expect(page.locator('.message')).toHaveCount(2)
-  const completed = (await (await page.request.get(`/api/v1/debates/${id}`)).json() as { data: DebateDetail }).data.turns[0]!
+  const recovered = (await (await page.request.get(`/api/v1/debates/${id}`)).json() as { data: DebateDetail }).data
+  expect(recovered.turns).toHaveLength(1)
+  const completed = recovered.turns[0]!
+  expect(completed.id).toBe(failed.id)
+  expect(completed.messages).toHaveLength(2)
+  expect(completed.messages[0]!.id).toBe(failed.messages[0]!.id)
+  expect(new Set(completed.messages.map(message => message.id)).size).toBe(2)
   expect(completed.client_request_id).toBe(failed.client_request_id)
   expect(completed.attempt_version).toBe(failed.attempt_version + 1)
   expect(streams).toBe(1)
@@ -155,6 +177,7 @@ test('B2 真实 202 JSON：同键另一请求先认领，前端只 GET 恢复', 
   const saved = (await (await page.request.get(`/api/v1/debates/${id}`)).json() as { data: DebateDetail }).data
   expect(saved.turns).toHaveLength(1)
   expect(saved.turns[0]!.attempt_version).toBe(1)
+  expect(new Set(saved.turns[0]!.messages.map(message => message.id)).size).toBe(2)
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
 })
 
@@ -187,6 +210,8 @@ test('B2 真实提交后客户端丢 done：查询恢复完成，不重复发送
   const saved = (await (await page.request.get(`/api/v1/debates/${id}`)).json() as { data: DebateDetail }).data
   expect(saved.turns).toHaveLength(1)
   expect(saved.turns[0]!.status).toBe('completed')
+  expect(saved.turns[0]!.attempt_version).toBe(1)
+  expect(new Set(saved.turns[0]!.messages.map(message => message.id)).size).toBe(2)
   expect(saved.debate.completed_rounds).toBe(1)
   await page.screenshot({ path: evidence('stream-lost-done-query-recovered'), fullPage: true })
   await page.getByRole('button', { name: '退出登录', exact: true }).click()

@@ -39,6 +39,8 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 ## 历史计划与验收证据
 
+- main 强制质量门禁：[规则 JSON、实际 CI 名称、触发核查及待确认远端配置](acceptance/MAIN_REQUIRED_CHECKS_ACCEPTANCE.md)；配置准备不代表已启用远端保护。
+
 - Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。记录中“B1 故障待补、B2 未交付”是该轮历史状态，后续补测与整合见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 - B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；固定 test 后端验证之后的浏览器补测见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 

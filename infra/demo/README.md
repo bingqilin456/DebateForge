@@ -1,6 +1,6 @@
 # Phase 3 本地 Demo（无收费准备）
 
-本轮只启用 Fake。B1 流派/策略卡和 B2 SSE/恢复尚未交付，当前页面为 A 分支已有前端，**不能用于完整 AC12/AC13/AC16/AC17 验收**。真实体验与 10 场评测均未执行。当前证据、B 分工和缺失授权见 [验收记录](../../docs/acceptance/T15_DEMO_PREP_ACCEPTANCE.md)。
+本目录是 A 的独立 local-demo 环境说明，默认只启用 Fake。B1 流派/策略卡与 B2 SSE/恢复已整合到固定受测基线 `134b845e5f9352d83c711d763471d1452ba336c0`，见 [B2 整合记录](../../docs/acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；B3 已在该基线完成固定 test/Fake + Nginx 浏览器补验，见 [B3 记录](../../docs/acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md) 与 [B2/B3 签收记录](../../docs/acceptance/PHASE3_B2_B3_SIGNOFF.md)。**B3 使用的是固定 test 库，不等于本目录的 `siyige_demo` 库已验收**；本目录的完整 AC17、真实体验与 10 场真实评测仍未执行（真实调用 0）。费用准备的原范围见 [准备验收](../../docs/acceptance/T15_DEMO_PREP_ACCEPTANCE.md)。
 
 ## 固定目标与独占使用
 
@@ -28,7 +28,7 @@ $env:P3_DEMO_SECRETS_DIR = (Resolve-Path .cache/p3-demo/secrets).Path
 docker --context desktop-linux compose -f infra/demo/compose.yaml config --quiet
 ```
 
-前端依赖未安装时执行 `npm ci`；已安装直接检查并构建。B1/B2 到齐后必须在整合提交重新构建，不能挂载另一分支的旧 dist。
+前端依赖未安装时执行 `npm ci`；已安装直接按改动影响范围检查并构建。B1/B2 已整合，但启动本目录环境时仍须从**实际受测提交**构建，不能挂载另一分支的旧 dist；不要用固定 test 库的 B3 证据替代本目录构建与验收。
 
 ```powershell
 Push-Location frontend
@@ -47,7 +47,7 @@ docker --context desktop-linux compose -f infra/demo/compose.yaml exec -T edge n
 
 逐条检查退出码；`migrate up` 只执行未执行的前向 SQL，服务启动不自动迁移/播种。数据库初始化只发生在新空卷，口令文件改变不会改已有账户。`grant-app.sql` 由 root 在这个专用隔离库显式执行；应用无 DDL 和 Goose 历史权限。依赖与镜像沿用仓库版本，无新增 Go/npm 产品依赖。
 
-打开页面，注册/登录合成账号，查看辩题与历史；页面当前缺少 B1/B2 入口，完整体验步骤待交付。届时按“选题→立场→四流派之一→创建→显式生成策略卡→四轮 SSE→显式总结→刷新→退出重登→历史重读”执行。分钟额度满时等待，不自动重复调用。
+打开页面，注册后单独登录合成账号，按“选题→立场→四流派之一→创建→可选显式生成策略卡→四轮 SSE→自动总结→刷新→退出重登→历史重读”操作。总结/策略失败时先查询、再由用户显式按最新版本重试；分钟额度满时等待，不自动重复调用。具体按钮和失败处理见 [浏览器操作指南](../../docs/guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)；注意该指南的创建入口描述以 `134b845` 为历史基线，`73bf1d0` 起只在辩题列表创建，主视图改为“开始新的练习”。Fake 不代表真实体验或真实质量评测通过。
 
 无人体验时可执行 `python infra/demo/probe.py`，先核对固定容器 `APP_ENV=demo` + `AI_MODE=fake`，再走 18081 的完整后端 HTTP 链路：四流派、分页/空列表/非法值、一策略+四轮增量 SSE+总结、重登/历史。它只新增合成记录并保留，不重启、不迁移、不重置，绝不替代 B 的生产解析器和浏览器专项。
 

@@ -1,3 +1,4 @@
+import { GENERATION_POLL_INTERVAL_MS, GENERATION_POLL_BUDGET_MS, USER_CONTENT_MAX_CHARS } from '../shared/limits'
 import { computed, ref } from 'vue'
 import { ApiError } from '../api/client'
 import { hasNonWhitespace, type DebateApi, type DebateDetail, type Turn } from '../api/debate'
@@ -58,9 +59,9 @@ export function createFirstTurnState(api: DebateApi) {
   function cancelStream() { streamController?.abort() }
   function stopPolling() { clearTimeout(timer); timer = undefined }
   function schedulePolling(generatingText: string, timeoutText: string, preservedNotice?: string) {
-    if (Date.now() - pollingSince < 120_000) {
+    if (Date.now() - pollingSince < GENERATION_POLL_BUDGET_MS) {
       notice.value = preservedNotice ? `${preservedNotice} ${generatingText}` : generatingText
-      timer = setTimeout(() => { void query() }, 2000)
+      timer = setTimeout(() => { void query() }, GENERATION_POLL_INTERVAL_MS)
     } else {
       notice.value = preservedNotice ? `${preservedNotice} ${timeoutText}` : timeoutText
     }
@@ -183,8 +184,8 @@ export function createFirstTurnState(api: DebateApi) {
     if (!active || !canSend.value || !id.value || nextRound.value === null) return
     const roundNo = nextRound.value
     const effective = attempt?.roundNo === roundNo ? attempt.content : content
-    if (!hasNonWhitespace(effective) || [...effective].length > 2000) {
-      notice.value = '请输入 1–2000 个 Unicode 字符，不能全为空白。'
+    if (!hasNonWhitespace(effective) || [...effective].length > USER_CONTENT_MAX_CHARS) {
+      notice.value = `请输入 1–${USER_CONTENT_MAX_CHARS} 个 Unicode 字符，不能全为空白。`
       return
     }
     if (!attempt || attempt.roundNo !== roundNo) {
@@ -255,7 +256,7 @@ export function createFirstTurnState(api: DebateApi) {
     let needsQuery = false
     let shouldAutoSummary = false
     try {
-      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion)
+      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion, totalRounds.value)
       if (active && detail.value) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds

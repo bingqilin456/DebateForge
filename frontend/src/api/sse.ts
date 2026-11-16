@@ -1,5 +1,8 @@
 import { ApiError } from './client'
 
+const SSE_FRAME_MAX_BYTES = 64 * 1024
+const SSE_TOTAL_MAX_BYTES = 2 * 1024 * 1024
+
 // 只负责增量分帧，不执行重连或 POST。id/retry 字段不作为业务恢复依据。
 export async function readSSE(body: ReadableStream<Uint8Array>, event: (name: string, data: unknown) => boolean | void, signal?: AbortSignal): Promise<void> {
   const reader = body.getReader()
@@ -33,7 +36,7 @@ export async function readSSE(body: ReadableStream<Uint8Array>, event: (name: st
       if (skipLF) { skipLF = false; if (char === '\n') continue }
       const point = char.codePointAt(0)!
       frameBytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4
-      if (frameBytes > 64 * 1024) throw invalid()
+      if (frameBytes > SSE_FRAME_MAX_BYTES) throw invalid()
       if (char === '\r' || char === '\n') {
         finishLine(); skipLF = char === '\r'
         if (stopped) return
@@ -47,7 +50,7 @@ export async function readSSE(body: ReadableStream<Uint8Array>, event: (name: st
       if (signal?.aborted) throw cancelled()
       if (chunk.done) { accept(decoder.decode()); break }
       totalBytes += chunk.value.byteLength
-      if (totalBytes > 2 * 1024 * 1024) throw invalid()
+      if (totalBytes > SSE_TOTAL_MAX_BYTES) throw invalid()
       accept(decoder.decode(chunk.value, { stream: true }))
     }
     // EOF 不补空行、不把半事件当作提交成功；由调用方检查是否收到完整 done。

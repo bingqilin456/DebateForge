@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
 import { AI_STYLE_LABELS } from '../../debate/styles'
@@ -131,11 +132,11 @@ onUnmounted(() => { active = false; panel.dispose() })
           :disabled="locked || uncertain"
           aria-describedby="content-help"
         />
-        <p id="content-help" class="muted">{{ count }} / 2000 个 Unicode 字符；请围绕辩题表达你的论点。</p>
+        <p id="content-help" class="muted">{{ count }} / {{ USER_CONTENT_MAX_CHARS }} 个 Unicode 字符；请围绕辩题表达你的论点。</p>
         <Button
           type="primary"
           html-type="submit"
-          :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > 2000"
+          :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > USER_CONTENT_MAX_CHARS"
           :loading="busy"
         >
           {{ busy ? '正在处理…' : draft ? '重新发送原请求' : nextRound === 1 ? '发送首轮' : `发送第 ${nextRound} 轮` }}
@@ -162,24 +163,24 @@ onUnmounted(() => { active = false; panel.dispose() })
 
 <style scoped>
 label { display: block; font-weight: 600; margin: 20px 0 10px; }
-select, textarea { display: block; width: 100%; border: 1px solid #879aab; border-radius: 8px; background: #fff; color: #172b3a; padding: 10px 12px; }
+select, textarea { display: block; width: 100%; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); padding: 10px 12px; }
 textarea { resize: vertical; line-height: 1.8; }
 .topic-description, .panel-notice { white-space: pre-wrap; overflow-wrap: anywhere; }
-.panel-notice { color: #234f72; background: #eaf2f8; padding: 14px 18px; border-radius: 8px; }
-.muted { color: #526578; font-size: 13px; }
+.panel-notice { color: var(--app-accent); background: var(--app-info-bg); padding: 14px 18px; border-radius: var(--app-radius-control); }
+.muted { color: var(--app-text-muted); font-size: 13px; }
 .debate-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .debate-heading h2 { margin-bottom: 0; }
 .turn-block { margin-top: 20px; }
-.round-title { font-size: 13px; font-weight: 600; color: #235b81; margin-bottom: 8px; }
-.message { margin: 14px 0; padding: 20px; border: 1px solid #d8e0e8; border-radius: 12px; background: #f6f8fa; }
-.message.assistant { background: #edf5fa; border-color: #c3d8e6; }
+.round-title { font-size: 13px; font-weight: 600; color: var(--app-accent); margin-bottom: 8px; }
+.message { margin: 14px 0; padding: 20px; border: 1px solid var(--app-border); border-radius: var(--app-radius-panel); background: var(--app-background); }
+.message.assistant { background: var(--app-info-bg); border-color: var(--app-info-border); }
 .message-label { font-weight: 600; font-size: 14px; }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; }
-time { color: #526578; font-size: 12px; }
-.turn-generating { color: #234f72; font-size: 14px; }
-.turn-failed { margin: 12px 0; padding: 16px; border: 1px solid #e6b8be; border-radius: 10px; background: #fff5f6; color: #8a2330; }
+time { color: var(--app-text-muted); font-size: 12px; }
+.turn-generating { color: var(--app-accent); font-size: 14px; }
+.turn-failed { margin: 12px 0; padding: 16px; border: 1px solid var(--app-error-border); border-radius: var(--app-radius-panel); background: var(--app-error-bg); color: var(--app-error-text); }
 .turn-failed p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.stream-preview { margin: 20px 0; padding: 18px; border: 1px dashed #7296b5; border-radius: 10px; background: #f5faff; }
+.stream-preview { margin: 20px 0; padding: 18px; border: 1px dashed var(--app-info-border); border-radius: var(--app-radius-panel); background: var(--app-info-bg); }
 .stream-preview h3 { margin-top: 0; }
 .stream-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 3em; }
 .heading-actions, .panel-actions { display: flex; flex-wrap: wrap; gap: 12px; }

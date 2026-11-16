@@ -49,7 +49,7 @@ describe('B2 流式状态与只读恢复', () => {
     expect(f.state.canRetryTurn.value).toBe(true); expect(f.api.retryTurn).not.toHaveBeenCalled()
     vi.mocked(f.api.retryTurn).mockResolvedValue({ turn: turn(f.key(), 1, 'completed', 8), completed_rounds: 1, query_url: '/api/v1/debates/123' })
     await f.state.retryTurn()
-    expect(f.api.retryTurn).toHaveBeenCalledWith('123', '1', 7)
+    expect(f.api.retryTurn).toHaveBeenCalledWith('123', '1', 7, 4)
     expect(f.stream).toHaveBeenCalledOnce()
   })
   it('丢失 start/done 时用原 client_request_id 查正式结果，不重发、不换键', async () => {

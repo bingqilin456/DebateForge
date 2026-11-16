@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { USERNAME_MIN_CHARS, USERNAME_MAX_CHARS, PASSWORD_MIN_CHARS, PASSWORD_MAX_CHARS, PASSWORD_MAX_BYTES } from '../../shared/limits'
 import { computed, onUnmounted, ref, useId } from 'vue'
 import { Alert, Button, Input } from '@arco-design/web-vue'
 import { ApiError } from '../../api/client'
@@ -67,7 +68,7 @@ async function submit() {
           id: `${id}-username`, name: 'username', autocomplete: 'username',
           'aria-describedby': `${id}-username-help`, 'aria-invalid': Boolean(errorMessage),
         }" />
-        <p :id="`${id}-username-help`" class="auth-help">3–32 位 ASCII 字母、数字或下划线，忽略大小写与首尾空白。</p>
+        <p :id="`${id}-username-help`" class="auth-help">{{ USERNAME_MIN_CHARS }}–{{ USERNAME_MAX_CHARS }} 位 ASCII 字母、数字或下划线，忽略大小写与首尾空白。</p>
       </div>
       <div class="auth-field">
         <label :for="`${id}-password`">密码</label>
@@ -75,7 +76,7 @@ async function submit() {
           id: `${id}-password`, name: 'password', autocomplete: isLogin ? 'current-password' : 'new-password',
           'aria-describedby': `${id}-password-help`, 'aria-invalid': Boolean(errorMessage),
         }" />
-        <p :id="`${id}-password-help`" class="auth-help">12–128 个 Unicode 字符，最多 512 字节；保留首尾空白。</p>
+        <p :id="`${id}-password-help`" class="auth-help">{{ PASSWORD_MIN_CHARS }}–{{ PASSWORD_MAX_CHARS }} 个 Unicode 字符，最多 {{ PASSWORD_MAX_BYTES }} 字节；保留首尾空白。</p>
       </div>
       <Alert v-if="errorMessage" class="auth-feedback" type="error" :title="errorMessage" role="alert" />
       <Alert v-if="successMessage" class="auth-feedback" type="success" :title="successMessage" role="status" />
@@ -90,12 +91,12 @@ async function submit() {
 </template>
 
 <style scoped>
-.auth-card { width: 100%; max-width: 440px; padding: 28px; border: 1px solid #e3e8ee; border-radius: 16px; background: #fff; color: #172b3a; }
+.auth-card { width: 100%; max-width: 440px; padding: 28px; border: 1px solid var(--app-border); border-radius: var(--app-radius-card); background: var(--app-surface); color: var(--app-text); }
 .auth-card h2 { margin: 0 0 8px; font-size: 22px; }
-.auth-intro { margin: 0 0 24px; color: #526578; line-height: 1.6; }
+.auth-intro { margin: 0 0 24px; color: var(--app-text-muted); line-height: 1.6; }
 .auth-field { margin-bottom: 20px; }
 .auth-field label { display: block; margin-bottom: 8px; font-weight: 600; }
-.auth-help { margin: 8px 0 0; color: #526578; font-size: 12px; line-height: 1.7; }
+.auth-help { margin: 8px 0 0; color: var(--app-text-muted); font-size: 12px; line-height: 1.7; }
 .auth-feedback { margin-bottom: 20px; }
 .auth-switch { display: block; margin: 12px auto 0; }
 @media (max-width: 480px) { .auth-card { padding: 22px 18px; } }

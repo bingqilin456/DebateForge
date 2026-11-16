@@ -61,6 +61,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [整合 Spec 与清单](planning/PHASE2_FINAL_INTEGRATION_SPEC.md) 和 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)、[T14-STYLE 后端专项与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)；后续前端与故障验证分别见 B1/B2 记录，不回写早期证据为完整 AC16 通过。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、浏览器 Fake 结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；实现与实测不替代负责人签收及阶段结项，当前待确认项查 TASKS。
+- 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

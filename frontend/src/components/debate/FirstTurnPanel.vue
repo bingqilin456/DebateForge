@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
-import type { AIStyle } from '../../types/api'
-import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../../debate/styles'
+import { AI_STYLE_LABELS } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
-import { createDebateApi, hasNonWhitespace, isEntityId, type Topic, type Stance } from '../../api/debate'
-import { createFirstTurnState, feedback } from '../../debate/firstTurn'
+import { createDebateApi, hasNonWhitespace, isEntityId } from '../../api/debate'
+import { createFirstTurnState } from '../../debate/firstTurn'
 import SummaryPanel from './SummaryPanel.vue'
 import StrategyPanel from './StrategyPanel.vue'
 
 const props = defineProps<{ auth: AuthState; route: string }>()
 const emit = defineEmits<{
   'new-practice': []
-  'open-topics': []
   'open-history': []
 }>()
 const api = createDebateApi(props.auth.client)
@@ -21,18 +19,10 @@ const {
   detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
 } = panel
-const topics = ref<Topic[]>([])
-const topicId = ref('')
-const stance = ref<Stance>('pro')
-const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
-const loadingTopics = ref(false)
-const topicError = ref('')
-const createAttempted = ref(false)
 const input = ref('')
 
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
-const selectedTopic = computed(() => topics.value.find(topic => topic.id === topicId.value))
 const initialId = /^#debate=([1-9]\d{0,19})$/.exec(props.route)?.[1]
 const invalidRoute = Boolean(props.route && (!initialId || !isEntityId(initialId)))
 let active = true
@@ -44,23 +34,6 @@ watch(draft, value => {
   if (value) input.value = value
   else if (detail.value?.turns.length) input.value = ''
 })
-
-async function loadTopics() {
-  // 登录接受 Session 后组件可能先于认证写操作的 finally 挂载；只读初始化不能被 pending 丢弃。
-  if (loadingTopics.value) return
-  loadingTopics.value = true; topicError.value = ''
-  try {
-    const result = await api.topics()
-    if (active) { topics.value = result; topicId.value = result[0]?.id ?? '' }
-  } catch (error) { if (active) topicError.value = feedback(error) }
-  finally { if (active) loadingTopics.value = false }
-}
-
-async function create() {
-  if (locked.value || !selectedTopic.value) return
-  createAttempted.value = true
-  await panel.start(topicId.value, stance.value, aiStyle.value)
-}
 
 async function submit() {
   if (locked.value) return
@@ -77,7 +50,6 @@ function localTime(value: string) {
 
 onMounted(() => {
   if (initialId && !invalidRoute) void panel.open(initialId)
-  else if (!invalidRoute) void loadTopics()
 })
 onUnmounted(() => { active = false; panel.dispose() })
 </script>
@@ -89,43 +61,13 @@ onUnmounted(() => { active = false; panel.dispose() })
   </section>
   <template v-else>
     <p v-if="notice" class="panel-notice" role="status" aria-live="polite">{{ notice }}</p>
-    <section v-if="!id" class="card" :aria-busy="loadingTopics || busy">
-      <div class="debate-heading">
-        <h2>选题与立场</h2>
-        <div class="heading-actions">
-          <Button type="outline" data-open-topics :disabled="locked" @click="emit('open-topics')">
-            辩题列表视图
-          </Button>
-          <Button type="outline" data-open-history :disabled="locked" @click="emit('open-history')">
-            查看历史会话
-          </Button>
-        </div>
+    <section v-if="!id" class="card">
+      <h2>开始一次辩论练习</h2>
+      <p>请前往辩题列表选择辩题、立场和流派。</p>
+      <div class="heading-actions">
+        <Button type="primary" :disabled="locked" @click="newPractice">开始新的练习</Button>
+        <Button data-open-history :disabled="locked" @click="emit('open-history')">查看历史会话</Button>
       </div>
-      <p v-if="loadingTopics" role="status">正在读取预设辩题…</p>
-      <p v-else-if="topicError" role="alert">{{ topicError }}</p>
-      <p v-else-if="!topics.length">暂无可用辩题，请稍后重新读取。</p>
-      <Button v-if="!loadingTopics && (topicError || !topics.length)" :disabled="locked" @click="loadTopics">重新读取辩题</Button>
-      <form v-if="topics.length" @submit.prevent="create">
-        <label for="topic">预设辩题</label>
-        <select id="topic" v-model="topicId" name="topic" :disabled="locked">
-          <option v-for="topic in topics" :key="topic.id" :value="topic.id">{{ topic.title }}</option>
-        </select>
-        <p class="topic-description">{{ selectedTopic?.description }}</p>
-        <label for="stance">你的立场</label>
-        <select id="stance" v-model="stance" name="stance" :disabled="locked">
-          <option value="pro">正方</option>
-          <option value="con">反方</option>
-        </select>
-        <label for="ai-style">AI 陪练流派</label>
-        <select id="ai-style" v-model="aiStyle" name="ai_style" :disabled="locked">
-          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ label }}</option>
-        </select>
-        <p class="muted">默认逻辑型，创建后固定，不提供赛制或流派修改入口。</p>
-        <p class="muted">AI 将持相反立场，由你先发言，共进行 4 轮标准赛（立论/驳立论/自由辩/结辩）与复盘总结。</p>
-        <Button type="primary" html-type="submit" :loading="busy" :disabled="locked || !selectedTopic">
-          {{ createAttempted && !busy ? '另建新会话' : '创建会话' }}
-        </Button>
-      </form>
     </section>
 
     <section v-else class="card" :aria-busy="busy" aria-label="首轮辩论面板">

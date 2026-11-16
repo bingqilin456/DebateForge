@@ -175,7 +175,6 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
           @creating="creating = $event"
           @uncertain="creationUncertain = $event"
           @created="openDebate"
-          @open-debate="openDebate"
           @open-history="switchView('history')"
           @back-to-debate="switchView('debate')"
         />
@@ -185,7 +184,6 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
           :auth="auth"
           :disabled="auth.state.pending || restoring || creating"
           @select-debate="openDebate"
-          @open-debate="openDebate"
           @open-topics="switchView('topics')"
           @back-to-debate="switchView('debate')"
         />

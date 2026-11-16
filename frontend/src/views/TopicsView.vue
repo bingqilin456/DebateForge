@@ -17,8 +17,6 @@ const emit = defineEmits<{
   created: [debate: Debate]
   creating: [value: boolean]
   uncertain: [value: boolean]
-  /** 按会话 ID 切换至辩论主视图并打开对应会话 */
-  'open-debate': [debateId: string]
   /** 切换至本人历史会话视图（T11） */
   'open-history': []
   /** 返回当前辩论主视图 */
@@ -79,7 +77,6 @@ async function create() {
     const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
-    // 不再同时发 open-debate，否则顶层会对同一结果打开两次。
     emit('created', debate)
   } catch (error) {
     if (!current(request)) return

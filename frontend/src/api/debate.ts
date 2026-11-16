@@ -293,11 +293,8 @@ export function createDebateApi(client: ApiClient = authState.client) {
         validate: (value): value is StrategyStatus => isStrategyStatus(value) && value.status !== 'not_started',
       })
     },
-    topics: listTopics,
     listTopics,
-    list: listDebates,
     listDebates,
-    create: createDebate,
     createDebate,
     detail: getDebateDetail,
     getDebateDetail,
@@ -391,8 +388,8 @@ export async function getDebateDetail(
 
 export type DebateApi = Pick<
   ReturnType<typeof createDebateApi>,
-  'topics' | 'list' | 'create' | 'detail' | 'send' | 'retryTurn' | 'summary' | 'requestSummary'
+  'detail' | 'send' | 'retryTurn' | 'summary' | 'requestSummary'
 > & Partial<Pick<
   ReturnType<typeof createDebateApi>,
-  'listTopics' | 'listDebates' | 'createDebate' | 'getDebateDetail' | 'stream'
+  'stream'
 >>

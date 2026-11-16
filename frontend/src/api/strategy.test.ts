@@ -19,17 +19,17 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('T14 流派创建边界', () => {
   it.each(['logical', 'aggressive', 'empathic', 'data'] as const)('原样提交合法流派 %s，不发送 mode', async ai_style => {
     fetcher.mockResolvedValue(reply({ ...debate, ai_style }, 201))
-    await expect(api().create({ topic_id: '1', user_stance: 'pro', ai_style })).resolves.toMatchObject({ ai_style })
+    await expect(api().createDebate({ topic_id: '1', user_stance: 'pro', ai_style })).resolves.toMatchObject({ ai_style })
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ topic_id: '1', user_stance: 'pro', ai_style })
   })
   it('保留旧调用方式，省略时由后端默认 logical', async () => {
     fetcher.mockResolvedValue(reply(debate, 201))
-    await expect(api().create('1', 'pro')).resolves.toMatchObject({ ai_style: 'logical' })
+    await expect(api().createDebate('1', 'pro')).resolves.toMatchObject({ ai_style: 'logical' })
     expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ topic_id: '1', user_stance: 'pro' })
   })
   it.each([null, '', 'Logical', 'unknown', 7, [], {}])('非法流派 %# 在本地拒绝，不发创建请求', async ai_style => {
     const request = { topic_id: '1', user_stance: 'pro', ai_style }
-    await expect(api().create(request as Parameters<ReturnType<typeof api>['create']>[0])).rejects.toMatchObject({ kind: 'format' })
+    await expect(api().createDebate(request as Parameters<ReturnType<typeof api>['createDebate']>[0])).rejects.toMatchObject({ kind: 'format' })
     expect(fetcher).not.toHaveBeenCalled()
   })
 })

@@ -1,0 +1,23 @@
+body {
+  /* Arco 语义变量定义在 body，别名也须在此解析。其余颜色沿用页面基调。 */
+  --app-text: #172b3a;
+  --app-text-muted: #526578;
+  --app-text-secondary: #34495e;
+  --app-accent: #235b81;
+  --app-surface: var(--color-bg-2);
+  --app-background: #f6f8fa;
+  --app-border: var(--color-border-2);
+  --app-input-border: #879aab;
+  --app-info-bg: #edf5fa;
+  --app-info-border: #c3d8e6;
+  --app-error-text: #8a2330;
+  --app-error-bg: #fff5f6;
+  --app-error-border: #e6b8be;
+  --app-success-text: #24633b;
+  --app-success-bg: var(--color-success-light-1);
+  --app-selected-border: rgb(var(--primary-6));
+  --app-selected-bg: var(--color-primary-light-1);
+  --app-radius-control: var(--border-radius-large);
+  --app-radius-panel: 12px;
+  --app-radius-card: 16px;
+}

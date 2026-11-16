@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { GENERATION_POLL_INTERVAL_MS, GENERATION_POLL_BUDGET_MS } from '../../shared/limits'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
 import type { AuthState } from '../../auth/state'
@@ -37,9 +38,9 @@ function accept(value: StrategyStatus, token: number) {
   stopPolling()
   if (value.status !== 'generating') { pollSince = null; return }
   pollSince ??= Date.now()
-  if (Date.now() - pollSince < 120_000) {
+  if (Date.now() - pollSince < GENERATION_POLL_BUDGET_MS) {
     // 202 只触发只读轮询；到达预算后等待用户显式查询，绝不补发 POST。
-    timer = setTimeout(() => { void query(false, false) }, 2_000)
+    timer = setTimeout(() => { void query(false, false) }, GENERATION_POLL_INTERVAL_MS)
   } else { pollExpired.value = true }
 }
 async function readState(token: number) {
@@ -162,11 +163,11 @@ onUnmounted(() => { disposed = true; epoch++; stopPolling() })
 </template>
 
 <style scoped>
-.strategy-card { margin: 20px 0; padding: 18px; border: 1px solid #d8e0e8; border-radius: 10px; background: #f7faff; }
+.strategy-card { margin: 20px 0; padding: 18px; border: 1px solid var(--app-border); border-radius: var(--app-radius-panel); background: var(--app-info-bg); }
 .strategy-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 h3 { margin: 0; } h4 { margin: 18px 0 8px; }
-.muted { color: #526578; font-size: 13px; line-height: 1.8; }
-.strategy-error { padding: 12px; color: #923b26; background: #fff2ed; border-radius: 6px; }
+.muted { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
+.strategy-error { padding: 12px; color: var(--app-error-text); background: var(--app-error-bg); border-radius: var(--app-radius-control); }
 .strategy-text, [role="alert"], [role="status"] { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
 ul { padding-left: 22px; }
 </style>

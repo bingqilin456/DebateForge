@@ -179,7 +179,7 @@ describe('三轮状态机、重试与总结恢复', () => {
 
     await state.retryTurn()
     expect(api.retryTurn).toHaveBeenCalledOnce()
-    expect(api.retryTurn).toHaveBeenCalledWith('123', '3', 1)
+    expect(api.retryTurn).toHaveBeenCalledWith('123', '3', 1, 3)
     expect(api.detail).toHaveBeenCalledTimes(2)
     expect(state.detail.value?.turns[1]?.attempt_version).toBe(2)
     expect(state.notice.value).toContain('重试版本已变化')
@@ -191,7 +191,7 @@ describe('三轮状态机、重试与总结恢复', () => {
     })
     await state.retryTurn()
     expect(api.retryTurn).toHaveBeenCalledTimes(2)
-    expect(api.retryTurn).toHaveBeenLastCalledWith('123', '3', 2)
+    expect(api.retryTurn).toHaveBeenLastCalledWith('123', '3', 2, 3)
     expect(state.detail.value?.debate.completed_rounds).toBe(2)
   })
 

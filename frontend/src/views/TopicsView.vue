@@ -153,17 +153,17 @@ onUnmounted(() => { disposed = true; version++ })
 .view-header, .view-actions, .stance-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .view-header { justify-content: space-between; }
 .view-header h2 { margin-bottom: 0; }
-.muted, .description { color: #526578; font-size: 13px; line-height: 1.8; }
+.muted, .description { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
 fieldset { min-width: 0; padding: 0; margin: 20px 0; border: 0; }
 legend { margin-bottom: 12px; font-weight: 600; }
 .topic-options { display: grid; gap: 10px; }
-.topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid #e3e8ee; border-radius: 8px; overflow-wrap: anywhere; }
-.topic-option.selected { border-color: #165dff; background: #f3f7ff; }
+.topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.topic-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
 .topic-option input { flex: none; margin-top: 4px; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
 .view-actions { margin-top: 20px; }
 [role="alert"] { margin-bottom: 16px; }
 .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
-.style-field select { width: 100%; padding: 10px; border: 1px solid #879aab; border-radius: 8px; background: #fff; color: #172b3a; }
+.style-field select { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
 </style>

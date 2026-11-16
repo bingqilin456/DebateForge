@@ -1,30 +1,14 @@
 # 思弈阁 技术架构
 
-**当前 T07 费用准入（2026-11-09）。** 真实模型公网试运行遵循 [ADR-019](../decisions/DECISIONS.md#adr-019-受控公网模型费用准入)。以下 T04/T05 阶段快照中的旧硬预算门槛保留当时语境。
+本文维护技术实现与约束，当前进度、已执行验证、负责人确认及阶段结项统一见 [TASKS](../planning/TASKS.md)，历史证据见 [文档导航](../README.md#历史计划与验收证据)。目标设计不自动代表已实现；技术验证不自动代表完整验收。历史授权不构成当前操作授权。
 
-**T05 无收费范围正式结项（2026-11-08）：项目负责人确认三关人工验收全部通过，批准 T05 无收费实现范围结项并授权 Git Commit。** 四接口、累计无收费验证与新会话独立复审 PASS，T05-R01/R02/R03 三项 P2 均已独立确认关闭；已接受限制及后续任务见 [T05 验收](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)。本轮仅登记验收、核对提交范围，并从 `codex/docs-reorganization` 当前 HEAD 创建 `feat/t05-first-turn` 后提交；不修改已验收业务代码、不重跑完整测试或独立审查，无需 DSH。禁止收费调用、Push、Merge、Rebase、Reset、PR 或部署，不进入 T06。真实模型链路未验收，仍须另行授权；T07-COST-01 继续阻塞公网真实入口。单进程并发未来评估提升至 4–8，当前仍为 2。T03 已接受的 P2/P3 延期及 T04 已结项事实保留；下方旧授权与状态保留当时语境，以本段及最新验收记录为准。
-
-**T04 实施增量（2026 年 11 月 8 日）：新增独立 `internal/ai`，业务接口 `Generator.Generate(context.Context, Request)` 由 Eino 官方 OpenAI 协议适配器和 Fake 实现。** `debate-v1` 仅由服务端构建消息；45 秒模型 Context 和 60 秒请求辅助函数、显式 Token 上限、完整历史/窗口预检及响应校验已实现并通过最终集成检查与独立审查，5 项 P2 均已复验关闭。提交 T04 时 main 尚未装配 AI、未增加业务路由，该装配由 T05 完成。供应商硬预算未落实，公网真实入口按 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失) 保持阻塞。历史 T04 未启动表述不覆盖本增量。
-
-**T04 结项（2026 年 11 月 8 日，覆盖上段的历史快照）：项目负责人已正式通过最终人工验收，T04 标记已完成并正式结项。** 上段“真实调用仍待单独授权”“T04 未完成”为结项前的历史状态，不再代表当前结论。经负责人批准的一次本地受控冒烟例外已执行唯一一次真实请求，HTTP 200、正常结束，授权已消耗、入口已停止；实际用量 250 输入 / 48 输出 Token，按实际用量计价 0.000442 元，**精确结算费用仍为未知**，负责人已接受该残余风险。**T07-COST-01 继续未关闭，保持 P0 公网开放阻塞**，不得据此开放公网真实模型入口或再次发起真实调用。依据见 [T04 最终人工验收与结项](../acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项) 和 [ADR-017](../decisions/DECISIONS.md#adr-017-一次本地受控冒烟费用保护例外)。
-
-**T03 实施增量（2026 年 11 月 8 日）：认证四接口、auth 分层、可复用认证/Origin/CSRF 中间件与 `current_user` 已实现并通过 Codex 技术验证，待独立审查和人工验收。** 复用 T02 连接与表；见 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md) 和 [ADR-015](../decisions/DECISIONS.md#adr-015-t03-认证实现与-cookie-名称)。Cookie 名已在 T03 具体化；历史“业务未实现”和不启动 T03 的表述不覆盖本增量，T04–T06 未启动。
-
-**当前结项状态（2026 年 11 月 8 日）：T02 已通过最终独立技术审查及项目负责人人工验收，标记已完成。** M01/M02 按本次审查结论关闭；M03 及已接受的恢复/验证边界继续保留。验收依据见 [种子与持久化记录](../acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。此前“进行中/待验收”等为各子任务当时状态，不覆盖本次结项。T03–T18 不因结项自动启动，Phase 1 尚未完成。
-
-2026 年 11 月 6 日，Phase 0 已结项，T01 的 8 个首批业务接口见 [API](../api/API.md)。当前运行基线为 Go/Gin、Vue/TypeScript/Vite/Arco 骨架与本地健康联通。数据库、认证、AI 和部署按 [TASKS](../planning/TASKS.md) 交付。产品边界见 [PRD](../product/PRD.md)，资源状态和方案依据见 [DECISIONS](../decisions/DECISIONS.md)，PB 证据见 [INIT_ACCEPTANCE](../acceptance/INIT_ACCEPTANCE.md)。
+当前服务具备认证、辩论持久化、赛制驱动轮次、总结、流派/策略及 SSE 路径；SSE 的代码与证据入口见 [流式双轨管道](#eino-流式双轨管道)。四维总结 V2、谬误分析等增强设计仍按 TASKS 的对应任务区分实施范围。费用政策及未关闭风险以 [T07-COST-01](../planning/TASKS.md#t07-cost-01-供应商硬预算缺失) 和后续决策为准，不能沿用早期阶段快照判断准入。
 
 ## 架构与技术栈
 
 使用单仓库、单个 Go 服务和单个 MySQL 实例。按业务模块组织代码，在进程内调用，不引入 RPC、服务发现、Redis、消息队列或分布式事务。浏览器只访问同源站点，模型 Key 仅存在服务端。
 
-上述单实例描述为目标应用部署形态。T02 本地开发库与集成测试库按冻结要求使用独立 MySQL 容器、卷、账户与回环端口，环境配置见 [本地 MySQL](../../infra/mysql/README.md)。本次只建立环境，后端连接、业务迁移和 readiness 留待 T02 后续获准实施。
-
-后续实施增量：本轮用户已明确授权继续 T02。后端现接入 GORM/MySQL 和 `/api/health/ready` 就绪检查，测试入口验证固定测试目标。2026 年 11 月 8 日负责人确认健康路径以 `/api/health/live`、`/api/health/ready` 为准，见 [API](../api/API.md)；此前 [后端接入记录](../acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md) 保留当时验收证据。版本化迁移和种子仍未实施，未改变本文的数据及业务接口设计。
-
-2026 年 11 月 8 日迁移增量：六张 Phase 1 表的版本化 SQL 已在隔离测试库验证，工具为独立 Goose v3.29.0 CLI module，仅显式 up/status，使用迁移账户及会话锁。服务仍不自动迁移；逻辑实体及 API 不变，物理类型、执行与失败恢复见 [迁移说明](../../backend/migrations/README.md)。上段“迁移未实施”保留为历史，种子仍未实施，总结表仍归 T10；当前闭环已获有条件独立审查，负责人已接受验证边界及延期项并授权提交/推送；学习讲解尚未登记，延期门槛见 [任务登记](../planning/TASKS.md#t02-迁移延期问题登记)。
-
-2026 年 11 月 8 日种子增量：新增 00007–00009 字节精确枚举 CHECK，保留原六份 SQL/冻结列类型；00010 在 Goose 事务中插入固定 ID 1–5，重复 up 不多写，ID 冲突失败且不覆盖。服务启动不迁移或播种。历史保护与重启持久化已技术验证，详见 [当前记录](../acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md) 和 [ADR-014](../decisions/DECISIONS.md#adr-014-t02-精确枚举与版本化种子)。待独立审查、辩题人工审阅及最终验收，完整 T02 未完成；上方“种子未实施”为历史状态。
+上述单实例描述为目标应用部署形态。本地开发库与集成测试库使用独立 MySQL 容器、卷、账户和回环端口，见 [本地 MySQL](../../infra/mysql/README.md)。GORM 连接、readiness、版本化迁移与种子已有实现；迁移工具为独立 Goose module，仅显式执行，服务启动不迁移或播种。版本清单、固定目标保护和恢复约束见 [迁移说明](../../backend/migrations/README.md)，历史验收和延期项由 TASKS 链接维护。
 
 ```mermaid
 flowchart LR
@@ -38,16 +22,16 @@ flowchart LR
 
 | 层次 | 选择 | 使用边界 |
 | --- | --- | --- |
-| 前端 | Vue 3、TypeScript、Arco Design、Vue Router、Vite | 复用组件库，路由手工声明，先用页面局部状态与轻量共享登录状态 |
+| 前端 | Vue 3、TypeScript、Arco Design、Vite | 复用组件库，App 以 hash 切换页面，页面局部状态与轻量共享登录状态 |
 | HTTP | Go、Gin | 路由、校验、认证、权限、限流、日志与错误转换 |
-| AI | CloudWeGo Eino ChatModel | 一个配置化供应商，先完整响应，再按需流式；无 Agent 或工具调用 |
+| AI | CloudWeGo Eino ChatModel | 普通生成与流式共用业务认领和费用控制；无 Agent 或工具调用 |
 | 数据访问 | GORM、MySQL InnoDB | 事务、唯一约束和外键，不用 SQLite 代替生产与集成测试数据库 |
 | 部署 | Linux、Docker Compose、Nginx | 一个应用副本，TLS 终止，数据库内网，独立持久化卷 |
 | 观察与维护 | JSON 日志、健康端点、主机和容器检查 | 不新增 Prometheus/Grafana 集群；复用可用的主机告警能力 |
 
-Bootstrap 环境固定为 Go 1.27.1、Node.js 24.11.1、npm 11.6.2。后端模块为 `github.com/bingqilin456/DebateForge/backend`，Gin v1.12.0。前端精确版本由 package.json 与 package-lock.json 固定，使用 npm。依赖说明与实际验证见 README、INIT_ACCEPTANCE。MySQL、GORM、迁移工具候选与 Eino 版本确认节点见 [T01 资源登记](../decisions/DECISIONS.md#t01-资源与版本登记)。对应任务验证后固定精确版本和镜像标签。
+工程工具链与依赖版本由各模块配置及锁文件固定；环境和检查入口见 [README](../../README.md#环境)。原 Bootstrap、T01 的资源候选和技术验证仅是历史记录，不替代后续实际装配与验收。
 
-本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/api/` 原路径代理到后端，不增加宽泛 CORS。当前注册 `/api/health/live`、`/api/health/ready`，2026 年 11 月 8 日负责人已确认以这两个路径为准；历史无 `/api` 的健康路径不再适用，也不保留开发代理规则。单页面阶段暂不安装 Vue Router、Pinia、Axios，不预建业务空模块。
+本地后端默认监听 `127.0.0.1:8080`，`HTTP_ADDR` 仅接受回环 IP 与有效端口；若变更后端端口，须同步 Vite target。前端监听 `127.0.0.1:5173`，端口占用时直接失败，Vite 将 `/api/` 原路径代理到后端，不增加宽泛 CORS。当前注册 `/api/health/live`、`/api/health/ready`，2026 年 11 月 8 日负责人已确认以这两个路径为准；历史无 `/api` 的健康路径不再适用，也不保留开发代理规则。前端由 App 自行管理页面切换，未引入 Vue Router、Pinia 或 Axios。
 
 ## 模块职责
 
@@ -243,11 +227,13 @@ Prompt 要求中文回应、针对本轮具体论点、保持立场、遵守篇�
 - `rebuttal` 非空且受长度上限约束。
 - 该结果**不参与轮次状态机**，不改变 `completed_rounds`；存储位置需独立迁移，不复用 `messages.content`。
 
-T14-STYLE 的自主流派与策略卡最小契约见 [Spec](../planning/T14_STYLE_SPEC.md)：创建零调用、显式 POST strategy、GET 只读、单份保存、查询版本重试，与轮次/总结共用 Gate。当前真实装配的 Linux/中继/单次账本限制与本地 Demo 最小增量见 [Phase 3 首批方案](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，不因适配器存在就视为真实总结/流式可用。
+T14-STYLE 的自主流派与策略卡契约见 [Spec](../planning/T14_STYLE_SPEC.md)：创建零调用、显式 POST strategy、GET 只读、单份保存、按查询版本重试，与轮次/总结共用 Gate。真实模型 Demo 的装配、费用与启停约束见 [准备记录](../acceptance/T15_DEMO_PREP_ACCEPTANCE.md) 和 [运行说明](../../infra/demo/README.md)；适配器存在不等于真实体验已获授权或验收。
 
 ## Eino 流式双轨管道
 
 SSE 自 2026-11-14 起为 **P0 必做**（[ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出) 修订 [ADR-006](../decisions/DECISIONS.md#adr-006-普通-json-优先-sse-可选)）。核心原则是**推送与落库双轨、幂等只有一处**。
+
+实现入口：[后端流式 Handler](../../backend/internal/debate/stream.go) 调用 [Service.submitTurn](../../backend/internal/debate/service.go)，普通发送也进入同一路径；前端由 [readSSE](../../frontend/src/api/sse.ts) 增量解码、[debate API](../../frontend/src/api/debate.ts) 校验四事件及 202 JSON 分支、[辩论状态](../../frontend/src/debate/firstTurn.ts) 管理临时预览和查询恢复。已执行的后端直连/Vite/Nginx 专项与 B2 浏览器 Fake 整合分别见 [后端记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[B2 整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；负责人确认及完整 AC12 状态以 TASKS 为准。
 
 ```mermaid
 flowchart LR
@@ -322,7 +308,7 @@ Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回
 
 请求总预算 60 秒，模型 45 秒，数据库操作 3 秒；生成租约 90 秒，前端请求超时 70 秒，Nginx 代理读取超时暂定 75 秒。普通接口单独使用短超时；生成接口不套会截断 SSE 的通用短超时中间件。结果超长、空回复、非法结构或含供应商拒绝类型均转为受控失败，拒绝输出不伪装成成功训练。
 
-当前 HTTP socket 写期限为 [HTTPWriteTimeout](../../backend/internal/platform/business.go) 的 65 秒；路由入口将生成请求限定为 60 秒，普通查询为 5 秒。策略 POST 已加入 60 秒生成预算名单，GET 保持 5 秒；SSE 尚未实现，后续实施须同步预算名单。历史 T05/T07 的长 Fake HTTP 与代理超时证据继续复用。
+当前 HTTP socket 写期限为 [HTTPWriteTimeout](../../backend/internal/platform/business.go) 的 65 秒；路由入口将生成请求限定为 60 秒，普通查询为 5 秒。策略 POST 已加入 60 秒生成预算名单，GET 保持 5 秒；SSE POST 已在同一 60 秒生成预算名单，见 [requestBudget](../../backend/internal/platform/business.go)。历史 T05/T07 的长 Fake HTTP 与代理超时证据继续复用。
 
 ## 日志、错误与监控
 

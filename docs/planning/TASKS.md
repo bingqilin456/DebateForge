@@ -2,9 +2,16 @@
 
 当前任务状态以各阶段表格的「当前状态」栏为准，阶段目标和前置门槛见 [PLAN](PLAN.md)，验收编号见 [PRD](../product/PRD.md)。具体验收及授权执行记录见 [验收与交接导航](../README.md#历史计划与验收证据)。
 
-T06/T07/Phase 1 已结项，Phase 2 经 PR #17 合入 main 结项。2026-11-16 已将 B 的 B1 真实故障补测与 B2 SSE 指定 `8e5e890321674bcd597ff14ba0d5d989fa6a0897`（开发基线 `270eed81ee9a29f53bc25c25cb9a9992e8b50252`）无冲突整合到 `codex/phase3-demo-contracts`，保留 A 后端、契约、费用保护与 B1。集成版本真实 Edge → Vite → Go → 固定 siyige_test → Fake 的 6 项浏览器验证及 15 项 Mock 通过，前后端适用检查、数据库专项及首失败/定向复测结果见 [B2 整合验收与 B3 交接](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。B2 技术验证完成、正式验收待负责人确认；B3、完整 A4、A5、真实 Demo/10 场评测均未标通过，Phase 3 保持进行中。本轮仅授权集成分支 Commit/普通 Push，未合 main/develop、未部署或真实调用。T02/T03 延期、T04 结算边界与 T07-COST-01 保留。
+T06/T07/Phase 1 已结项，Phase 2 经 PR #17 合入 main 结项。Phase 3 进行中：SSE 前后端已实现，B1 两项策略故障补测与 B2 已整合并完成固定 test/Fake 技术验证；B2 正式验收待负责人确认。B3、完整 A4、A5、真实 Demo 与 10 场评测均未标通过。T02/T03 延期、T04 结算边界与 T07-COST-01 保留，详细状态以各阶段任务表为准。
 
 T05/T08 的接口分工以本清单为准。历史实施小节中的状态、授权和待办仅对应当时的实施边界，后续结论见任务表和对应验收记录。现行健康端点见 [API](../api/API.md) 和 [ADR-012](../decisions/DECISIONS.md#adr-012-健康端点统一为当前-gin-路径)。
+
+## 文档状态同步核对（2026-11-16）
+
+- 基线：直接查询远端全部分支头后确认最新整合分支为 `codex/phase3-demo-contracts`，完整 SHA `134b845e5f9352d83c711d763471d1452ba336c0`；`main` 为 `9fa19eb6c0fbd3a8d1ab3ce002a700c6235e9afc`，不能用它替代已含 B2 的整合基线。本地新建 `codex/docs-state-sync`，未重置旧分支。
+- 核实依据：实际后端 `submitTurn`/流式 Handler/请求预算、前端 `readSSE`/四事件校验/查询恢复，与 [T15 后端专项](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[B2 整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md) 相符。前者记录直连/Vite/Nginx 与故障专项；后者记录 Edge → Vite → Go → 固定测试库 → Fake 的 6 项浏览器及 15 项 Mock 通过，未新增 Nginx 浏览器验收。首次检查失败、定向复测和未确认的夹具清理原因仍以原记录为准。
+- 本轮只同步 README、PLAN、TASKS、ARCHITECTURE 与文档导航，并按负责人追加要求同步本地 CodeGraph 索引；复用既有应用验证，未重跑应用全量测试、浏览器或数据库专项，不新增其通过结论。文档内容、279 处本地链接、65 处出链 Markdown 锚点及 59 处指向修改文档的入链锚点、`git diff --check` 和变更范围检查通过。CodeGraph 先增量同步，旧引擎提示仍在，随后全量重建至 186 文件、3382 节点、10934 边；状态为 up to date，旧引擎提示已消除。
+- 上述本地核对阶段未 Commit、Push、创建/更新 PR、合并、部署、写入数据库或调用真实模型。负责人随后明确授权将本次五份文档修改 Commit 并普通 Push 到 `codex/docs-state-sync`，实际提交及远端结果以 Git 记录为准；未授权 PR、合并、部署、数据库写入或真实调用。此前 B2 整合的授权仅属于当时任务，不持续有效；本次文档修改不代替 B2 签收或 Phase 3 结项。
 
 ## 分工、估算与依赖规则
 
@@ -53,7 +60,7 @@ PB 是 T01、T02、T06 的前置拆分任务。只建立健康接口契约，不
 
 T01–T07 合计粗估 A 30–41 人时、B 7–8 人时，只表示工作量，不分配到固定自然日。可分散投入、暂停或调整分工；本地必需资源或调用授权缺失时，登记 T07 的相应阻塞。正式部署资源及授权缺口在 Phase 4 跟踪。
 
-T05 按负责人本次批准的无收费范围结项，表中真实模型链路标准仍保留为后续另行授权的验证项，不登记为已完成；不自动启动后续任务。
+T05 按负责人在原验收轮次批准的无收费范围结项，表中真实模型链路标准仍保留为后续另行授权的验证项，不登记为已完成；不自动启动后续任务。
 
 后续优化 **T05-OPT-01**：由 A 在 T13-Lite 参数调优时评估将单个 Go 进程模型并发从 2 提升至 4–8，结合响应延迟、资源占用及费用保护验证决定；当前代码、配置与容量承诺均不调整。其余限制继续按 T07-COST-01、T09、T06/T12、T14/T17 等既定计划处理，具体见 [已接受限制](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md#最终人工验收与无收费范围结项)。
 
@@ -179,9 +186,9 @@ T07-PREP-01 已修订 PLAN 当前状态与历史阶段快照。T07-PREP-02 已�
 
 ## Phase 3：赛制流式、破局亮点与质量攻坚
 
-2026-11-16 接续：B1 真实持久 failed → 查询最新版本 → 显式 retry、真实 generating/202 两项补测及 B2 生产 SSE 解析/恢复已交付并整合，见 [本轮验收记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。策略 Fake 装配及先前固定 test 后端证据仍见 [专项交接](../acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)。本轮同一整合版本实测四轮 SSE、取消/202/丢 done 恢复、总结及刷新重登历史，业务键、版本和消息 ID 断言通过；这是整合技术证据，B2 待负责人确认，B3/完整 A4/A5 与真实评测未通过，Phase 3 仍进行中。
+2026-11-16 整合来源为 B 的指定 `8e5e890321674bcd597ff14ba0d5d989fa6a0897`（开发基线 `270eed81ee9a29f53bc25c25cb9a9992e8b50252`），已纳入本次核对基线。策略 Fake 装配的历史证据见 [专项交接](../acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)，整合验证及 B3 启动方法见 [B2 整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；具体状态由下表维护。
 
-必要 P0 为 T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL；增强 P1 为 T14-REPORT、T15-B-FALLACY、T15-B-DEMO。T14-Plus、T15-B 仅保留为任务组名称，不再整体定级。Phase 2 已结项，A1 为 T13 与契约定稿；A2 已实现 T14-STYLE 后端，T15-Core 后端与本地三链路已技术验证；完整前端验收及阶段结项保持未完成。阶段门槛为安全与故障回归、无高优先级核心缺陷、10 场真实模型质量评测、流派选择与策略卡、SSE 专项及真实模型浏览器 Demo 验收通过。P1 缺席不阻塞 MVP 核心验收，须登记未交付范围；P2 仅留需求池。依据 [ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 与 [ADR-024](../decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。
+必要 P0 为 T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL；增强 P1 为 T14-REPORT、T15-B-FALLACY、T15-B-DEMO。T14-Plus、T15-B 仅保留为任务组名称，不再整体定级。A1/A2、B1/B2 的已有实现与技术证据按下表复用，仍须区分待负责人确认、B3 完整验收与阶段结项。阶段门槛为安全与故障回归、无高优先级核心缺陷、10 场真实模型质量评测、流派选择与策略卡、SSE 专项及真实模型浏览器 Demo 验收通过。P1 缺席不阻塞 MVP 核心验收，须登记未交付范围；P2 仅留需求池。依据 [ADR-021](../decisions/DECISIONS.md#adr-021-赛制阶段化与-eino-流式输出)、[ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 与 [ADR-024](../decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。
 
 排序使用 Sprint S2 / S3 **目标窗口（非承诺工期）**，与 [PLAN](PLAN.md) 一致，不设固定日历期限。阶段内按依赖选择任务，不要求按编号串行。
 
@@ -191,7 +198,7 @@ T07-PREP-01 已修订 PLAN 当前状态与历史阶段快照。T07-PREP-02 已�
 | T14-STYLE 赛前策略卡与自主流派选择（F10） | 创建前可选择 logical/aggressive/empathic/data；创建请求可选 ai_style，省略默认 logical，非法值 400；校验后持久化，创建后不可修改；策略卡与 Prompt 使用所选流派并可追溯版本，不改赛制/立场/额度，创建不调用模型 | P0 / 子项估算待实施计划细化 | A 接口/校验/Prompt，B 选择交互/策略卡 | T12；先细化策略卡生成接口、额度与失败契约 | 不依赖 SSE，可与 T15-Core 并行 | AC16；四种选择、默认、非法输入与无副作用、历史保持、刷新重登一致、策略失败恢复均留证；不得沿用只读展示替代选择 | 后端及四流派既有证据复用；B1 两项真实故障补测已随指定 8e5e890 整合，固定 test/Fake 浏览器复核通过，见 [B2 整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。完整 AC16/B3 与负责人确认待完成 |
 | T14-EVAL 10 场真实模型质量评测 | 10 场完整 standard_4 四轮及总结；覆盖 ≥3 题、双方立场和四种流派；逐项检查回应/立场/依据/建议，按环节定位问题，保存匿名结论与失败样例 | P0 / 评测工作量另计 | B 组织人工评估，A 修订 Prompt/Schema | T12 与所评测的 T14-STYLE 功能就绪；真实调用费用及范围单独授权 | 样本/检查表可先准备；执行与不影响受测版本的工作并行 | 10 场真实评测及人工结论齐全；Fake 不替代，不设 5 场替代档；未获授权或未完成时保持未执行/未完成，不得声明 Phase 3 必要 P0 通过 | 未开始（真实调用未授权） |
 | T14-REPORT 四维训练参考值战报（F12） | 总结 V2 增加 argumentation/rebuttal/logic/presentation 四维 0–100 整数；战报展示与导出遵守六条硬约束，兼容 V1 三栏历史 | P1 / 子项估算待实施计划细化 | A Prompt/Schema/兼容，B 战报/导出 | T12；总结 V2 契约；前端支持 V2 后服务端才切换输出 | 不依赖 SSE，可与 T15-Core 并行 | AC14；单场、不累计、不排名、无总分、无胜负、不用于评价或选拔；V1 只显示三栏；未交付须登记，不阻塞 MVP 核心验收 | 未开始 |
-| T15-Core Eino SSE 流式与断线回退 | 实现 `POST /api/v1/debates/{id}/turns/stream`：Eino Stream、增量解析、断线取消与查询恢复、Nginx 透传；必须复用同一 client_request_id、attempt_version、90 秒租约及并发/额度认领内核 | **P0 / L / A 8–12h，B 4h，合计 12–16h** | A 后端，B 前端解析与断线 | T13-Lite 技术通过且本轮获准继续；[API](../api/API.md) 冻结契约 | 契约冻结后 A/B 并行；同一后端认领核心避免多人同时改动 | AC12；start 的 turn_id/request_id 仅作恢复锚点，版本来自详情/状态查询；completed 读结果、generating 有限查询、failed 才显式携带最新版本重试，409 只查不自动换版本；覆盖未收到 start、UTF-8 拆块、半事件、流内错误、断线提交成功/失败；仅事务提交后 done | 后端已实现，共用认领/事务、Eino 实际增量与费用包装，Fake 直连/Vite/Nginx 及故障验证见 [专项记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)；B2 生产解析器已随指定 8e5e890 整合，6 项真实 Fake 浏览器及 15 项 Mock 通过，见 [整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；B2 正式验收待负责人确认，B3 完整 AC12 未标通过 |
+| T15-Core Eino SSE 流式与断线回退 | 实现 `POST /api/v1/debates/{id}/turns/stream`：Eino Stream、增量解析、断线取消与查询恢复、Nginx 透传；必须复用同一 client_request_id、attempt_version、90 秒租约及并发/额度认领内核 | **P0 / L / A 8–12h，B 4h，合计 12–16h** | A 后端，B 前端解析与断线 | T13-Lite 技术通过且实施轮次获准继续；[API](../api/API.md) 冻结契约 | 契约冻结后 A/B 并行；同一后端认领核心避免多人同时改动 | AC12；start 的 turn_id/request_id 仅作恢复锚点，版本来自详情/状态查询；completed 读结果、generating 有限查询、failed 才显式携带最新版本重试，409 只查不自动换版本；覆盖未收到 start、UTF-8 拆块、半事件、流内错误、断线提交成功/失败；仅事务提交后 done | 后端已实现，共用认领/事务、Eino 实际增量与费用包装，Fake 直连/Vite/Nginx 及故障验证见 [专项记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)；B2 生产解析器已随指定 8e5e890 整合，6 项真实 Fake 浏览器及 15 项 Mock 通过，见 [整合记录](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；B2 正式验收待负责人确认，B3 完整 AC12 未标通过 |
 | T15-B-FALLACY 逻辑谬误透视镜（F11） | 独立 fallacy_tags 分析结果，类型、用户原文引用与反驳切入点；前端高亮与反驳建议填充；不污染 messages.content 或轮次状态 | P1 / 子项估算待实施计划细化 | A Schema/存储，B 展示/填充 | 先定存储与 API；新增前向迁移，当前下一候选 00014（00013 已用于策略表），实施前核对编号 | 可与 T14 子项并行；避免与 SSE 同时改共享核心 | AC15；Fake 稳定复现，未知类型/伪造引用/空建议拒绝；隔离 MySQL 验证；未交付不阻塞 MVP 核心验收 | 未开始 |
 | T15-DEMO-REAL 真实模型可体验 Demo | 交付本地浏览器可启动/操作/停止的完整产品 Demo：登录、选题/立场/流派、策略卡、真实四轮 SSE 对辩、真实总结、历史重读；含服务端真实模型装配、受控体验窗口与用量停止控制、操作说明 | P0 / 整合与体验工作量待实施计划细化，复用已有模块 | A 模型/费用保护/环境说明，B 浏览器体验/操作说明，负责人实际体验 | T13-Lite、T14-STYLE、T15-Core 通过；明确本地隔离库；真实模型、体验范围、窗口及费用单独授权 | 环境说明与 Fake 预验可先准备；真实体验与 T14-EVAL 同版本共用合格证据，不互相循环依赖 | AC17；至少一场用户浏览器真实四轮及总结，SSE、持久化、刷新重登可读；Fake 验预算/窗口停止与故障；模式明确，密钥不进前端；未授权/未真实体验不得标完成；不依赖 P1 双 AI 演示，不开放公网 | 无收费准备进行中：A 多次调用保护、Linux 持久预算/停用、独立 demo 库与 Nginx/Fake 后端链路技术通过，见 [准备验收](../acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[运行说明](../../infra/demo/README.md)。B1 补测与 B2 已整合，固定 test/Fake 完整浏览器链路技术复核通过，见 [整合记录与 B3 启动方法](../acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。B2 待负责人确认；B3、完整 A4、A5 未标通过。真实入口未启用，真实体验与10场评测均未执行 |
 | T15-B-DEMO 双 AI 互搏观摩演示（F13） | 纯演示控制器与界面，不落库、不计轮、不进入正式状态机 | P1 / 子项估算待实施计划细化 | A 控制器，B 展示 | T15-Core 流式展示 | 依赖 SSE 后推进，可与不冲突的 T14 工作并行 | 演示结束后 debates/debate_turns/messages 行数不变；未交付不阻塞 MVP 核心验收 | 未开始 |
@@ -203,6 +210,10 @@ T13-Lite 只做累计回归、参数调优与恶劣场景验证，不首次补�
 **P2 需求池：F14 对抗演化树。** 仅登记方向，不纳入 Phase 3 开发、任务依赖或 MVP 验收门槛。
 
 **Demo 与质量评测分别验收。** T15-DEMO-REAL 保证用户能亲自在浏览器体验真实模型，T14-EVAL 保证 10 场人工质量结论。符合两项标准、使用同一受测版本且在批准调用范围内的场次可共用证据，不重复计场或调用费用；未纳入评测的自由体验额外消耗预算，须在授权中说明。授权未就绪时继续 Fake 预验并登记阻塞，不能以 Fake Demo 代替真实交付。每次体验窗口结束或预算触顶停止新真实请求，不自动补调；本轮不启用任何真实入口。
+
+### 2026-11-14 文档增量验证（历史）
+
+以下两段中的“本轮”“仍为”“未开始”仅描述当时的文档核对结果，不代表后续实现状态或持续操作授权。
 
 同日后续 Demo 文档增量验证：已核对新增 P0 任务、AC17、Phase 3/4 门槛与 T17 依赖、评测证据复用及调用授权边界；工作区累计 16 处新增/修改本地链接和锚点检查通过，OpenAPI 解析通过且仍为 14 个已实现/1 个计划操作，无新 HTTP 路径。保留上一轮文档修改；本增量只改 README 与 docs 文档，未实现 Demo、未运行应用/浏览器/数据库或真实模型验收，功能任务仍未开始。
 

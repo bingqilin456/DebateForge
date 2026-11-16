@@ -89,9 +89,9 @@ const emit = defineEmits<{
 .summary-panel {
   margin-top: 28px;
   padding: 22px;
-  border: 1px solid #c9d8e6;
-  border-radius: 14px;
-  background: #f9fbfd;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-info-bg);
 }
 .summary-header {
   display: flex;
@@ -106,7 +106,7 @@ const emit = defineEmits<{
   font-size: 18px;
 }
 .muted {
-  color: #526578;
+  color: var(--app-text-muted);
   font-size: 13px;
 }
 .summary-state p,
@@ -117,10 +117,10 @@ const emit = defineEmits<{
 }
 .summary-failed {
   padding: 16px;
-  border: 1px solid #e6b8be;
-  border-radius: 10px;
-  background: #fff5f6;
-  color: #8a2330;
+  border: 1px solid var(--app-error-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-error-bg);
+  color: var(--app-error-text);
 }
 .summary-grid {
   display: grid;
@@ -128,14 +128,14 @@ const emit = defineEmits<{
 }
 .summary-group {
   padding: 16px;
-  border: 1px solid #dce5ee;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-panel);
+  background: var(--app-surface);
 }
 .summary-group h4 {
   margin: 0 0 12px;
   font-size: 15px;
-  color: #1f4d70;
+  color: var(--app-accent);
 }
 .summary-group ul {
   list-style: none;
@@ -146,7 +146,7 @@ const emit = defineEmits<{
 }
 .summary-group li {
   padding-top: 8px;
-  border-top: 1px dashed #e3ebf2;
+  border-top: 1px dashed var(--app-border);
 }
 .summary-group li:first-child {
   padding-top: 0;
@@ -156,8 +156,8 @@ const emit = defineEmits<{
   display: inline-block;
   font-size: 12px;
   font-weight: 600;
-  color: #235b81;
-  background: #e7f1f8;
+  color: var(--app-accent);
+  background: var(--app-info-bg);
   padding: 2px 8px;
   border-radius: 999px;
   margin-right: 8px;
@@ -169,7 +169,7 @@ const emit = defineEmits<{
 }
 .summary-reason {
   margin: 6px 0 0;
-  color: #34495e;
+  color: var(--app-text-secondary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

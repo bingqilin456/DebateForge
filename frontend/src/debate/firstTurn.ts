@@ -1,7 +1,7 @@
-import type { AIStyle } from '../types/api'
+import { GENERATION_POLL_INTERVAL_MS, GENERATION_POLL_BUDGET_MS, USER_CONTENT_MAX_CHARS } from '../shared/limits'
 import { computed, ref } from 'vue'
 import { ApiError } from '../api/client'
-import { hasNonWhitespace, type DebateApi, type DebateDetail, type Stance, type Turn } from '../api/debate'
+import { hasNonWhitespace, type DebateApi, type DebateDetail, type Turn } from '../api/debate'
 
 export function feedback(error: unknown): string {
   return error instanceof ApiError ? error.message : '操作失败，请稍后手动重试。'
@@ -59,9 +59,9 @@ export function createFirstTurnState(api: DebateApi) {
   function cancelStream() { streamController?.abort() }
   function stopPolling() { clearTimeout(timer); timer = undefined }
   function schedulePolling(generatingText: string, timeoutText: string, preservedNotice?: string) {
-    if (Date.now() - pollingSince < 120_000) {
+    if (Date.now() - pollingSince < GENERATION_POLL_BUDGET_MS) {
       notice.value = preservedNotice ? `${preservedNotice} ${generatingText}` : generatingText
-      timer = setTimeout(() => { void query() }, 2000)
+      timer = setTimeout(() => { void query() }, GENERATION_POLL_INTERVAL_MS)
     } else {
       notice.value = preservedNotice ? `${preservedNotice} ${timeoutText}` : timeoutText
     }
@@ -180,29 +180,12 @@ export function createFirstTurnState(api: DebateApi) {
     await query()
   }
 
-  async function start(topicId: string, stance: Stance, aiStyle?: AIStyle) {
-    if (!active || busy.value || id.value) return
-    busy.value = true
-    notice.value = ''
-    try {
-      const debate = aiStyle === undefined ? await api.create(topicId, stance) : await api.create(topicId, stance, aiStyle)
-      if (active) {
-        id.value = debate.id
-        autoSummaryForId = null
-        detail.value = { debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } }
-      }
-    } catch (error) {
-      // 创建没有幂等键；仅反馈结果不明，不静默重发。再次点击由 UI 明确标成另建。
-      if (active) notice.value = `${feedback(error)} 创建可能已成功；再次创建会另建会话。`
-    } finally { if (active) busy.value = false }
-  }
-
   async function submit(content: string) {
     if (!active || !canSend.value || !id.value || nextRound.value === null) return
     const roundNo = nextRound.value
     const effective = attempt?.roundNo === roundNo ? attempt.content : content
-    if (!hasNonWhitespace(effective) || [...effective].length > 2000) {
-      notice.value = '请输入 1–2000 个 Unicode 字符，不能全为空白。'
+    if (!hasNonWhitespace(effective) || [...effective].length > USER_CONTENT_MAX_CHARS) {
+      notice.value = `请输入 1–${USER_CONTENT_MAX_CHARS} 个 Unicode 字符，不能全为空白。`
       return
     }
     if (!attempt || attempt.roundNo !== roundNo) {
@@ -273,7 +256,7 @@ export function createFirstTurnState(api: DebateApi) {
     let needsQuery = false
     let shouldAutoSummary = false
     try {
-      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion)
+      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion, totalRounds.value)
       if (active && detail.value) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds
@@ -323,6 +306,6 @@ export function createFirstTurnState(api: DebateApi) {
   return {
     detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound, cancelStream,
     nextRound, failedTurn, canSend, canRetryTurn, canRetrySummary,
-    start, open, refresh, submit, retryTurn, retrySummary, requestSummary, dispose,
+    open, refresh, submit, retryTurn, retrySummary, requestSummary, dispose,
   }
 }

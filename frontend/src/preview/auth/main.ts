@@ -1,4 +1,5 @@
 import '@arco-design/web-vue/dist/arco.css'
+import '../../styles/theme.css'
 
 const root = document.querySelector<HTMLElement>('#auth-preview')
 if (!root) throw new Error('缺少本地预览挂载点')

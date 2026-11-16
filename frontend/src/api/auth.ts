@@ -1,11 +1,11 @@
 import { ApiError, isRecord, type ApiClient } from './client'
-import { normalizeCredentials, validateCredentials } from '../auth/credentials'
+import { normalizeCredentials, validateCredentials, USERNAME_PATTERN } from '../auth/credentials'
 import type { AuthCredentials, AuthSession, User } from '../types/api'
 
 function isUser(value: unknown): value is User {
   return isRecord(value) && typeof value.id === 'string' && /^[1-9]\d{0,19}$/.test(value.id)
     && BigInt(value.id) <= 18446744073709551615n
-    && typeof value.username === 'string' && /^[a-z0-9_]{3,32}$/.test(value.username)
+    && typeof value.username === 'string' && USERNAME_PATTERN.test(value.username)
 }
 function isAuthSession(value: unknown): value is AuthSession {
   return isRecord(value) && isUser(value.user) && typeof value.csrf_token === 'string'

@@ -17,8 +17,6 @@ const props = withDefaults(defineProps<HistoryViewProps>(), { pageSize: HISTORY_
 const emit = defineEmits<{
   /** 选中某条历史会话后触发，交由顶层切换至辩论主视图重读详情或继续未完成会话 */
   'select-debate': [debateId: string]
-  /** 按会话 ID 打开辩论主视图（与 select-debate 等价） */
-  'open-debate': [debateId: string]
   /** 切换至辩题列表视图（T08） */
   'open-topics': []
   /** 返回当前辩论主视图 */

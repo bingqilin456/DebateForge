@@ -19,7 +19,7 @@ function fixture() {
   const pending = deferred<TurnStreamResult>()
   let update: (event: StreamUpdate) => void = () => {}
   const stream = vi.fn<NonNullable<DebateApi['stream']>>().mockImplementation((_id, _content, _key, _round, _total, onUpdate) => { update = onUpdate; return pending.promise })
-  const api: DebateApi = { topics: vi.fn(), list: vi.fn(), create: vi.fn().mockResolvedValue(initial.debate), detail: vi.fn().mockResolvedValue(initial), send: vi.fn(), stream, retryTurn: vi.fn(), summary: vi.fn(), requestSummary: vi.fn().mockResolvedValue({ status: 'completed', attempt_version: 1, schema_version: 1, content: { strengths: [{ round_no: 1, point: '优点', reason: '原因' }], issues: [{ round_no: 1, point: '问题', reason: '原因' }], suggestions: [{ round_no: 1, action: '行动', example: '例子' }] } }) }
+  const api: DebateApi = { detail: vi.fn().mockResolvedValue(initial), send: vi.fn(), stream, retryTurn: vi.fn(), summary: vi.fn(), requestSummary: vi.fn().mockResolvedValue({ status: 'completed', attempt_version: 1, schema_version: 1, content: { strengths: [{ round_no: 1, point: '优点', reason: '原因' }], issues: [{ round_no: 1, point: '问题', reason: '原因' }], suggestions: [{ round_no: 1, action: '行动', example: '例子' }] } }) }
   const state = createFirstTurnState(api); states.push(state)
   return { api, stream, pending, state, update: (event: StreamUpdate) => update(event), key: () => stream.mock.calls[0]![2] }
 }

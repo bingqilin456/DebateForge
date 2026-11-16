@@ -43,9 +43,6 @@ const generating: DebateDetail = { ...empty, turns: [makeTurn(1, 'generating', 1
 
 function fixture() {
   const api: DebateApi = {
-    topics: vi.fn().mockResolvedValue([debate.topic]),
-    list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
-    create: vi.fn().mockResolvedValue(debate),
     detail: vi.fn().mockResolvedValue(empty),
     send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
       turn: makeTurn(roundNo, 'completed', 1, content),
@@ -339,9 +336,6 @@ describe('四轮标准赛制', () => {
         : { status: 'not_started', attempt_version: null },
     })
     const api: DebateApi = {
-      topics: vi.fn().mockResolvedValue([standard4.topic]),
-      list: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 }),
-      create: vi.fn().mockResolvedValue(standard4),
       detail: vi.fn().mockImplementation(async () => detailAt(0)),
       send: vi.fn().mockImplementation(async (_id: string, content: string, _key: string, roundNo = 1) => ({
         turn: makeTurn(roundNo, 'completed', 1, content),

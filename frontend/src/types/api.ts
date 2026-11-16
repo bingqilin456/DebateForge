@@ -30,6 +30,7 @@ export interface Topic {
 export interface CreateDebateRequest {
   topic_id: string
   user_stance: Stance
+  ai_style?: AIStyle
 }
 
 export type DebateStatus = 'active' | 'completed'
@@ -129,3 +130,24 @@ export interface DebateListResult {
 }
 
 export type TopLevelView = 'debate' | 'topics' | 'history'
+
+// 策略与轮次/总结分别保存状态及版本，不能复用 Turn 或 SummaryStatus。
+export interface StrategyContent {
+  thesis: string
+  arguments: string[]
+  risks: string[]
+}
+export type StrategyStatus =
+  | { status: 'not_started'; attempt_version: null }
+  | { status: 'generating'; attempt_version: number }
+  | { status: 'failed'; attempt_version: number; error_code: TurnErrorCode }
+  | { status: 'completed'; attempt_version: number; schema_version: 1; prompt_version: string; ai_style: AIStyle; content: StrategyContent }
+
+export type StrategyRequest =
+  | { retry?: false }
+  | { retry: true; expected_attempt_version: number }
+
+export interface StreamStart { turn_id: string; request_id: string }
+export interface StreamDone { turn: Turn; completed_rounds: number; status: DebateStatus }
+export type StreamUpdate = ({ type: 'start' } & StreamStart) | { type: 'delta'; text: string }
+export type TurnStreamResult = { kind: 'done'; data: StreamDone } | { kind: 'pending'; data: TurnResult }

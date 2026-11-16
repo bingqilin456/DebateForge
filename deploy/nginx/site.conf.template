@@ -36,7 +36,8 @@ server {
     location = /api {
         include /etc/nginx/siyige/proxy.conf;
     }
-    location ^~ /api/ {
+    # 保留普通前缀匹配，让上面的 stream 正则可以被选择。
+    location /api/ {
         include /etc/nginx/siyige/proxy.conf;
     }
     location @api_body_too_large {

@@ -1,0 +1,15 @@
+{
+  "id": "UNAPPROVED-DO-NOT-ENABLE",
+  "model": "deepseek-flash",
+  "users": [0, 0],
+  "start": "0001-01-01T00:00:00Z",
+  "end": "0001-01-01T00:00:00Z",
+  "max_calls": 0,
+  "max_input_tokens": 0,
+  "max_output_tokens": 0,
+  "max_cost_micro_cny": 0,
+  "input_micro_cny_per_million": 0,
+  "output_micro_cny_per_million": 0,
+  "per_call_input_tokens": 0,
+  "per_call_output_tokens": 0
+}

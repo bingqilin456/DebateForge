@@ -27,26 +27,35 @@ export const DEFAULT_TIMEOUT_MS = 5_000
 export const GENERATION_TIMEOUT_MS = 70_000
 
 // 计时覆盖 fetch 和响应体读取；即使读取器迟迟不结束，也必须按总预算返回。
-async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, health = false): Promise<T> {
+async function withinTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, health = false, external?: AbortSignal): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ApiError('format', '请求超时配置无效。')
+  const cancelledError = () => new ApiError('network', '流式连接已中止，请查询已保存状态。')
+  if (external?.aborted) throw cancelledError()
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
+  let cancel: (() => void) | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort()
       reject(new ApiError('timeout', health ? '检查超时，请确认后端已启动后重试。' : '请求超时，请稍后手动重试。'))
     }, timeoutMs)
   })
+  const cancellation = new Promise<never>((_, reject) => {
+    cancel = () => { controller.abort(); reject(cancelledError()) }
+    external?.addEventListener('abort', cancel, { once: true })
+  })
   try {
-    return await Promise.race([operation(controller.signal), timeout])
+    return await Promise.race([operation(controller.signal), timeout, cancellation])
   } catch (error) {
     if (error instanceof ApiError) throw error
+    if (external?.aborted) throw cancelledError()
     if (controller.signal.aborted) {
       throw new ApiError('timeout', health ? '检查超时，请确认后端已启动后重试。' : '请求超时，请稍后手动重试。')
     }
     throw new ApiError('network', health ? '无法连接服务，请确认前后端已启动后重试。' : '无法连接服务，请稍后手动重试。')
   } finally {
     clearTimeout(timer)
+    if (cancel) external?.removeEventListener('abort', cancel)
   }
 }
 
@@ -144,10 +153,23 @@ function businessError(value: unknown, response: Response, id: string): ApiError
 }
 
 // 只接收同源 /api/v1/ 路径，避免向任意地址发送 Session 写操作的 CSRF token。
+export type StreamResponse<T, P> = { kind: 'done'; data: T } | { kind: 'pending'; data: P }
+export interface StreamRequestOptions<T, P> {
+  body: unknown
+  validatePending: (value: unknown) => value is P
+  consume: (response: Response, requestId: string, signal: AbortSignal) => Promise<T>
+  signal?: AbortSignal
+}
+
+// 流内受控错误复用同一映射，不展示供应商原文，也不从 error 中推测版本。
+export function streamError(code: string, id: string): ApiError {
+  return new ApiError('http', Object.hasOwn(errorMessages, code) ? errorMessages[code]! : '生成未完成，请查询已保存状态。', { code, requestId: id })
+}
+
 export function createApiClient(hooks: ClientHooks = {}) {
-  async function request<T>(path: string, options: JsonRequestOptions<T>): Promise<T>
-  async function request(path: string, options: EmptyRequestOptions): Promise<void>
-  async function request<T>(path: string, options: JsonRequestOptions<T> | EmptyRequestOptions): Promise<T | void> {
+  // JSON 与 SSE 共用路径、Session、CSRF、编码、超时及 401 代次防护，不建第二套请求底座。
+  async function perform<T>(path: string, options: RequestOptions, accept: string,
+    consume: (response: Response, envelope: () => Promise<unknown>, signal: AbortSignal) => Promise<T>, external?: AbortSignal): Promise<T> {
     if (!path.startsWith('/api/v1/') || path.includes('\\') || path.includes('#')
       || !new URL(path, 'http://api.invalid').pathname.startsWith('/api/v1/')) {
       throw new ApiError('format', '业务请求必须使用同源 /api/v1/ 路径。')
@@ -155,7 +177,7 @@ export function createApiClient(hooks: ClientHooks = {}) {
     const method = options.method ?? 'GET'
     const authenticated = options.authenticated !== false
     const authVersion = hooks.getAuthVersion?.()
-    const headers = new Headers({ Accept: 'application/json' })
+    const headers = new Headers({ Accept: accept })
     if (method === 'POST' && authenticated) {
       const token = hooks.getCsrfToken?.()
       if (!token) throw new ApiError('csrf', '登录状态尚未恢复，请先恢复登录或重新登录。')
@@ -170,33 +192,58 @@ export function createApiClient(hooks: ClientHooks = {}) {
       }
       headers.set('Content-Type', 'application/json')
     }
-    return withinTimeout(async (signal) => {
-      const response = await fetch(path, {
-        method, body, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
-      })
+    return withinTimeout(async signal => {
+      const response = await fetch(path, { method, body, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal })
+      const envelope = async () => {
+        const value = await readJson(response)
+        const id = requestId(value, response)
+        if (!response.ok) {
+          const error = businessError(value, response, id)
+          if (authenticated && error.status === 401 && error.code === 'unauthenticated'
+            && authVersion === hooks.getAuthVersion?.()) hooks.onUnauthenticated?.()
+          throw error
+        }
+        return value
+      }
+      return consume(response, envelope, signal)
+    }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS, false, external)
+  }
+
+  async function request<T>(path: string, options: JsonRequestOptions<T>): Promise<T>
+  async function request(path: string, options: EmptyRequestOptions): Promise<void>
+  async function request<T>(path: string, options: JsonRequestOptions<T> | EmptyRequestOptions): Promise<T | void> {
+    return perform(path, options, 'application/json', async (response, envelope) => {
       if (response.status === 204) {
         if (options.expectedStatus !== 204) throw new ApiError('format', '服务返回了非预期的空响应。')
         return
       }
-      const value = await readJson(response)
-      const id = requestId(value, response)
-      if (!response.ok) {
-        const error = businessError(value, response, id)
-        // 请求开始后若已切换认证代次，旧请求的 401 不能清掉新 Session。
-        if (authenticated && error.status === 401 && error.code === 'unauthenticated'
-          && authVersion === hooks.getAuthVersion?.()) hooks.onUnauthenticated?.()
-        throw error
-      }
-      const expectedStatuses: readonly number[] = typeof options.expectedStatus === 'number'
-        ? [options.expectedStatus] : options.expectedStatus
-      if (options.expectedStatus === 204 || !expectedStatuses.includes(response.status)
+      const value = await envelope()
+      const statuses: readonly number[] = typeof options.expectedStatus === 'number' ? [options.expectedStatus] : options.expectedStatus
+      if (options.expectedStatus === 204 || !statuses.includes(response.status)
         || !isRecord(value) || !('data' in value) || !options.validate(value.data)) {
         throw new ApiError('format', '服务成功响应不符合约定，请检查后端接口。')
       }
       return value.data
-    }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    })
   }
-  return { request }
+
+  async function requestStream<T, P>(path: string, options: StreamRequestOptions<T, P>): Promise<StreamResponse<T, P>> {
+    return perform(path, { method: 'POST', body: options.body, timeoutMs: GENERATION_TIMEOUT_MS }, 'text/event-stream', async (response, envelope, signal) => {
+      const mime = response.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase()
+      if (response.status === 200 && mime === 'text/event-stream') {
+        const id = response.headers.get('X-Request-ID')
+        if (!id?.trim() || !response.body) throw new ApiError('format', '流式响应缺少请求标识或正文。')
+        return { kind: 'done', data: await options.consume(response, id, signal) }
+      }
+      // 202 即使 ok 也只能解析普通 JSON；事件前的 HTTP 错误沿用同一受控错误路径。
+      const value = await envelope()
+      if (response.status !== 202 || !isRecord(value) || !options.validatePending(value.data)) {
+        throw new ApiError('format', '流式响应状态或内容类型不符合约定。')
+      }
+      return { kind: 'pending', data: value.data }
+    }, options.signal)
+  }
+  return { request, requestStream }
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>

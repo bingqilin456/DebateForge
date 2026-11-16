@@ -71,22 +71,22 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 13 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本。
-		t.Fatalf("版本历史条数 = %d，期望 13", len(before))
+	if len(before) != 14 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本 + 一个策略表版本。
+		t.Fatalf("版本历史条数 = %d，期望 14", len(before))
 	}
 	var tables int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 7 {
-		t.Fatal("七表的存储引擎/字符集不符合冻结设计", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 8 {
+		t.Fatal("八表的存储引擎/字符集不符合冻结设计", err)
 	}
 	var ids, foreignKeys, historyIDs int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 7 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 8 {
 		t.Fatal("业务主键未使用自增 BIGINT UNSIGNED", err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 6 {
-		t.Fatal("冻结的六条外键关系不完整", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 7 {
+		t.Fatal("冻结的七条外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 12").Scan(&historyIDs); err != nil || historyIDs != 12 {
-		t.Fatal("十二个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 13").Scan(&historyIDs); err != nil || historyIDs != 13 {
+		t.Fatal("十三个版本未逐一记录成功", err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -102,8 +102,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 12 {
-		t.Fatal("状态未显示十二个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 13 {
+		t.Fatal("状态未显示十三个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -131,10 +131,10 @@ func versionHistory(t *testing.T, db *sql.DB, table string) []string {
 	return history
 }
 
-func rowCounts(t *testing.T, db *sql.DB) [7]int64 {
+func rowCounts(t *testing.T, db *sql.DB) [8]int64 {
 	t.Helper()
-	var counts [7]int64
-	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries"} {
+	var counts [8]int64
+	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies"} {
 		if err := db.QueryRow("SELECT COUNT(*) FROM `" + table + "`").Scan(&counts[i]); err != nil {
 			t.Fatal("无法核对业务行数")
 		}
@@ -202,6 +202,16 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	reject(1452, summarySQL, 0, "generating")
 	reject(3819, "UPDATE debate_summaries SET attempt_version=0 WHERE id=?", summary)
 	reject(3819, "UPDATE debate_summaries SET status='other' WHERE id=?", summary)
+	strategySQL := "INSERT INTO debate_strategies(debate_id,status) VALUES (?,?)"
+	strategy := insert(strategySQL, debate, "generating")
+	var unknownStrategy bool
+	if err := tx.QueryRow("SELECT schema_version IS NULL AND content_json IS NULL AND input_tokens IS NULL AND output_tokens IS NULL FROM debate_strategies WHERE id=?", strategy).Scan(&unknownStrategy); err != nil || !unknownStrategy {
+		t.Fatal("策略未完成的字段与未知用量必须为 NULL", err)
+	}
+	reject(1062, strategySQL, debate, "generating")
+	reject(1452, strategySQL, 0, "generating")
+	reject(3819, "UPDATE debate_strategies SET attempt_version=0 WHERE id=?", strategy)
+
 	insert("INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "中文发言🌱")
 	reject(1062, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "重复")
 	reject(3819, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "system", "非法角色")
@@ -218,6 +228,7 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
 		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_summaries", "status", summary, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
+		{"debate_strategies", "status", strategy, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"messages", "role", 0, []string{"user", "assistant"}, []string{"user ", "USER", "Assistant", "", " user", "user\t"}},
 	} {
 		where, id := "id", check.id

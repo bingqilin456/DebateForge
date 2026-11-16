@@ -38,7 +38,20 @@ func LoadConfig() (Config, error) {
 		addr = "127.0.0.1:8080"
 	}
 	var trustedProxy netip.Addr
-	if database.Env == "deploy" {
+	if database.Env == "demo" {
+		if addr != "0.0.0.0:8080" {
+			return Config{}, fmt.Errorf("本地 Demo 仅允许固定容器监听")
+		}
+		switch os.Getenv("AI_MODE") {
+		case "", "disabled", "fake":
+		case "local-demo":
+			if !filepath.IsAbs(os.Getenv("DEMO_LEDGER")) || !filepath.IsAbs(os.Getenv("DEEPSEEK_API_KEY_FILE")) {
+				return Config{}, fmt.Errorf("本地 Demo 要求独立持久账本和服务端密钥文件")
+			}
+		default:
+			return Config{}, fmt.Errorf("本地 Demo 模型模式无效")
+		}
+	} else if database.Env == "deploy" {
 		if addr != "0.0.0.0:8080" {
 			return Config{}, fmt.Errorf("部署模式要求 HTTP_ADDR=0.0.0.0:8080")
 		}
@@ -75,6 +88,9 @@ func LoadConfig() (Config, error) {
 	if database.Env == "deploy" && !secure {
 		return Config{}, fmt.Errorf("部署模式要求 HTTPS AUTH_ORIGIN")
 	}
+	if database.Env == "demo" && authOrigin != "http://127.0.0.1:18081" {
+		return Config{}, fmt.Errorf("本地 Demo 仅允许固定回环 Origin")
+	}
 	return Config{HTTPAddr: addr, AuthOrigin: authOrigin, TrustedProxy: trustedProxy, Database: database}, nil
 }
 
@@ -98,12 +114,12 @@ func (cfg DatabaseConfig) validate() error {
 		if !isLoopbackEndpoint(cfg.Addr) {
 			return fmt.Errorf("DB_ADDR 必须使用回环 IP 和 1–65535 端口")
 		}
-	case "deploy":
+	case "deploy", "demo":
 		if cfg.Addr != "mysql:3306" {
 			return fmt.Errorf("部署模式只允许内部 DB_ADDR=mysql:3306")
 		}
 	default:
-		return fmt.Errorf("APP_ENV 必须为 dev、test 或 deploy")
+		return fmt.Errorf("APP_ENV 必须为 dev、test、deploy 或 demo")
 	}
 	if cfg.Name != "siyige_"+cfg.Env || cfg.User != "siyige_"+cfg.Env+"_app" {
 		return fmt.Errorf("DB_NAME 和 DB_USER 必须匹配当前环境的应用账户")

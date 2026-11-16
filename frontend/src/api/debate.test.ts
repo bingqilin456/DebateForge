@@ -43,7 +43,7 @@ describe('辩论与总结 API 边界', () => {
 
   it('生成使用 70 秒预算、按会话赛制校验轮次上限与 202，且保留输入原文和相同请求标识', async () => {
     const request = vi.fn().mockResolvedValue({})
-    const api = createDebateApi({ request })
+    const api = createDebateApi({ request, requestStream: vi.fn() })
     await api.send('123', ' 原文 ', key)
     expect(request).toHaveBeenCalledWith('/api/v1/debates/123/turns', expect.objectContaining({
       timeoutMs: 70_000, expectedStatus: [200, 201, 202],

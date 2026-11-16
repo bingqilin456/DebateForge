@@ -28,9 +28,12 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.GET("/debates", a.RequireAuth(), h.list)
 	group.POST("/debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.create)
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
+	group.POST("/debates/:id/turns/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.stream)
 	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
 	group.POST("/debates/:id/summary", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.summary)
 	group.GET("/debates/:id/summary", a.RequireAuth(), h.getSummary)
+	group.GET("/debates/:id/strategy", a.RequireAuth(), h.getStrategy)
+	group.POST("/debates/:id/strategy", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.strategy)
 	group.GET("/debates/:id", a.RequireAuth(), h.detail)
 }
 
@@ -72,11 +75,19 @@ func decode(c *gin.Context, payload any) bool {
 }
 func (h *Handler) create(c *gin.Context) {
 	var in struct {
-		TopicID    string `json:"topic_id"`
-		UserStance string `json:"user_stance"`
+		TopicID    string          `json:"topic_id"`
+		UserStance string          `json:"user_stance"`
+		AIStyle    json.RawMessage `json:"ai_style"`
 	}
 	if !decode(c, &in) {
 		return
+	}
+	style := "logical"
+	if len(in.AIStyle) > 0 {
+		if string(in.AIStyle) == "null" || json.Unmarshal(in.AIStyle, &style) != nil {
+			serviceError(c, ErrInvalidRequest)
+			return
+		}
 	}
 	id, e := ParseID(in.TopicID)
 	if e != nil {
@@ -88,7 +99,7 @@ func (h *Handler) create(c *gin.Context) {
 		writeError(c, 401, "unauthenticated", nil)
 		return
 	}
-	d, e := h.service.Create(c.Request.Context(), current.User.ID, id, in.UserStance)
+	d, e := h.service.Create(c.Request.Context(), current.User.ID, id, in.UserStance, style)
 	if e != nil {
 		serviceError(c, e)
 		return

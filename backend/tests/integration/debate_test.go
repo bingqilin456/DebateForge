@@ -269,7 +269,7 @@ func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
 			return
 		}
 		for _, uid := range f.userIDs {
-			for _, q := range []string{"DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_summaries s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
+			for _, q := range []string{"DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_summaries s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_strategies s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
 				if e := db.ORM.WithContext(ctx).Exec(q, uid).Error; e != nil {
 					t.Error("T05 fixture cleanup failed")
 				}

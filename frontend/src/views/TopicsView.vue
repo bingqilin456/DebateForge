@@ -4,7 +4,8 @@ import { Alert, Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from '../auth/state'
 import { createDebate, listTopics } from '../api/debate'
 import { ApiError } from '../api/client'
-import type { Debate, Stance, Topic } from '../types/api'
+import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../debate/styles'
+import type { AIStyle, Debate, Stance, Topic } from '../types/api'
 
 export interface TopicsViewProps {
   auth?: AuthState
@@ -28,6 +29,7 @@ const blocked = computed(() => props.disabled || currentAuth.value.state.pending
 const topics = ref<Topic[]>([])
 const selectedTopicId = ref('')
 const stance = ref<Stance>('pro')
+const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
 const loading = ref(false)
 const loaded = ref(false)
 const creating = ref(false)
@@ -70,7 +72,7 @@ async function create() {
   createError.value = ''
   const request = ++version
   try {
-    const debate = await createDebate(selectedTopicId.value, stance.value, currentAuth.value.client)
+    const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
     // 不再同时发 open-debate，否则顶层会对同一结果打开两次。
@@ -88,7 +90,7 @@ function back() { if (!navigationDisabled.value) emit('back-to-debate') }
 watch([() => currentAuth.value, () => currentAuth.value.state.status, () => currentAuth.value.state.user?.id], () => {
   // 账号变化立即作废在途响应，旧用户的结果不能回填到新视图。
   version++
-  topics.value = []; selectedTopicId.value = ''; stance.value = 'pro'
+  topics.value = []; selectedTopicId.value = ''; stance.value = 'pro'; aiStyle.value = DEFAULT_AI_STYLE
   loading.value = false; loaded.value = false; creating.value = false
   loadError.value = ''; createError.value = ''; createdDebate.value = null; creationUncertain.value = false
   void loadTopics()
@@ -121,6 +123,13 @@ onUnmounted(() => { disposed = true; version++ })
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="con">反方（反对）</label>
       </fieldset>
+      <div class="style-field">
+        <label :for="`${id}-ai-style`">AI 陪练流派</label>
+        <select :id="`${id}-ai-style`" v-model="aiStyle" name="ai_style" :disabled="formDisabled">
+          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ label }}</option>
+        </select>
+        <p class="muted">默认逻辑型。创建后流派固定，历史和策略均以服务端保存值为准。</p>
+      </div>
       <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。请选择一个辩题后创建会话。</p>
       <Alert v-if="createError" type="error" :title="createError" role="alert" />
       <p v-if="creationUncertain" role="status">创建结果尚未确认。请先查看历史会话，核实是否已创建，避免重复创建。</p>
@@ -149,4 +158,6 @@ legend { margin-bottom: 12px; font-weight: 600; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
 .view-actions { margin-top: 20px; }
 [role="alert"] { margin-bottom: 16px; }
+.style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.style-field select { width: 100%; padding: 10px; border: 1px solid #879aab; border-radius: 8px; background: #fff; color: #172b3a; }
 </style>

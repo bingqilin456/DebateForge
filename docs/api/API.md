@@ -8,9 +8,9 @@
 
 ## 接口清单与实现状态
 
-**2026-11-14 Phase 3 目标增量（仅文档，尚未实现）：** 创建会话支持自主选择 `ai_style`；SSE 以 `turn_id/request_id` 为恢复锚点，版本由详情/状态查询获取。本次按 [ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约) 更新契约，不改变 Phase 2 已验收实现状态。当前创建仍固定 `logical`，客户端不能据本文的目标字段推定后端已经支持选择。
+**2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。2026-11-15 A3 已交付 SSE 后端和本地代理；完整浏览器 AC12/AC16 待 B1/B2 交付后联调，真实体验未执行。
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 7 个辩论/历史/总结接口，共 14 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 10 个辩论/历史/总结/策略/流式接口，共 17 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -22,19 +22,21 @@
 | GET | `/api/v1/auth/me` | 查询当前用户 | 已实现，认证验收已通过 | 200 |
 | GET | `/api/v1/topics` | 查询启用辩题 | 已实现，无收费范围复审与人工验收通过 | 200 |
 | GET | `/api/v1/debates` | 查询本人历史会话分页 | 已实现（T11） | 200 |
-| POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 基础已实现；自主 ai_style 为 T14-STYLE 计划增量 | 201 |
+| POST | `/api/v1/debates` | 创建会话（服务端固定 `standard_4`） | 已实现（T05/T14-STYLE） | 201 |
 | POST | `/api/v1/debates/{id}/turns` | 提交轮次（上限由会话赛制决定）、幂等重放 | 已实现（T05/T09） | 201、200、202 |
-| POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 计划（P0，契约见下） | 200（`text/event-stream`） |
+| POST | `/api/v1/debates/{id}/turns/stream` | 流式提交轮次（SSE，复用同一认领内核） | 已实现（P0，后端专项已验证） | 200（`text/event-stream`） |
+| GET | `/api/v1/debates/{id}/strategy` | 只读策略状态与已保存结果 | 已实现（T14-STYLE 后端） | 200 |
+| POST | `/api/v1/debates/{id}/strategy` | 显式生成或版本绑定重试策略 | 已实现（T14-STYLE 后端） | 201、200、202 |
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/retry` | 显式重试失败轮次 | 已实现（T09） | 200、202 |
 | POST | `/api/v1/debates/{id}/summary` | 生成或显式重试结构化总结 | 已实现（T10） | 201、200、202 |
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
 
-本文与 OpenAPI `paths` 记录 **14 个已实现接口 + 1 个计划接口（流式轮次）**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。
+本文与 OpenAPI `paths` 记录 **17 个已实现操作**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
-**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；本次没有新增 HTTP 路径或请求/响应字段，OpenAPI 的实现状态保持不变。公网体验仍待 Phase 4。
+**Phase 3 产品体验目标（T15-DEMO-REAL，P0，尚未交付）：** 在本地浏览器经上述正常业务接口使用真实模型完成选题/立场/流派、策略、四轮 SSE、真实总结及历史恢复，按 PRD AC17 验收；复用同一认证、所有权、认领、版本、限额与受控错误，不新增免鉴权 Demo 路径或浏览器直连模型接口。维护者按独立明确的真实模型、体验窗口、次数/Token/费用授权启用，Fake 不代替真实验收；Demo 复用业务路径，不另设免鉴权演示入口；策略 GET/POST 已实现；SSE 后端已实现；浏览器解析与完整 AC12 待 B 联调。公网体验仍待 Phase 4。
 
 ## 存活检查
 
@@ -135,10 +137,11 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `DebateListResponse` | `items`: Debate[]；`total`: 非负 integer；`page`: 正整数；`page_size`: 正整数 | 本人历史会话分页，空列表 `items` 为 `[]` |
 | `DebateResponse` | Debate | 创建会话 |
 | `TurnResponse` | `turn`: Turn；`completed_rounds`: 非负 integer；`query_url`: string | 发送、重放或显式重试轮次；query_url 为 `/api/v1/debates/{id}` 的具体相对地址 |
+| `StrategyResponse` | StrategyStatus | 显式生成、重放、重试或只读查询策略 |
 | `SummaryResponse` | SummaryStatus | 生成、重放、显式重试或查询结构化总结 |
 | `DebateDetailResponse` | `debate`: Debate；`turns`: Turn[]；`summary_status`: SummaryStatus | 本人会话详情；turns 按 round_no 升序 |
 
-Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`password_hash`、`enabled`、`lease_expires_at` 和模型计费元数据不在这些响应中。冻结契约没有裁定未知 JSON 字段的拒绝策略，OpenAPI 不额外设置 `additionalProperties: false`。ID 数值上界、UTF-8 字节上限、归一化、全空白校验、所有权、立场相反及状态流转仍须应用层验证；OpenAPI 的注释/扩展不等同于这些行为已实现。
+Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`password_hash`、`enabled`、`lease_expires_at` 和模型计费元数据不在这些响应中。旧接口未额外拒绝未知 JSON 字段；策略 POST 按 A1 定稿契约严格拒绝未知、重复和大小写不符的字段。ID 数值上界、UTF-8 字节上限、归一化、全空白校验、所有权、立场相反及状态流转仍须应用层验证；OpenAPI 的注释/扩展不等同于这些行为已实现。
 
 ### 各接口状态码
 
@@ -156,6 +159,8 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 | `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `POST /api/v1/debates/{id}/summary` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `GET /api/v1/debates/{id}/strategy` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
+| `POST /api/v1/debates/{id}/strategy` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}/summary` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/debates/{id}` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 
@@ -244,7 +249,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 需认证、Origin 和 CSRF 校验。`user_stance` 取 `pro` 或 `con`。服务端从 Session 取得 `user_id`，在事务中检查辩题可用并写入 `debates`，保存辩题标题及描述快照，反转得到 `ai_stance`。创建会话的模型调用次数为零。非法 ID 或立场为 `400 invalid_request`，不存在或禁用的辩题为 `404 not_found`。每次成功创建独立会话，客户端遇到传输故障时不自动重发创建请求。
 
-**T14-STYLE 目标契约（待实现）：** 用户在创建前选择 `logical`（逻辑型）、`aggressive`（进攻型）、`empathic`（共情型）或 `data`（数据型）。可选请求字段 `ai_style` 省略时默认 `logical`，显式 null、空串、非字符串或非精确枚举值返回 `400 invalid_request`，校验失败不创建会话。Service 校验后由 Repository 在创建事务中写入 `debates.ai_style`，响应返回所保存值；详情/历史及后续 Prompt、策略卡统一读取会话值。创建后不可修改，无流派更新接口。`mode` 仍不接受客户端选择，传入不生效，统一 `standard_4`；流派不改变轮数、立场、状态机、配额或所有权规则。历史会话不回填、不切换。策略卡调用不合并到创建事务或创建请求，具体生成接口、配额和失败响应在实施前另行细化，不在本次新增已实现路径。
+**T14-STYLE 已实现契约：** 用户在创建前选择 `logical`（逻辑型）、`aggressive`（进攻型）、`empathic`（共情型）或 `data`（数据型）。可选请求字段 `ai_style` 省略时默认 `logical`，显式 null、空串、非字符串或非精确枚举值返回 `400 invalid_request`，校验失败不创建会话。Service 校验后由 Repository 在创建事务中写入 `debates.ai_style`，响应返回所保存值；详情/历史及后续 Prompt、策略卡统一读取会话值。创建后不可修改，无流派更新接口。`mode` 仍不接受客户端选择，传入不生效，统一 `standard_4`；流派不改变轮数、立场、状态机、配额或所有权规则。历史会话不回填、不切换。策略卡调用不合并到创建事务或创建请求，具体生成接口、配额和失败响应在实施前另行细化，不在本次新增已实现路径。
 
 ```json
 {"topic_id":"7","user_stance":"pro","ai_style":"aggressive"}
@@ -402,6 +407,9 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
       "topic": {"id":"7","title":"大学课程是否应采用开放式考核","description":"讨论学习效果与评价公平"},
       "user_stance": "pro",
       "ai_stance": "con",
+      "mode": "standard_4",
+      "ai_style": "logical",
+      "total_rounds": 4,
       "status": "active",
       "completed_rounds": 0,
       "created_at": "2026-11-06T08:00:00Z",
@@ -488,15 +496,16 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 }
 ```
 
-### 13. POST /api/v1/debates/{id}/turns/stream（计划，P0）
+### 13. POST /api/v1/debates/{id}/turns/stream（P0）
 
 流式提交轮次。**请求体与 `POST /api/v1/debates/{id}/turns` 完全一致**，响应改为 `text/event-stream`。
 
-- `HEAD` 要求：`Accept: text/event-stream`；Cookie Session、`X-CSRF-Token`、正确 Origin 与普通写请求相同。
+- 请求头要求：`Accept: text/event-stream`；Cookie Session、`X-CSRF-Token`、正确 Origin 与普通写请求相同。
 - 成功：`200` + `Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`。
 - **复用同一认领内核**：`client_request_id` 幂等、`attempt_version` 版本检查、90 秒租约、并发配额与普通发送共用。禁止为流式另建幂等键。
 - 鉴权、限流、请求校验、并发配额**在发送任何事件之前**完成；这些阶段失败仍返回普通 HTTP JSON（信封同其余接口）。
 - `generating` 期间的重复请求按约定返回 `202` JSON，不进入事件流。
+- completed 同键重放为 200 SSE `start` → `done`，复用已存结果，不调用模型或发送 delta；start 的 request_id 对应本次 HTTP。202 完整信封与普通发送一致；事件前错误包括 400/401/403/404/409/413/429/500/503，保持 JSON。可复制的完整四事件、202、普通错误及恢复 fixture 见 [跨成员样例](../planning/PHASE3_A_INTEGRATION_SPEC.md#t15-core-冻结契约与可复制样例)。
 
 事件序列固定四个，名称不得改为 `chunk` 等别名：
 
@@ -520,7 +529,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 约束：只有最终事务提交成功才能发 `done`；数据库提交失败只能发 `error`，并按状态查询恢复。不做事件重放或断点续传；断线后先 `GET` 会话判定真实状态。每 15 秒发送注释行 `: keepalive`。代理层必须关闭缓冲并放宽读取超时，详见 [ARCHITECTURE](../architecture/ARCHITECTURE.md#eino-流式双轨管道)。
 
-**断线恢复与显式重试（计划契约）：**
+**断线恢复与显式重试：**
 
 1. 收到 start 后保存 turn_id/request_id；turn_id 定位轮次，request_id 关联本次 HTTP 请求和排错信息，不是 client_request_id，也不是重试版本。丢弃未确认的 delta 展示，以数据库正式结果为准。
 2. 断线、流内 error、未收到 done 或刷新后，先 `GET /api/v1/debates/{id}`，读取该 Turn 最新 status/attempt_version；总结查询只提供总结版本，不能替代轮次版本。若 start 尚未收到，按发送前保留的 client_request_id 在详情 turns 中定位，不盲目重发。暂未查到时继续有限查询，仍无法确认则提示稍后查询，不自动生成或更换键。
@@ -529,6 +538,8 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 5. 202 继续查询；409 attempt_version_conflict 仅刷新状态，不自动换新版本重发。再次失败后，只有用户看过最新失败版本并再次明确重试才允许新尝试。SSE 事件或本地缓存不得作为最新版本事实来源。
 
 
+
+## 错误码与客户端恢复
 
 | HTTP | `error.code` | 适用情况 |
 | --- | --- | --- |
@@ -553,17 +564,39 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 八个辩论与辩题业务接口已装配到真实 main。HTTP 入口对轮次生成、轮次重试与总结生成请求使用 60 秒预算、模型 45 秒、数据库短事务 3 秒；普通查询接口保留 5 秒短预算。并发“全局 2”仅指单个 Go 进程内所有用户合计，不提供跨实例协调。分钟防刷 6 次也适用于重放，每日 20 次只计新认领（含显式重试与总结生成成功认领），失败也计入；内存计数重启会丢失。
 
-AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式复用 T04 Generator，另行授权后才可使用。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
+AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式目前装配 T07 单次 trialGenerator，仅 Linux/内部中继可用，尚不具备完整 Demo 所需总结与流式能力；最小改造方案见 [首批 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，真实调用仍需独立授权。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
 
 ## Phase 2 接口晋升说明
 
-原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 已是 Phase 3 必要 P0，OpenAPI 标为 planned，不声明 text/event-stream 已实现；自主流派选择同样是创建接口的 planned 增量。
+原 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 中的 4 个 Phase 2 接口（`GET /api/v1/debates`、`POST /api/v1/debates/{id}/turns/{turn_id}/retry`、`POST /api/v1/debates/{id}/summary`、`GET /api/v1/debates/{id}/summary`）均已落地并晋升至本文与 OpenAPI `paths`。SSE 已是 Phase 3 必要 P0，后端与本地代理已实现并验证，完整浏览器 AC12 仍待 B 联调，见 [专项记录](../acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)；自主流派选择和策略 GET/POST 已按 T14-STYLE 实现。
 
 ## 核对差异与待确认问题
 
 1. **健康路径差异已裁定**：2026 年 11 月 8 日负责人明确以 `/api/health/live`、`/api/health/ready` 为准；本轮同步前端、测试和当前运行文档。历史验收及学习笔记中的旧路径保留历史语境，不作为新契约，也不提供兼容别名。
 2. **Session Cookie 名已在 T03 具体化**：HTTP 开发为 `siyige_session_dev`，HTTPS 策略为 `__Host-siyige_session`；OpenAPI 占位符已替换，安全属性与 T01 一致。
-3. **当前契约与实现边界**：Phase 2 的赛制驱动轮次、显式重试、总结和分页已实现；Phase 3 SSE、自主流派选择和总结 V2 等目标增量尚未实现，须按 planned 标注。策略卡生成接口、额度与失败契约，以及 P1 谬误存储/API，仍须在各子项实施前细化。
+3. **当前契约与实现边界**：Phase 2 的赛制驱动轮次、显式重试、总结和分页已实现；T14-STYLE 自主流派选择与策略卡后端已实现；SSE 和总结 V2 等增量尚未实现。策略卡契约已在下节及 [T14 Spec](../planning/T14_STYLE_SPEC.md) 定稿；P1 谬误存储/API 仍待其子项细化。
+
+## 14. GET/POST /api/v1/debates/{id}/strategy（T14-STYLE）
+
+策略是会话下的单份资源，帮助用户自身立场破题，结合已保存的对手 ai_style；不会成为正式消息或计轮。创建会话不调用模型；仅用户点击「生成赛前策略」才 POST。页面进入、刷新、历史及重登只 GET，未开始不自动生成。完整行为和验收见 [T14-STYLE Spec](../planning/T14_STYLE_SPEC.md)。
+
+GET 要求 Session/所有权；POST 额外要求精确 Origin/CSRF。不存在和越权统一 404。首次生成与失败重试仅在会话尚无任何 turn 时认领，否则 409 round_conflict；已完成重放和在途查询不受此新认领条件限制。
+
+POST `{}` 或 `{"retry":false}` 首次认领 version=1，成功 201；用户显式重试传 `{"retry":true,"expected_attempt_version":N}`，仅 failed 且匹配版本时 version+1，成功 200。retry 只允许布尔，true 必须有正整数版本，false 不允许版本，未知字段拒绝 400；not_started + retry=true 也为 400。completed 重放 200，generating 202，failed + retry=false 返回 200 失败状态，均不重新生成；failed 重试版本不符为 409 attempt_version_conflict，只查询不自动换版本。
+
+```json
+{"data":{"status":"not_started","attempt_version":null},"request_id":"req-strategy-get"}
+```
+
+generating 仅含 status/attempt_version；failed 增加受控 error_code（model_error/model_timeout/model_unavailable/dependency_unavailable/generation_cancelled）。成功结果：
+
+```json
+{"data":{"status":"completed","attempt_version":1,"schema_version":1,"prompt_version":"strategy-v1","ai_style":"aggressive","content":{"thesis":"开放式考核应兼顾应用能力与评价公平。","arguments":["用统一评分标准评估真实任务成果。"],"risks":["预先回应评分一致性与代做风险。"]}},"request_id":"req-strategy-complete"}
+```
+
+内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 为 strategy-v1，输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
+
+与轮次/总结共用 Gate：6/分钟、20/UTC 日、单用户并发 1、单进程全局 2；失败消耗认领额度，重放不消耗每日额度但受分钟限制。60 秒请求、45 秒模型、3 秒短事务、90 秒租约及版本条件写回；过期恢复同现有扫描。GET 不消费模型额度。标准 400/401/403/404/413/429/500 及模型 502/503/504 信封沿用；已确认失败或版本冲突附 `details:{status,attempt_version,query_url}`，query_url 为本策略 GET，无 turn_id；提交不明省略 details。策略接口不改变现有 Turn 错误结构。`AI_MODE=fake` 支持完整策略链路；disabled 和现有真实试运行包装器都受控不可用，后者未暴露策略能力，不能绕过专用费用账本。OpenAI 策略适配器仅用合成 Transport 验证，本轮没有真实调用或新的收费装配。
 
 ## T01 文档任务的历史验证记录
 

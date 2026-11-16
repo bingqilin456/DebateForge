@@ -1,0 +1,11 @@
+{
+  "base_sha": "270eed81ee9a29f53bc25c25cb9a9992e8b50252",
+  "timing": {
+    "first_length": 6,
+    "next_length": 12,
+    "elapsed_ms": 374
+  },
+  "streams": 4,
+  "ordinary": 0,
+  "completed_rounds": 4
+}

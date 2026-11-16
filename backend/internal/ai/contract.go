@@ -224,6 +224,15 @@ type Generator interface {
 	Generate(ctx context.Context, req Request) (Result, error)
 }
 
+// StreamGenerator 是可选的流式生成能力，不破坏既有 Generator 实现。
+// emit 收到的是增量临时文本，只用于向客户端展示；调用方不得据此落库。
+// 返回的 Result 必须是校验通过的最终完整回复，其 Content 必须等于全部增量拼接。
+// emit 返回错误或 Context 取消时实现必须立即停止上游读取并关闭响应体。
+// 未知流式能力的 Generator 只能作为普通生成使用，调用方不得整流伪造 delta。
+type StreamGenerator interface {
+	Stream(ctx context.Context, req Request, emit func(text string) error) (Result, error)
+}
+
 // ErrorCode 是对外受控错误码，映射到 API 契约中的 model_error / model_timeout /
 // model_unavailable / rate_limited 等分类。原始供应商正文不进入该字段。
 type ErrorCode string

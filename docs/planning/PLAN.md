@@ -1,6 +1,6 @@
 # 思弈阁 阶段工程计划
 
-**2026-11-14 当前状态。** Phase 1 已于 2026-11-10 本地结项。本轮 Phase 2 最终整合补齐 T08 辩题选择页与 T11 本人历史分页页，累计无收费验证和 CI/合并门槛见 [最终验收记录](../acceptance/PHASE2_FINAL_ACCEPTANCE.md)。Batch 0–5 完整保留，新建会话默认四轮 `standard_4`，三轮 `quick_3` 仅历史兼容与隔离测试。SSE 为 Phase 3 P0，当前未实现，本轮不启动该阶段。正式 ECS、公网 HTTPS 与生产环境回退归 Phase 4；[T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失) 仍未关闭。
+**2026-11-14 当前状态。** Phase 1 本地结项，Phase 2 经 PR #17 合入 main 结项（见 [最终验收记录](../acceptance/PHASE2_FINAL_ACCEPTANCE.md)）。A1 的 T13-Lite 本地技术回归通过，待负责人确认；[首批矩阵/样例与 Demo 方案](PHASE3_A_INTEGRATION_SPEC.md) 保留。A2 延续 `codex/p3-a-integration` 与草稿 PR #19，实现 [T14-STYLE 后端](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)，允许本轮 Commit/普通 Push。B 前端未修改，完整 AC16 待联调与负责人确认；SSE/P1/真实 Demo/10 场评测未执行。新会话 standard_4、quick_3 历史兼容、Batch 0–5 保留。Phase 3 未结项，不合 main、不调用真实模型或部署；[T07-COST-01](TASKS.md#t07-cost-01-供应商硬预算缺失) 未关闭。
 
 ## 历史阶段快照（2026-11-08）
 
@@ -106,11 +106,11 @@ SSE 自 2026-11-14 起为 Phase 3 的 P0 必做，不再作为可取消的旁支
 
 - **目标与任务**：P0 为 T13-Lite 安全故障回归、T14-STYLE 自主流派选择与策略卡、T14-EVAL 10 场真实模型质量评测、T15-Core SSE 与断线回退、T15-DEMO-REAL 真实模型可体验 Demo。P1 为 T14-REPORT 四维战报、T15-B-FALLACY 谬误透视、T15-B-DEMO 双 AI 演示，分别验收且不阻塞 MVP 核心；F14 演化树为 P2，仅留需求池。任务组定级见 [ADR-023](../decisions/DECISIONS.md#adr-023-phase-3-优先级流派选择与查询恢复契约)，真实 Demo 阶段边界见 [ADR-024](../decisions/DECISIONS.md#adr-024-phase-3-交付真实模型可体验-demo)。
 - **前置条件**：Phase 2（含 T08/T11 页面）正式结项并获下一阶段授权；赛制驱动已落地（`debates.mode` 为唯一事实来源）；流式端点契约已在 [API](../api/API.md) 与 [ARCHITECTURE](../architecture/ARCHITECTURE.md#eino-流式双轨管道) 定稿；Nginx 流式片段已具备。
-- **可并行工作**：A 可先独立完成 T13-Lite；T15-Core 实施须其通过，T14 子任务可独立准备。流派/策略卡与四维战报不依赖 SSE，可与其并行；A 后端 Stream 与 B 增量解析按四事件及 HTTP JSON 分支契约并行。SSE 以 turn_id/request_id 定位，最新 attempt_version 从详情/状态查询获取。T14-EVAL 可先准备样本，待受测功能就绪且费用/调用另获授权后执行；P1 谬误须先定存储与迁移（当前预留 00013，实施前核号），双 AI 演示依赖 SSE 展示。共享后端核心与迁移编号由 A 统一协调。
+- **可并行工作**：A 可先独立完成 T13-Lite；T15-Core 实施须其通过，T14 子任务可独立准备。流派/策略卡与四维战报不依赖 SSE，可与其并行；A 后端 Stream 与 B 增量解析按四事件及 HTTP JSON 分支契约并行。SSE 以 turn_id/request_id 定位，最新 attempt_version 从详情/状态查询获取。T14-EVAL 可先准备样本，待受测功能就绪且费用/调用另获授权后执行；P1 谬误须先定存储与迁移（00013 已用于策略表，下一候选 00014，实施前核号），双 AI 演示依赖 SSE 展示。共享后端核心与迁移编号由 A 统一协调。
 - **交付成果**：必要交付为安全回归记录、自主流派选择与策略卡、10 场真实质量评测结论、流式对辩及恢复证据，以及用户能按说明启动、亲自输入并使用真实模型的本地浏览器 Demo（含启动、配置、体验、停止及限制说明）。Demo 覆盖登录、选题/立场/流派、策略卡、真实四轮 SSE、真实总结与历史重读；P1 战报/谬误/双 AI 演示按实际交付登记。
 - **验收标准**：AC04/AC05/AC08/AC10 安全部分、AC12 流式全项、AC13 赛制环节、AC16 自主流派/策略与 AC17 真实 Demo 通过，10 场真实模型完整评测有人工结论。至少一场由用户在浏览器自主输入完成真实 standard_4 四轮及总结，刷新/重登后可读，记录实际版本、模型、授权与脱敏用量证据；仅 Fake、录屏或脚本不能替代。SSE 包含代理中文拆块、查询版本、显式重试、提交后 done，无双写。P1 仅验实际交付范围。
 - **真实体验边界**：Demo 运行于本地回环地址与明确指定的本地隔离 MySQL，浏览器通过 Go/Eino 调用真实供应商，密钥仅在服务端。先以 Fake 验证费用、次数/Token 限制、窗口停止和故障，再按单独明确的模型、参与人、体验窗口、次数/Token/费用上限启用真实体验；窗口结束或额度触顶停止新调用，不自动重试、补调或以 Fake 冒充真实回复。合格体验场次可纳入 10 场评测，额外自由体验须纳入授权预算，不重复计算调用。公网部署、域名/HTTPS 与生产运维仍归 Phase 4。
-- **进入下一阶段**：T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL 五项必要 P0 与阶段审查通过，下一阶段授权明确；P1 未交付不阻塞。真实评测或真实 Demo 未授权/未验收则保持待办，不能仅以 Fake 或 5 场降档结项。本次仅修改文档，不启动开发、真实调用或部署。
+- **进入下一阶段**：T13-Lite、T14-STYLE、T14-EVAL、T15-Core、T15-DEMO-REAL 五项必要 P0 与阶段审查通过，下一阶段授权明确；P1 未交付不阻塞。真实评测或真实 Demo 未授权/未验收则保持待办，不能仅以 Fake 或 5 场降档结项。当前 A2 仅交付 T14-STYLE 后端并完成无收费验证，完整 AC16 待 B 联调与负责人确认；其余 Phase 3 任务按各自授权推进。
 
 ## Phase 4：运维、演示与双人答辩
 

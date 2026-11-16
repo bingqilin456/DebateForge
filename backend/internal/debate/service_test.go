@@ -13,6 +13,7 @@ type genFunc func(context.Context, ai.Request) (ai.Result, error)
 func (f genFunc) Generate(c context.Context, r ai.Request) (ai.Result, error) { return f(c, r) }
 
 type testStore struct {
+	Store
 	claiming    bool
 	replay      bool
 	failContext error
@@ -20,7 +21,7 @@ type testStore struct {
 	completed   bool
 }
 
-func (s *testStore) Create(context.Context, uint64, uint64, string) (Debate, error) {
+func (s *testStore) Create(context.Context, uint64, uint64, string, string) (Debate, error) {
 	return Debate{}, nil
 }
 func (s *testStore) List(context.Context, uint64, int, int) (DebateList, error) {
@@ -171,6 +172,7 @@ func TestGenerationTimeoutPreservesLedgerFailure(t *testing.T) {
 
 // memoryStore 在无数据库单测中模拟真实短事务状态机，用于验证三轮推进、显式重试、版本保护、租约恢复与分页隔离。
 type memoryStore struct {
+	Store
 	now       func() time.Time
 	nextID    uint64
 	debates   map[uint64]Debate
@@ -196,7 +198,7 @@ func (m *memoryStore) allocID() uint64 {
 	return m.nextID
 }
 
-func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance string) (Debate, error) {
+func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance, style string) (Debate, error) {
 	now := m.now().UTC()
 	// 与生产 Repository 保持一致：新会话固定 standard_4。
 	d := Debate{
@@ -207,7 +209,7 @@ func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance string) 
 		TopicDescriptionSnapshot: "讨论学习效果与评价公平",
 		UserStance:               stance,
 		Mode:                     string(ai.ModeStandard4),
-		AIStyle:                  string(ai.StyleLogical),
+		AIStyle:                  style,
 		Status:                   "active",
 		CompletedRounds:          0,
 		CreatedAt:                now,
@@ -574,7 +576,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	gate := NewGate(func() time.Time { return clock })
 	service := NewService(store, fake, gate)
 
-	created, err := service.Create(context.Background(), 1, 1, "pro")
+	created, err := service.Create(context.Background(), 1, 1, "pro", "logical")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -665,7 +667,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	}
 
 	// 验证租约过期扫描与历史分页
-	d2, _ := service.Create(context.Background(), 1, 1, "con")
+	d2, _ := service.Create(context.Background(), 1, 1, "con", "logical")
 	expiredTime := clock.Add(-time.Second)
 	store.turns[d2.ID] = []Turn{{
 		ID:              store.allocID(),
@@ -687,7 +689,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	}
 
 	// 另一个用户创建的会话不应出现在用户 1 的分页列表中
-	_, _ = service.Create(context.Background(), 2, 1, "pro")
+	_, _ = service.Create(context.Background(), 2, 1, "pro", "logical")
 	list, err := service.List(context.Background(), 1, 1, 20)
 	if err != nil || list.Total != 2 || len(list.Items) != 2 || list.Items[0].ID != d2.ID || list.Items[1].ID != created.ID {
 		t.Fatalf("unexpected history list: %+v err=%v", list, err)
@@ -701,7 +703,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	gate := NewGate(func() time.Time { return clock })
 	service := NewService(store, fake, gate)
 
-	created, err := service.Create(context.Background(), 1, 1, "pro")
+	created, err := service.Create(context.Background(), 1, 1, "pro", "logical")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -800,7 +802,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	}
 
 	// 验证第二个完成会话首次生成成功返回 201，以及过期 generating 总结租约回收
-	d2, _ := service.Create(context.Background(), 1, 1, "con")
+	d2, _ := service.Create(context.Background(), 1, 1, "con", "logical")
 	// 第二场同样验证三轮语义，显式改用 quick_3。
 	store.setMode(d2.ID, string(ai.ModeQuick3))
 	service.generator = ai.NewFake()
@@ -822,7 +824,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	}
 
 	// 模拟第三个会话总结卡在 generating 且租约过期
-	d3, _ := service.Create(context.Background(), 1, 1, "pro")
+	d3, _ := service.Create(context.Background(), 1, 1, "pro", "logical")
 	expired := clock.Add(-time.Second)
 	store.summaries[d3.ID] = Summary{
 		ID:             store.allocID(),

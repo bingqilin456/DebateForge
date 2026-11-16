@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -185,9 +186,17 @@ type Fake struct {
 }
 
 // FakeStep 是一次预设的调用结果；Err 非 nil 时返回该错误。
+// StreamChunks 与 StreamDelays 只影响 Stream：前者是可控增量分块，
+// 后者与分块一一对应，用于模拟供应商延迟；缺省按顺序尽快发出。
+// 两者都缺省时，Stream 使用与 Generate 相同的确定性回声分块。
+// StreamFailAfter 仅当 Err 非 nil 时生效：>0 表示先发出该数量的分块再报错，
+// 用于模拟供应商中途断开；0 表示发出全部分块后报错。
 type FakeStep struct {
-	Result Result
-	Err    error
+	Result          Result
+	Err             error
+	StreamChunks    []string
+	StreamDelays    []time.Duration
+	StreamFailAfter int
 }
 
 // FakeRecord 是可观察的调用记录，供测试断言服务端构建的真实消息。
@@ -255,6 +264,134 @@ func defaultFakeReply(userContent string) string {
 		return prefix + userContent
 	}
 	return userContent
+}
+
+// Stream 实现可选的 StreamGenerator：增量按脚本分块发出，可插入延迟或故障，
+// 复用与 Generate 相同的校验、记录与回复校验，不整流缓冲后伪造 delta。
+// disabled 等不实现该接口的生成器必须由上层显式 fail closed，不能退回普通生成。
+func (f *Fake) Stream(ctx context.Context, req Request, emit func(text string) error) (Result, error) {
+	if emit == nil {
+		return Result{}, invalidInput("流式生成必须提供增量回调")
+	}
+	if ctx != nil {
+		select {
+		case <-ctx.Done():
+			return Result{}, &Error{Code: CodeModelCanceled, Message: "生成请求已取消", cause: ctx.Err()}
+		default:
+		}
+	}
+	prompt, err := BuildPrompt(req)
+	if err != nil {
+		return Result{}, err
+	}
+
+	f.mu.Lock()
+	f.records = append(f.records, FakeRecord{Request: cloneRequest(req), Prompt: clonePrompt(prompt)})
+	step := FakeStep{}
+	hasStep := false
+	if f.index < len(f.steps) {
+		step = f.steps[f.index]
+		hasStep = true
+		f.index++
+	}
+	f.mu.Unlock()
+
+	// 脚本分块优先；没有脚本分块时把脚本回复切成多块，保证确实是增量。
+	// 只有完全未脚本化时才回退到确定性回声——脚本化的空回复必须像 Generate
+	// 一样受控失败，不能被静默替换成回声。
+	chunks := step.StreamChunks
+	if !hasStep || len(chunks) == 0 {
+		chunks = splitIntoRunes(step.Result.Content)
+	}
+	if len(chunks) == 0 && !hasStep {
+		chunks = splitIntoRunes(defaultFakeReply(req.UserContent))
+	}
+	for index, chunk := range chunks {
+		if contextErr := stoppedStreamError(ctx); contextErr != nil {
+			return Result{}, contextErr
+		}
+		if hasStep && step.Err != nil && step.StreamFailAfter > 0 && index >= step.StreamFailAfter {
+			return Result{}, step.Err
+		}
+		if index < len(step.StreamDelays) && step.StreamDelays[index] > 0 {
+			timer := time.NewTimer(step.StreamDelays[index])
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return Result{}, &Error{Code: CodeModelCanceled, Message: "生成请求已取消", cause: ctx.Err()}
+			case <-timer.C:
+			}
+		}
+		if chunk == "" {
+			continue
+		}
+		if err := emit(chunk); err != nil {
+			return Result{}, (&Error{Code: CodeModelCanceled, Message: "生成请求已取消"}).WithCause(err)
+		}
+		if contextErr := stoppedStreamError(ctx); contextErr != nil {
+			return Result{}, contextErr
+		}
+	}
+	// 故障步骤在已发出的增量之后终止，模拟供应商中途断开；上层必须丢弃临时片段。
+	if hasStep && step.Err != nil {
+		return Result{}, step.Err
+	}
+
+	content := step.Result.Content
+	if len(step.StreamChunks) > 0 {
+		content = strings.Join(step.StreamChunks, "")
+	}
+	if !hasStep {
+		content = strings.Join(chunks, "")
+	}
+	if err := ValidateReply(content); err != nil {
+		return Result{}, err
+	}
+	result := step.Result
+	result.Content = content
+	if result.Metadata.PromptVersion == "" {
+		result.Metadata.PromptVersion = PromptVersion
+	}
+	if result.Metadata.FinishReason == "" {
+		result.Metadata.FinishReason = "stop"
+	}
+	return result, nil
+}
+
+// splitIntoRunes 按码点数切分，避免把多字节字符拆坏。
+// 块大小自适应：长回复按 4 码点切；短回复也至少切成两块，
+// 保证确实产生多个真实增量，而不是一块“流式”。
+func splitIntoRunes(content string) []string {
+	if content == "" {
+		return nil
+	}
+	runes := []rune(content)
+	chunkRunes := 4
+	if len(runes)/2 < chunkRunes {
+		chunkRunes = len(runes) / 2
+	}
+	if chunkRunes < 1 {
+		chunkRunes = 1
+	}
+	chunks := make([]string, 0, (len(runes)+chunkRunes-1)/chunkRunes)
+	for start := 0; start < len(runes); start += chunkRunes {
+		end := start + chunkRunes
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[start:end]))
+	}
+	return chunks
+}
+
+func stoppedStreamError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return &Error{Code: CodeModelCanceled, Message: "生成请求已取消", cause: err}
+	}
+	return nil
 }
 
 // Calls 返回已记录的调用次数。

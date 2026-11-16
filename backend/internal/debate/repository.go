@@ -73,7 +73,7 @@ func readTurns(tx *gorm.DB, d Debate, key string) (Detail, error) {
 	}
 	return result, nil
 }
-func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance string) (d Debate, err error) {
+func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance, style string) (d Debate, err error) {
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
 		var topic struct {
 			ID          uint64
@@ -87,7 +87,7 @@ func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance string)
 		if e != nil {
 			return dependency(e, false)
 		}
-		// 赛制与流派由服务端固定：新会话一律 standard_4，不接受客户端传参覆盖。
+		// 新会话固定 standard_4；流派由 Service 精确校验后保存。
 		// quick_3 仅供历史数据与隔离 E2E 使用，生产创建路径不提供该选项。
 		d = Debate{
 			UserID:                   uid,
@@ -96,7 +96,7 @@ func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance string)
 			TopicDescriptionSnapshot: topic.Description,
 			UserStance:               stance,
 			Mode:                     string(ai.ModeStandard4),
-			AIStyle:                  string(ai.StyleLogical),
+			AIStyle:                  style,
 			Status:                   "active",
 		}
 		if e = tx.Create(&d).Error; e != nil {
@@ -694,7 +694,8 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 		}
 		recovered += int(update.RowsAffected)
 	}
-	return recovered, nil
+	n, e := r.recoverStrategyLeases(ctx, now)
+	return recovered + n, e
 }
 
 var _ Store = (*Repository)(nil)

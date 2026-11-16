@@ -62,9 +62,9 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
     return response(debate, 201)
   })
   mount()
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
-  const stance = host.querySelector<HTMLSelectElement>('select[name="stance"]')!
-  stance.value = 'con'; stance.dispatchEvent(new Event('change', { bubbles: true })); await nextTick()
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
+  host.querySelector<HTMLInputElement>('input[value="1"]')!.click()
+  host.querySelector<HTMLInputElement>('input[value="con"]')!.click(); await nextTick()
   click('创建会话'); click('创建会话')
   await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
   const textarea = host.querySelector('textarea')!
@@ -84,9 +84,9 @@ it('正式入口恢复认证、读取真实形状辩题、创建首轮并以纯�
   await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/debates/123'))).toBe(true))
   await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
   click('开始新的练习')
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
   expect(host.textContent).not.toContain('<img src=x onerror=alert(1)>')
-  expect(location.hash).toBe('')
+  expect(location.hash).toBe('#topics')
 })
 
 it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完整闭环', async () => {
@@ -186,7 +186,8 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
   })
 
   mount()
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
+  host.querySelector<HTMLInputElement>('[data-topic-id="1"] input')!.click(); await nextTick()
   click('创建会话')
   await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
 
@@ -272,7 +273,7 @@ it('表单登录刚成功时即使 pending 尚在收尾，也必须读取辩题'
   }
   await nextTick()
   host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
 })
 
 it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保留当前会话', async () => {
@@ -301,7 +302,7 @@ it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保�
   })
 
   mount()
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"] option[value="1"]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
 
   // 从主视图切换到 TopicsView
   host.querySelector<HTMLButtonElement>('[data-view-tab="topics"]')!.click()
@@ -319,9 +320,10 @@ it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保�
   await vi.waitFor(() => expect(host.querySelector('[data-history-id="123"]')).not.toBeNull())
   expect(host.textContent).toContain('本人历史会话')
 
-  // 从 HistoryView 返回辩论主视图并创建会话 123
+  // 无当前会话时返回选题流程，明确选题后创建会话 123
   host.querySelector<HTMLButtonElement>('[data-nav-debate]')!.click()
-  await vi.waitFor(() => expect(host.querySelector('select[name="topic"]')).not.toBeNull())
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
+  host.querySelector<HTMLInputElement>('[data-topic-id="1"] input')!.click(); await nextTick()
   click('创建会话')
   await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
   expect(location.hash).toBe('#debate=123')
@@ -335,4 +337,28 @@ it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保�
   host.querySelector<HTMLButtonElement>('[data-view-tab="debate"]')!.click()
   await vi.waitFor(() => expect(host.textContent).toContain('会话 123'))
   expect(location.hash).toBe('#debate=123')
+})
+
+it('创建期间锁定顶层导航；结果不明切页回来仍只能查历史', async () => {
+  let finish!: (value: Response) => void
+  fetchMock.mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
+    if (String(url).endsWith('/topics')) return response({ items: [{ id: '1', title: '选题', description: '说明' }] })
+    if (init?.method === 'POST') return new Promise<Response>(resolve => { finish = resolve })
+    return response({ items: [], total: 0, page: 1, page_size: 20 })
+  })
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())
+  host.querySelector<HTMLInputElement>('[data-topic-id="1"] input')!.click(); await nextTick()
+  const form = host.querySelector('form')!
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
+  await nextTick()
+  expect(host.querySelector<HTMLButtonElement>('[data-view-tab="history"]')!.disabled).toBe(true)
+  finish(failure(503, 'dependency_unavailable'))
+  await vi.waitFor(() => expect(host.textContent).toContain('创建结果尚未确认'))
+  host.querySelector<HTMLButtonElement>('[data-view-tab="history"]')!.click(); await nextTick()
+  host.querySelector<HTMLButtonElement>('[data-view-tab="topics"]')!.click(); await nextTick()
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true)
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
 })

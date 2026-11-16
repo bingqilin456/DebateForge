@@ -26,6 +26,8 @@ async function login(page: Page, username: string) {
   await expect(page.locator('[data-view-nav]')).toBeVisible()
 }
 async function create(page: Page) {
+  await page.locator('[data-view-tab="topics"]').click()
+  await page.locator('[data-topic-id="1"] input').check()
   const response = page.waitForResponse(value => new URL(value.url()).pathname === '/api/v1/debates' && value.request().method() === 'POST')
   await page.getByRole('button', { name: '创建会话', exact: true }).click()
   const created = await response

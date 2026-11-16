@@ -15,6 +15,8 @@ const props = withDefaults(defineProps<TopicsViewProps>(), { disabled: false })
 const emit = defineEmits<{
   /** 创建辩论会话成功后触发，交由顶层视图切换至辩论主视图并加载该会话 */
   created: [debate: Debate]
+  creating: [value: boolean]
+  uncertain: [value: boolean]
   /** 按会话 ID 切换至辩论主视图并打开对应会话 */
   'open-debate': [debateId: string]
   /** 切换至本人历史会话视图（T11） */
@@ -40,6 +42,8 @@ const creationUncertain = ref(false)
 const id = useId()
 const formDisabled = computed(() => blocked.value || loading.value || creating.value || !!createdDebate.value || creationUncertain.value)
 const navigationDisabled = computed(() => blocked.value || creating.value || !!createdDebate.value)
+watch(creating, value => emit('creating', value), { flush: 'sync' })
+watch(creationUncertain, value => emit('uncertain', value), { flush: 'sync' })
 let version = 0
 let disposed = false
 function current(request: number) { return !disposed && request === version }
@@ -79,9 +83,11 @@ async function create() {
     emit('created', debate)
   } catch (error) {
     if (!current(request)) return
-    createError.value = error instanceof ApiError ? error.message : '创建会话失败，请稍后再试。'
-    // 创建不是幂等操作。丢失/损坏响应或 5xx 时先去历史核实，不能盲目重发。
-    creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http' || (error.status ?? 500) >= 500
+    createError.value = error instanceof ApiError ? error.message : '创建会话未获确认。'
+    // 创建不是幂等操作；仅明确在创建前拒绝的状态允许修正/手动重提，其余先查历史。
+    creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http'
+      || ![400, 401, 403, 404, 429].includes(error.status ?? 0)
+    if (creationUncertain.value) createError.value = '未能确认创建结果，请先查看历史会话，避免重复创建。'
   } finally { if (current(request)) creating.value = false }
 }
 function openHistory() { if (!navigationDisabled.value) emit('open-history') }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createApp, h, nextTick, reactive, type App } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../api/client'
 import TopicsView from './TopicsView.vue'
 import { createAuthState } from '../auth/state'
 import type { Debate, Stance, Topic } from '../types/api'
@@ -137,6 +138,31 @@ describe('T08 辩题列表与立场选择', () => {
     expect(button(host, '创建会话').disabled).toBe(true)
     button(host, '查看历史会话').click(); expect(openHistory).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it.each(['timeout', 'malformed', 'server', 'http408'] as const)('创建 %s 结果不明，锁定且不提示重试创建', async kind => {
+    const { host, created } = await mount(async (_url, init) => {
+      if (init?.method !== 'POST') return json({ items: topics })
+      if (kind === 'timeout') throw new ApiError('timeout', '请求超时，请稍后手动重试。')
+      if (kind === 'http408') return failure(408, 'request_timeout')
+      return kind === 'server' ? failure(503, 'dependency_unavailable') : json({ unexpected: true }, 201)
+    })
+    await loaded(host); await choose(host, '2'); submit(host)
+    await vi.waitFor(() => expect(host.textContent).toContain('创建结果尚未确认'))
+    expect(host.textContent).not.toContain('手动重试')
+    submit(host)
+    expect(button(host, '创建会话').disabled).toBe(true)
+    expect(created).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  })
+
+  it('创建时认证失效由共享认证状态清理，不交接会话', async () => {
+    const { host, auth, created } = await mount(async (_url, init) => init?.method === 'POST'
+      ? failure(401, 'unauthenticated') : json({ items: topics }))
+    await loaded(host); await choose(host, '2'); submit(host)
+    await vi.waitFor(() => expect(auth.state.status).toBe('anonymous'))
+    expect(created).not.toHaveBeenCalled()
+    expect(host.querySelector('form')).toBeNull()
   })
 
   it('外部 disabled 同时阻止请求和导航，解除后可正常加载', async () => {

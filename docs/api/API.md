@@ -1,5 +1,17 @@
 # 思弈阁 API 契约
 
+## 当前 V1 契约与 V2 待设计的边界
+
+**本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
+
+- **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
+- **V2 尚未设计任何 HTTP 接口**：产品 V2 需要的自定义辩题、训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等能力，**均未设计接口契约**。本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
+- **不预先占用 V1 路由**：V2 是否新增端点、是否扩展既有 DTO，必须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。
+- **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
+- **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
+
+**产品 V2 未实现、未验收、未获开发阶段授权。** 本节的边界说明不代表已开始设计或排期。
+
 **T03 当前增量（2026 年 11 月 8 日）：四条认证接口已通过有条件独立审查与人工验收，原延期风险保留；T05 四接口无收费实现、累计验证与新会话独立复审 PASS，三关人工验收通过，无收费范围正式结项；真实模型链路仍待另行授权验证。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
 
 2026 年 11 月 6 日，T01 固定 Phase 1 的 8 个业务接口；11 月 7 日项目负责人确认契约设计通过人工验收，T01 已结项。仅代表接口契约设计完成，不代表业务代码已实现。业务实现按 [TASKS](../planning/TASKS.md) 分批交付。历史分页、完整三轮、显式重试与总结仍以 [架构草案](../architecture/ARCHITECTURE.md#phase-2-api-草案) 为设计参考。
@@ -125,7 +137,7 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
 | `Turn` | `id`: EntityId；`round_no`: integer；`client_request_id`: string（UUID）；`status`: string；`attempt_version`: integer；`error_code`: string 或 null；`messages`: Message[] | 轮号和版本为正整数；状态 `generating/completed/failed`；错误枚举见详情节；按同轮 user、assistant 顺序返回消息。 |
 | `Message` | `id`: EntityId；`role`: string；`content`: string；`created_at`: string | role 仅 `user/assistant`；内容为原文或正式 AI 回复；时间为 UTC RFC 3339。 |
-| `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（`1` 或 `2`）与结构化 `content`（V1 为 `strengths`、`issues`、`suggestions`；V2 另含 `scores` 四维参考值）。客户端必须按 `schema_version` 分支渲染，不得把 V1 判为格式错误。 |
+| `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（`1` 或 `2`）与结构化 `content`（`schema_version=1` 为 `strengths`、`issues`、`suggestions`；`schema_version=2` 即 `phase3-summary-v2`，另含 `scores` 四维 0–100 参考值，属 T14-REPORT 目标设计、未实现）。客户端必须按 `schema_version` 分支渲染，不得把 `1` 判为格式错误。注意 `phase3-summary-v2` 不是产品 PRD V2，产品 V2 的四维 1–4 档尚无任何接口契约。 |
 | 错误信封 | `error`: object；`request_id`: string | error 必有 `code`、`message`；可选 `details`，受控错误码见下文。 |
 | `TurnFailureDetails` | 可选 `turn_id`: EntityId；`status`: string；`attempt_version`: integer；`query_url`: string | status 固定 `failed`；用于已确认持久化的失败轮次/总结或 `attempt_version_conflict`，提交结果不明时省略；轮次 `query_url` 为会话详情地址，总结 `query_url` 为 `/api/v1/debates/{id}/summary`。 |
 

@@ -4,6 +4,8 @@
 
 需求见 [PRD](docs/product/PRD.md)，架构见 [ARCHITECTURE](docs/architecture/ARCHITECTURE.md)，阶段与任务见 [PLAN](docs/planning/PLAN.md)、[TASKS](docs/planning/TASKS.md)，决策见 [DECISIONS](docs/decisions/DECISIONS.md)。文档冲突时先指出并修正，不自行扩大范围。
 
+**产品版本边界（2026-11-17）。** 产品规格当前为 [PRD V2](docs/product/PRD.md)，V1 冻结为 [PRD V1 冻结基线](docs/product/PRD_V1_BASELINE.md)。产品 V2 **需求已确认，但未实现、未验收、未获开发阶段授权**；V2 任务仅在 [TASKS](docs/planning/TASKS.md#产品-v2-待分配任务未开始) 登记为待分配/未开始，不属于任何现行阶段门槛。当前 V1 代码与已实现 HTTP 契约、Phase 3 验收基线（含任务状态、负责人、估算与证据）、`standard_4`/`quick_3` 旧含义及流派历史数据**在本轮文档重构中不改写**——「冻结」指本轮不修改当前行为与既有基线，**不是永久禁止**：后续如经授权变更，须走正常的需求确认、ADR 与任务流程，并保留历史证据。V2 暂缓流派也不取消 Phase 3 既有 AC16 门槛。旧 PRD 的非目标只用于识别复用资产与迁移成本，不能用来否决负责人已确认的 V2 需求。三类「V2」须分名：产品 V2（未实现）、`phase3-summary-v2`（总结 `schema_version=2` 的 0–100 四维，T14-REPORT，未开始）、`v2-training-reference`（产品 V2 的 1–4 档，未实施）。版本命名、替代范围与生效时点见 [ADR-027](docs/decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
+
 ## 启动与验证入口
 
 - 启动说明见 [根 README](README.md#获取与启动)，隔离 MySQL 准备见 [MySQL 说明](infra/mysql/README.md)。
@@ -19,8 +21,8 @@
 - 前端：Vue 3 + TypeScript + Arco Design，使用单文件组件和 Composition API；统一封装 API 请求，避免 `any` 和重复接口类型，前端不保存模型密钥。
 - 命名与数据格式：表和 JSON 字段使用 `snake_case`，Go 使用惯用命名，Vue 组件使用 `PascalCase`。时间在数据库与 API 中统一为 UTC，前端按本地时区展示，ID 在 JSON 中使用字符串。文档与必要注释使用中文，说明原因和约束。
 - 依赖控制：新增依赖须说明用途、成熟度、许可证和替代方案；禁止引入 Redis、消息队列、微服务、Kubernetes、向量数据库或复杂 Agent 编排。
-- **赛制与轮次：** `debates.mode` 是轮数上限的唯一事实来源，代码不得重新引入固定轮数常量；轮次校验必须从会话行读取 `mode`。新建会话一律 `standard_4`，`quick_3` 仅用于历史兼容与隔离测试，生产创建接口不接受客户端指定赛制。辩论环节由 `(赛制, 轮号)` 推导，不落库，避免第二事实源。
-- **流式：** 流式端点必须复用 `POST /turns` 的同一认领内核（`client_request_id` 幂等、`attempt_version`、租约、并发配额），禁止另建第二套幂等；只有最终事务提交成功才能发送 `done`。
+- **赛制与轮次（当前 V1 适用）：** `debates.mode` 是轮数上限的唯一事实来源，代码不得重新引入固定轮数常量；轮次校验必须从会话行读取 `mode`。新建会话一律 `standard_4`，`quick_3` 仅用于历史兼容与隔离测试，生产创建接口不接受客户端指定赛制。辩论环节由 `(赛制, 轮号)` 推导，不落库，避免第二事实源。**以上规则只约束 V1 行为，不外推到产品 V2；V2 的阶段模型目标见 [架构 V2 目标状态模型](docs/architecture/ARCHITECTURE.md#v2-目标状态模型与服务端权威阶段进度待实施)。**
+- **流式：** 流式端点必须复用 `POST /turns` 的同一认领内核（`client_request_id` 幂等、`attempt_version`、租约、并发配额），禁止另建第二套独立认领/幂等内核，也禁止出现第二个权威阶段事实源；只有最终事务提交成功才能发送 `done`。该约束不禁止实现所需的步骤或分析记录表。
 
 ## Agent 协作规则
 

@@ -4,9 +4,24 @@
 
 当前进度、验证边界、负责人确认与阶段结项统一见 [TASKS](docs/planning/TASKS.md)。SSE 前后端已实现并有 Fake 整合验证；实现与技术验证不等于完整验收，后续门槛以 TASKS 为准。分工按[一功能一负责人](docs/planning/PLAN.md#现行功能分工原则)端到端交付，任务归属以 TASKS 为准。
 
+## 产品版本
+
+| 版本 | 状态 | 入口 |
+| --- | --- | --- |
+| **产品 V2**（PRD V2） | **需求已确认；未实现、未验收、未获开发阶段授权** | [PRD V2](docs/product/PRD.md)、[需求确认记录](docs/product/PRD_V2_DECISIONS.md)、[技术评估](docs/planning/PRD_V2_TECHNICAL_ASSESSMENT.md) |
+| V1（冻结基线） | 只读快照，不再更新；既有 AC/F 编号与历史证据继续引用 | [PRD V1 冻结基线](docs/product/PRD_V1_BASELINE.md) |
+| 当前 V1 代码与 HTTP 契约 | 本轮不改写；已实现接口承诺不变 | [API](docs/api/API.md)、[OpenAPI](docs/api/openapi.yaml) |
+| Phase 3 验收基线 | 本轮不改写；任务状态、负责人、估算与证据保持原样 | [TASKS](docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚) |
+
+「不改写」是本轮文档重构的范围限定，**不是永久禁止**：V1 行为与基线后续如经授权变更，须走正常的需求确认、ADR 与任务流程并保留历史证据。
+
+产品 V2 只把新能力登记为待分配/未开始，不构成开发授权，也不改变 V1 的 `standard_4`/`quick_3` 语义与既有流派数据。V2 暂缓流派不等于取消 Phase 3 的 AC16 门槛。命名边界：产品 V2 ≠ `phase3-summary-v2`（总结 `schema_version=2` 的 0–100 四维，T14-REPORT，未开始）≠ `v2-training-reference`（产品 V2 的 1–4 档）；详见 [ADR-027](docs/decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
+
 ## 核心能力
 
-Phase 3 的 P0 产品目标包含用户可在本地浏览器亲自输入、完成真实模型四轮 SSE 对辩、总结及历史重读的 Demo，见 [PRD](docs/product/PRD.md#phase-3-真实模型可体验-demop0-交付目标尚未实现)。真实体验须单独明确模型、参与人、窗口与次数/Token/费用上限；公网 ECS/HTTPS 与生产运维归 Phase 4。进度及未验收项见 [TASKS](docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚)。
+以下描述**当前 V1 已实现或已定稿**的能力；产品 V2 的规格见 [PRD V2](docs/product/PRD.md)，其能力尚未实现。
+
+Phase 3 的 P0 产品目标包含用户可在本地浏览器亲自输入、完成真实模型四轮 SSE 对辩、总结及历史重读的 Demo，见 [PRD V1 冻结基线](docs/product/PRD_V1_BASELINE.md#phase-3-真实模型可体验-demop0-交付目标尚未实现)。真实体验须单独明确模型、参与人、窗口与次数/Token/费用上限；公网 ECS/HTTPS 与生产运维归 Phase 4。进度及未验收项见 [TASKS](docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚)。
 
 | 能力 | 说明 |
 | --- | --- |
@@ -17,7 +32,7 @@ Phase 3 的 P0 产品目标包含用户可在本地浏览器亲自输入、完�
 | 历史与权限 | 本人历史分页、会话详情、跨用户 404 隔离 |
 | SSE 流式对辩 | 增量预览、断线后查询恢复，复用普通发送的认领内核 |
 
-以上能力的实现、验证和验收状态见 TASKS；逻辑谬误透视、四维训练参考值和双 AI 演示等增强需求见 [PRD](docs/product/PRD.md)。
+以上能力的实现、验证和验收状态见 TASKS；产品 V2 新增的原文批注、争点卡、局部重练、训练赛可变回合与四维 1–4 档等规格见 [PRD V2](docs/product/PRD.md)，均未实现。逻辑谬误透视、`phase3-summary-v2` 四维战报和双 AI 演示属 V1 基线下 Phase 3 的增强需求，见 [PRD V1 冻结基线](docs/product/PRD_V1_BASELINE.md)。
 
 ## 技术栈
 
@@ -27,7 +42,7 @@ Phase 3 的 P0 产品目标包含用户可在本地浏览器亲自输入、完�
 - **部署**：Linux + Docker Compose + Nginx，单机形态，TLS 终止于 Nginx。
 - **门禁**：GitHub Actions 覆盖静态规范、前后端单测与构建、隔离 MySQL 集成测试。
 
-需求以 [PRD](docs/product/PRD.md) 为准，技术契约见 [ARCHITECTURE](docs/architecture/ARCHITECTURE.md)，接口见 [API](docs/api/API.md) 与 [OpenAPI](docs/api/openapi.yaml)，长期决策见 [DECISIONS](docs/decisions/DECISIONS.md)。
+需求以 [PRD V2](docs/product/PRD.md) 为准（V1 冻结基线见 [PRD V1](docs/product/PRD_V1_BASELINE.md)），技术契约见 [ARCHITECTURE](docs/architecture/ARCHITECTURE.md)，接口见 [API](docs/api/API.md) 与 [OpenAPI](docs/api/openapi.yaml)，长期决策见 [DECISIONS](docs/decisions/DECISIONS.md)。产品 V2 需求已确认但未实现，当前可运行行为与契约仍以 V1 为准。
 
 以下各节用于环境准备、启动与检查；历史实测和授权保留在对应验收记录中，不构成新的操作授权。当前进度仅由 [TASKS](docs/planning/TASKS.md) 维护。
 
@@ -176,7 +191,10 @@ npm run build
 | --- | --- |
 | [文档导航](docs/README.md) | 推荐阅读顺序、分类入口、状态差异及本次路径迁移对照 |
 | [AGENTS.md](AGENTS.md) | 协作规范、功能负责人分工、操作授权规则、安全及验收边界 |
-| [PRD](docs/product/PRD.md) | 完整 MVP 产品范围与验收标准 |
+| [PRD V2](docs/product/PRD.md) | 当前产品规格：V2 完整需求、流程、边界与 AC-V2（**未实现**） |
+| [PRD V1 冻结基线](docs/product/PRD_V1_BASELINE.md) | V1 只读快照：F01–F14、AC01–AC17 与历史验收语境 |
+| [PRD V2 需求确认记录](docs/product/PRD_V2_DECISIONS.md) | Q1–Q51、Q22a、Q52 的逐项确认事实源 |
+| [V2 技术评估](docs/planning/PRD_V2_TECHNICAL_ASSESSMENT.md) | 相对成本、风险、差异化、依赖顺序与待评估项 |
 | [ARCHITECTURE](docs/architecture/ARCHITECTURE.md) | 模块职责、技术实现与目标设计边界 |
 | [API](docs/api/API.md) | 健康、认证、辩论、总结、策略与流式接口契约 |
 | [OpenAPI 3.1](docs/api/openapi.yaml) | 机器可读接口契约、示例及各操作实现标记；验收状态查 TASKS |

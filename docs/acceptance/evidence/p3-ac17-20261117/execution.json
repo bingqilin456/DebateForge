@@ -1,0 +1,468 @@
+{
+  "captured_at": "2026-11-17T12:25:03.689497+00:00",
+  "authorization": {
+    "start_utc": "2026-11-17T12:07:31Z",
+    "end_utc": "2026-11-17T14:07:31Z",
+    "approval_id": "p3-ac17-browser-20261117",
+    "max_calls": 6,
+    "max_input_tokens": 720000,
+    "max_output_tokens": 24576,
+    "per_call_input_tokens": 120000,
+    "per_call_output_tokens": 4096,
+    "max_cost_micro_cny": 3000000,
+    "users": [
+      6,
+      7
+    ],
+    "scheduled_user": 6,
+    "model": "deepseek-flash",
+    "input_micro_cny_per_million": 2000000,
+    "output_micro_cny_per_million": 8000000,
+    "official_pricing_url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+    "pricing_checked_date": "2026-11-17",
+    "source_sha": "c8cd10384da2c69fcc175bf9a3e1ddc3d09fea6b",
+    "ledger_volume": "siyige-p3-demo_demo-ledger-ac17-20261117",
+    "no_retry": true
+  },
+  "head_sha": "c8cd10384da2c69fcc175bf9a3e1ddc3d09fea6b",
+  "debate": [
+    {
+      "id": 26,
+      "mode": "standard_4",
+      "status": "completed",
+      "user_id": 7,
+      "ai_style": "logical",
+      "topic_id": 1,
+      "user_stance": "pro",
+      "completed_rounds": 4
+    }
+  ],
+  "turns": [
+    {
+      "id": 41,
+      "status": "completed",
+      "round_no": 1,
+      "model_name": "deepseek-flash",
+      "input_tokens": 507,
+      "output_tokens": 618,
+      "prompt_version": "debate-v1",
+      "attempt_version": 1,
+      "client_request_id": "fb9d8565-68cb-480b-93cf-f989a582658d"
+    },
+    {
+      "id": 42,
+      "status": "completed",
+      "round_no": 2,
+      "model_name": "deepseek-flash",
+      "input_tokens": 1589,
+      "output_tokens": 575,
+      "prompt_version": "debate-v1",
+      "attempt_version": 1,
+      "client_request_id": "8071ddb7-ba86-41ea-9606-ea07c77f59f4"
+    },
+    {
+      "id": 43,
+      "status": "completed",
+      "round_no": 3,
+      "model_name": "deepseek-flash",
+      "input_tokens": 2663,
+      "output_tokens": 413,
+      "prompt_version": "debate-v1",
+      "attempt_version": 1,
+      "client_request_id": "af79c0ee-f3e8-4fff-8b84-fa24df5647d7"
+    },
+    {
+      "id": 44,
+      "status": "completed",
+      "round_no": 4,
+      "model_name": "deepseek-flash",
+      "input_tokens": 3573,
+      "output_tokens": 484,
+      "prompt_version": "debate-v1",
+      "attempt_version": 1,
+      "client_request_id": "2e5f44f6-49e1-4742-a537-219db215069f"
+    }
+  ],
+  "strategies": [
+    {
+      "status": "completed",
+      "model_name": "deepseek-flash",
+      "input_tokens": 310,
+      "output_tokens": 218,
+      "content_sha256": "00bba98b2010ce23cde80015daf1b0a43f2b9213f67849b73f49c580188bbb7c",
+      "prompt_version": "strategy-v2",
+      "schema_version": 1,
+      "attempt_version": 1
+    }
+  ],
+  "summaries": [
+    {
+      "status": "completed",
+      "model_name": "deepseek-flash",
+      "input_tokens": 4231,
+      "output_tokens": 717,
+      "content_sha256": "153d6c3d0c5fe20c40a98cb4bfc80b7d178b7278ed8ad989f1573aa727a7db44",
+      "prompt_version": "summary-v1",
+      "schema_version": 1,
+      "attempt_version": 1
+    }
+  ],
+  "messages": [
+    {
+      "count": 2,
+      "roles": "user,assistant",
+      "round_no": 1,
+      "content_hash": "19c3578092d0e55f3b1851e65a59bb07adf3ebbbdd0da3a4bb2c7e7f2b888e1b"
+    },
+    {
+      "count": 2,
+      "roles": "user,assistant",
+      "round_no": 2,
+      "content_hash": "5592169b3c692cc24b977d14f2c48379c8b4077a2709bf87064eb2b0e5276165"
+    },
+    {
+      "count": 2,
+      "roles": "user,assistant",
+      "round_no": 3,
+      "content_hash": "6b3e8ca12fd19598e25c434e51f90d335add93bffbadeaf85dc3a8281194e7b1"
+    },
+    {
+      "count": 2,
+      "roles": "user,assistant",
+      "round_no": 4,
+      "content_hash": "03778f331425c23a7f3f1927c05d1a78191301d85114352b8b454f8838c60cd0"
+    }
+  ],
+  "ledger_head": {
+    "reserved_calls": 6,
+    "reservations_sha256": "a29c1f9fa31f876768172d69a5070113eec4b2dccf128b9c9d0da83d82e1280d"
+  },
+  "ledger_results": [
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 310,
+        "output_tokens": 218,
+        "total_tokens": 528
+      }
+    },
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 507,
+        "output_tokens": 618,
+        "total_tokens": 1125
+      }
+    },
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 1589,
+        "output_tokens": 575,
+        "total_tokens": 2164
+      }
+    },
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 2663,
+        "output_tokens": 413,
+        "total_tokens": 3076
+      }
+    },
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 3573,
+        "output_tokens": 484,
+        "total_tokens": 4057
+      }
+    },
+    {
+      "outcome": "success",
+      "usage": {
+        "input_tokens": 4231,
+        "output_tokens": 717,
+        "total_tokens": 4948
+      }
+    }
+  ],
+  "binary_sha256": "d80edbe785d162424689ae7c927a40a334ef4f327ceb959e02f95d6a8eda381f",
+  "image_id": "sha256:d17f03eb5fec80ff8384dd7bb1bc998ec7c51ef015129e87cebbd0ee06e5b4ee",
+  "frontend_files": {
+    "index.html": "082a5b47ecf3b239dd042bb96b91fd69174d685d9f410bf1835faa94767b0c42",
+    "assets/index-2BCGMQpt.js": "5ae54f5c9fbb0a5ba2ee093c930177af005c9806447089dfb06497defa54ebec",
+    "assets/index-3FYfD6t4.css": "6c13612b7abf9036a1da258cf33629ad488845746a35345380ca9bd850872833",
+    "assets/index-5TTAJeWL.js": "03cf310a021e924c2b609d0f8564fe0f3d16f48edd2d04adee3ba8c212eab47e",
+    "assets/index-B2nGiObG.css": "c99c7ef037034a200fbc04077ac336efb2e6b675c614cba51d7810e025047db5",
+    "assets/index-BdE1c5cu.js": "793e2675a4c8c2badaaeb627b93ab29eed5426b43dd0ab26c236ec32c1dccfba",
+    "assets/index-Bk5Mk2XR.css": "a39c37e0d0955604d5ed94c0db6fcb942c2778b668c8647b3695fce09ce7af38",
+    "assets/index-Bn7gK2aU.css": "477fa776e1029be76a37ffe68cafe255423d4fc41aa5cbc90927f83843b9f9af",
+    "assets/index-BQDEAwp8.js": "f094b4d7d4bcda9870b8d946e091d818aab991955bd0b7d30393f55a62c22e5f",
+    "assets/index-BsLPYf1c.js": "03cf310a021e924c2b609d0f8564fe0f3d16f48edd2d04adee3ba8c212eab47e",
+    "assets/index-BuYyKnxO.js": "f39889f2d802e66dd4be71ae180eed4bd210dda654eddbac289a8cd37b242227",
+    "assets/index-C32GuTEU.css": "ced8f2f46958f04292d193b22aee832e335aeeff4e85465d3c799799a3deaa17",
+    "assets/index-CUD64WUt.css": "c3807b53adcd93a8e7c70d7245de73244d4842c499345331cefee71da1992209",
+    "assets/index-C_x2Y6kd.js": "1bdb60a47f1a72d800146ce78bba78bef54acc496582aa74e2f6bb223b72477c",
+    "assets/index-D4JzkxuJ.css": "b58fe62ba1f49c50440d421879aa342fa5cb9867ffc0fe8f276b347cb9e22c8d",
+    "assets/index-DJkhW0b_.js": "10f2e11d96ecdf175bd9ce77bba0f208978d98674416c5e0a1615338b9e0c90c",
+    "assets/index-DlV633Vf.js": "12e09657bb43fc6023c320ba029673fa2f8a45695fa51685cec35fe419ff50e4",
+    "assets/index-DqdYV94y.js": "f90f270106ef194b1c8a7022744c81ec97b793dafa7d23e05caa523386f17e59",
+    "assets/index-DQMzJkj9.js": "30ffc96cd7235f7c33a892b6b29d3fa9f5211c71d8b6f27b605dfd1a83826d4c",
+    "assets/index-DZJnMfkI.css": "d41f89ae9680b04465023806eed45818af2705199ca3c5ed7a0595c21b16088e",
+    "assets/index-D_WIbtE2.css": "2d652fae0635c8acb714ca7a65c204927305e7721336896201e60be67856c8c3",
+    "assets/index-etbpZCxU.js": "bb97effb9b613de1e5d234d44fc2f9937c2656fc071fc5f0b4af21ac67d36151",
+    "assets/index-g4m2Cmgq.css": "4e0c98db33be293d2a4c036a1e4922a888cfb802a7de161478de4eaedba706ae",
+    "assets/index-i7MLt0MK.js": "3840c3debeded78ca58d4ea7d1054a2b79a196990166f9ceddf09143e3822722",
+    "assets/index-JYvQTRQB.css": "963afa8823212a746aa4de0e8c520ec9b8fa8f288fbf957112c4351a4217c354",
+    "assets/index-ScZIMsHy.js": "bbcba202ebb157ebc61fc48dd19959745d5398c2d1e0f280df1852ae10e768e8"
+  },
+  "http_requests": [
+    {
+      "time": "2026-11-17T12:09:00.457911939Z",
+      "request_id": "75WDM7HZIZLISEEDI5I6RMIO6J",
+      "method": "POST",
+      "route": "/api/v1/debates",
+      "status": 201,
+      "latency_ms": 29
+    },
+    {
+      "time": "2026-11-17T12:09:00.51869111Z",
+      "request_id": "QCFWKUKWT5PYLKEUKUM3ODWDBJ",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 8
+    },
+    {
+      "time": "2026-11-17T12:09:00.540578477Z",
+      "request_id": "CVL6DGPKEMJREIFF4BZ7XY225J",
+      "method": "GET",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 200,
+      "latency_ms": 4
+    },
+    {
+      "time": "2026-11-17T12:09:30.341483006Z",
+      "request_id": "FN6TH4AQWHBVNFLGSPCAFNYYDK",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 4
+    },
+    {
+      "time": "2026-11-17T12:09:32.908787607Z",
+      "request_id": "3G65FJNFWBZK5Q7DUX6F5YTTO2",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 201,
+      "latency_ms": 2517
+    },
+    {
+      "time": "2026-11-17T12:12:33.981838913Z",
+      "request_id": "SIPD6QE3ESKUQEUYKXO5LOKDMY",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/turns/stream",
+      "status": 200,
+      "latency_ms": 5901
+    },
+    {
+      "time": "2026-11-17T12:13:56.635948533Z",
+      "request_id": "FE2LITWWUHXUNFLVI5E2WXHMZI",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/turns/stream",
+      "status": 200,
+      "latency_ms": 5579
+    },
+    {
+      "time": "2026-11-17T12:15:10.873734725Z",
+      "request_id": "M5FQPCURJO5UQKCL6ICGAB4YBS",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/turns/stream",
+      "status": 200,
+      "latency_ms": 4000
+    },
+    {
+      "time": "2026-11-17T12:16:17.522351482Z",
+      "request_id": "6OM6KADQSYO5NDIM2I3YLWG55E",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/turns/stream",
+      "status": 200,
+      "latency_ms": 4966
+    },
+    {
+      "time": "2026-11-17T12:16:23.602176637Z",
+      "request_id": "P73VQJSXC3STRAABFAL7CKKPHF",
+      "method": "POST",
+      "route": "/api/v1/debates/:id/summary",
+      "status": 201,
+      "latency_ms": 6071
+    },
+    {
+      "time": "2026-11-17T12:18:29.517161147Z",
+      "request_id": "6TPENB6NWIRX37ELUULSNPKMZX",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 18
+    },
+    {
+      "time": "2026-11-17T12:18:29.567964451Z",
+      "request_id": "O5M76CAQMB7KRUL74KGBHIGJL5",
+      "method": "GET",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 200,
+      "latency_ms": 5
+    },
+    {
+      "time": "2026-11-17T12:20:53.911792955Z",
+      "request_id": "SOTYMYYOV6I4OPINQDAYUPLPDT",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 404,
+      "latency_ms": 10
+    },
+    {
+      "time": "2026-11-17T12:21:22.440548569Z",
+      "request_id": "A7FM67HSUXIWZFY6XPPJLJ5IA2",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 404,
+      "latency_ms": 5
+    },
+    {
+      "time": "2026-11-17T12:21:24.59729426Z",
+      "request_id": "5IFGJF2T7SWSDRLTJ6COQ5WJ7P",
+      "method": "GET",
+      "route": "/api/v1/debates",
+      "status": 200,
+      "latency_ms": 12
+    },
+    {
+      "time": "2026-11-17T12:21:27.789089767Z",
+      "request_id": "WQSYXU75QEZLURCCUCT5UXCA73",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 404,
+      "latency_ms": 4
+    },
+    {
+      "time": "2026-11-17T12:21:32.257937956Z",
+      "request_id": "2WVRG3KFWEARDJPORKPQRRBGDZ",
+      "method": "GET",
+      "route": "/api/v1/debates",
+      "status": 200,
+      "latency_ms": 5
+    },
+    {
+      "time": "2026-11-17T12:21:33.587703866Z",
+      "request_id": "ACNF3GVRB6Z4FY3W5F4DC5J5UR",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 28
+    },
+    {
+      "time": "2026-11-17T12:21:33.611955331Z",
+      "request_id": "PCRH3BBKML6MM2FXFICVBXWFOZ",
+      "method": "GET",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 200,
+      "latency_ms": 4
+    },
+    {
+      "time": "2026-11-17T12:22:26.18407775Z",
+      "request_id": "GNZMD3CGVS4D3A2VD6A24I5YMZ",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 404,
+      "latency_ms": 12
+    },
+    {
+      "time": "2026-11-17T12:23:28.750252977Z",
+      "request_id": "U4UNCUYEIMML2DEX2LXM65S3J6",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 16
+    },
+    {
+      "time": "2026-11-17T12:23:28.769241427Z",
+      "request_id": "JQ4EPG22PGTVR7N73VZT5OAY3S",
+      "method": "GET",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 200,
+      "latency_ms": 6
+    },
+    {
+      "time": "2026-11-17T12:23:43.172354143Z",
+      "request_id": "SJ4FIJS72D7LNWRZE5AROUYRUA",
+      "method": "GET",
+      "route": "/api/v1/debates",
+      "status": 200,
+      "latency_ms": 7
+    },
+    {
+      "time": "2026-11-17T12:23:52.365108961Z",
+      "request_id": "OFFFUNY2OBGNZFG4IS7XTD75FO",
+      "method": "GET",
+      "route": "/api/v1/debates/:id",
+      "status": 200,
+      "latency_ms": 17
+    },
+    {
+      "time": "2026-11-17T12:23:52.38636698Z",
+      "request_id": "UXUB57DSSF4Y3EDRDX3ERSVNA5",
+      "method": "GET",
+      "route": "/api/v1/debates/:id/strategy",
+      "status": 200,
+      "latency_ms": 4
+    }
+  ],
+  "actual_participant_user_id": 7,
+  "participant_note": "Preflight scheduling note used ID 6; browser was already signed in as ID 7. Both IDs 6 and 7 were explicitly approved; all six charged calls belong to debate 26, owned by ID 7.",
+  "browser_checks": {
+    "user_four_rounds_and_summary_confirmed": true,
+    "user_incremental_display_confirmed": true,
+    "refresh_panel_identical": true,
+    "visible_panel_characters": 8674,
+    "other_approved_user_id": 6,
+    "other_user_detail_access": "controlled denial; no conversation content exposed",
+    "same_user_relogin_and_history": "passed; exact visible panel equality after returning from own history",
+    "same_user_relogin_panel_identical": true,
+    "user_incremental_display_confirmation": "看到了逐步增量显示",
+    "user_four_rounds_confirmation": "已完成四轮，且看到总结"
+  },
+  "nginx_checks": {
+    "config_test_passed": true,
+    "effective_config_test_passed": true,
+    "stream_location_present": true,
+    "proxy_buffering_off": true,
+    "proxy_request_buffering_off": true,
+    "http_1_1": true,
+    "x_accel_buffering_no": true
+  },
+  "control_checks": {
+    "linux_fake_demo_top_level_tests": 10,
+    "linux_fake_demo_top_level_tests_passed": 10,
+    "network_during_fake_tests": "none",
+    "tls_protocol": "TLSv1.3",
+    "tls_peer_cn": "api.deepseek.com",
+    "tls_verification": "OK",
+    "balance_sufficient_for_3_cny": true,
+    "operator_stop_written": true,
+    "business_retries": 0
+  },
+  "cost": {
+    "input_tokens": 12873,
+    "output_tokens": 3025,
+    "frozen_peak_estimate_micro_cny": 49946
+  },
+  "persistence_check": "debate, turns, strategy, summary, message counts/content hashes and ledger all unchanged across refresh, logout, other-user refusal, and same-user history read",
+  "owner_signoff": {
+    "date": "2026-11-17",
+    "answer": "正式签收 AC17 限定范围",
+    "scope": "c8cd103 / debate 26 / local controlled AC17",
+    "phase3_complete": false
+  }
+}

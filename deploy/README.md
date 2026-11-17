@@ -26,7 +26,7 @@ t07=(docker compose --env-file deploy/.env -f deploy/compose.yaml -p siyige-t07-
 
 ## 2. 显式受审迁移
 
-在目标 MySQL 健康后、启动应用前执行。已有环境先停止写入并取得经核对的备份，初次空库登记为空库。核对迁移镜像与发布标识、SQL 00001–00010、应用授权 SQL、目标项目/卷及数据库账号。首次 `status` 可能创建 Goose 版本表和版本 0，属于数据库写入。Docker 初始化只在新卷创建数据库与账户，表和种子由迁移工具显式写入。迁移成功后，管理员在目标 MySQL 容器内以 socket root 显式执行逐表授权，Go 只持有应用账户的秘密。迁移和授权须覆盖在本次目标库的写入授权中。
+在目标 MySQL 健康后、启动应用前执行。已有环境先停止写入并取得经核对的备份，初次空库登记为空库。核对迁移镜像与发布标识、当前 `backend/migrations/` 中的全部前向 SQL（当前为 `00001`–`00013`，实施前以实际文件为准）、应用授权 SQL、目标项目/卷及数据库账号。首次 `status` 可能创建 Goose 版本表和版本 0，属于数据库写入。Docker 初始化只在新卷创建数据库与账户，表和种子由迁移工具显式写入。迁移成功后，管理员在目标 MySQL 容器内以 socket root 显式执行逐表授权，Go 只持有应用账户的秘密。迁移和授权须覆盖在本次目标库的写入授权中。
 
 ```bash
 "${t07[@]}" run --rm --no-deps migrate status
@@ -36,7 +36,7 @@ t07=(docker compose --env-file deploy/.env -f deploy/compose.yaml -p siyige-t07-
 "${t07[@]}" exec -T mysql bash /opt/siyige/mysql-client.sh app --execute='SELECT COUNT(*) FROM topics'
 ```
 
-部署目标固定为内部 `mysql:3306/siyige_deploy` 与 `siyige_deploy_migrator`，本机 `dev/test` 目标仍各自固定。CLI 在同一会话核对实际库名、账户、MySQL 版本并取锁，沿用历史检查与前向迁移。全新库预期 10 个版本全部 applied、5 条题目；隔离首次验证时再次显式执行 `up` 应为 `applied=0`。再用 app 客户端执行 `UPDATE goose_db_version SET is_applied=is_applied WHERE 1=0`，预期被权限拒绝（1142），即使误获授权也不会更新行。管理员核对 `SHOW GRANTS FOR 'siyige_deploy_app'@'%'` 仅列业务表权限。初始化、迁移或授权失败即暂停发布，保留目标卷和证据，按现有恢复手册核对结构、历史和锁。 [迁移与失败处理](../backend/migrations/README.md#失败重跑与恢复)
+部署目标固定为内部 `mysql:3306/siyige_deploy` 与 `siyige_deploy_migrator`，本机 `dev/test` 目标仍各自固定。CLI 在同一会话核对实际库名、账户、MySQL 版本并取锁，沿用历史检查与前向迁移。全新库预期 13 个版本全部 applied（以 `backend/migrations/` 当前文件数为准）、5 条题目；隔离首次验证时再次显式执行 `up` 应为 `applied=0`。再用 app 客户端执行 `UPDATE goose_db_version SET is_applied=is_applied WHERE 1=0`，预期被权限拒绝（1142），即使误获授权也不会更新行。管理员核对 `SHOW GRANTS FOR 'siyige_deploy_app'@'%'` 仅列业务表权限。初始化、迁移或授权失败即暂停发布，保留目标卷和证据，按现有恢复手册核对结构、历史和锁。 [迁移与失败处理](../backend/migrations/README.md#失败重跑与恢复)
 
 ## 3. 首次受控发布与回退
 

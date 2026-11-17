@@ -2,6 +2,22 @@
 
 本文负责文档入口与阅读顺序。产品范围、技术契约、任务进度及验收证据仍由各自文档维护，不在此重复整份状态说明。
 
+## 权威来源与冲突处理
+
+不同问题有不同的权威来源；**没有「最新文档」或「代码实际行为」单方面压倒一切的规则**，遇到不一致时按下表定位该问题的权威载体，再判断是实现缺陷、文档滞后还是待决事项。
+
+| 问题 | 权威来源 | 说明 |
+| --- | --- | --- |
+| 产品要做什么、AC 编号 | [PRD V2](product/PRD.md)（当前规格，**未实现**）；V1 的 F01–F14 / AC01–AC17 见 [PRD V1 冻结基线](product/PRD_V1_BASELINE.md) | V1/Phase 3 验收引用 V1 基线，两套编号不得混用；讨论 V2 需求与 AC 不构成开发授权 |
+| HTTP 请求/响应、错误码 | [API](api/API.md) 与 [OpenAPI](api/openapi.yaml) | 两者应一致；与代码不符时报告契约或实现偏差，核对已批准的基线与 ADR 后纠正，不擅自改动公开行为 |
+| 架构与技术约束（分层、状态机、安全边界） | [ARCHITECTURE](architecture/ARCHITECTURE.md) | 描述已实现或已定稿约束；V2 目标单独标注为待实施 |
+| 当前状态、负责人、进度与风险 | [TASKS](planning/TASKS.md) | 唯一状态入口；其他文档不复写状态快照 |
+| 长期决策与**替代范围** | [DECISIONS](decisions/DECISIONS.md) | 决策被替代时以新 ADR 的替代范围为准，历史原文保留 |
+| 已执行验证与验收结论 | 本页[历史计划与验收证据](#历史计划与验收证据)所链各记录 | 记录当时授权与证据，不构成当前操作授权 |
+| 代码实际行为 | 仓库源码与测试 | 用于发现文档偏差，不能自动改写需求、契约或验收基线 |
+
+冲突处理：一般编辑冲突在当轮授权内直接纠错；产品、契约、安全或阶段待决的冲突须指出具体决策点与受影响文档，不自行扩大范围，可先继续无关工作。
+
 ## 新成员阅读顺序
 
 1. [根 README](../README.md)：环境准备、配置、启动和本地检查命令。
@@ -29,7 +45,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
 | [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)（含[现行功能分工原则](planning/PLAN.md#现行功能分工原则)）、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)、[V2 技术评估](planning/PRD_V2_TECHNICAL_ASSESSMENT.md)；已完成任务的旧计划已清理，按下方正式验收记录追溯 |
-| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)，V2 重构自测见[记录](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md) |
+| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)，V2 重构自测见[记录](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)，根协作规则与本轮局部规则优化见[记录](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md) |
 | [guides/](guides/) | [协作教程](guides/Codex团队协作实战教程.md)与[阶段 0 学习笔记](guides/学习笔记/)；学习资料不能替代当前契约或验收证据 |
 
 ## 启动与操作
@@ -70,5 +86,6 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 产品 V2 文档重构（2026-11-17）：[自测、变更范围与未执行项](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)；仅改文档，不含代码/迁移/真实调用，不代替 Phase 3 结项或 V2 开发授权。
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
+- 根协作规则与局部规则优化（2026-11-17）：[文件范围、定向验证、未执行项与剩余风险](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md)；仅改文档与规则，不含代码/迁移/真实调用，不代替任何阶段结论。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

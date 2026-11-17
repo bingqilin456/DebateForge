@@ -25,7 +25,8 @@
 - 创建参数的位置式重载、顶层 `getDebateDetail`：现有测试及历史交接明确约定兼容/调用契约，本轮没有足够证据认定废弃，保留。`detail` 别名由状态机实际调用，保留。
 - TopicsView 的 `createdDebate`、`creationUncertain` 及 App 的创建中/结果不明状态：承担成功交接前禁重提、结果不明时跨页保留提交锁及账号切换隔离，均有测试用途。
 - FirstTurnPanel / firstTurn 名称、会话 ID 与地址同步：仍是实际详情、连续对辩及恢复入口，不因名称旧而重命名或删除。
-- 后端 live/ready 端点和健康测试、OpenAPI `LiveHealth`、Nginx 精确健康路由、infra 探针及 t04-smoke：仍承担健康契约、部署与诊断；没有改动。认证预览及动态导入仍被浏览器测试使用，保留。
+- 后端 live/ready 端点和健康测试、OpenAPI `LiveHealth`、Nginx 精确健康路由、infra 探针：仍承担健康契约、部署与诊断；本轮没有改动。认证预览及动态导入仍被浏览器测试使用，保留。
+- `backend/cmd/t04-smoke/` 已在本轮之后单独删除：其 `main()` 早已固定返回 `BLOCKED`，不可达的实现与测试不再承载任何契约，历史证据保留在 [T04 验收记录](T04_AI_ACCEPTANCE.md)。本记录当时“没有改动”的表述仍是当时的实际结论。
 - T06 交接及 Bootstrap 学习笔记中的旧健康封装描述是历史记录，已有历史范围说明；本记录明确其删除时间，不回写旧证据为本轮实现。
 
 ## 验证

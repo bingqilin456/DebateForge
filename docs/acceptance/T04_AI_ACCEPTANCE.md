@@ -167,7 +167,7 @@ T04 继续 BLOCKED，不进入“真实冒烟成功后待人工最终验收”�
 
 在线核对 [官方余额接口](https://api-docs.deepseek.com/api/get-user-balance/) 为只读 `GET /user/balance`，返回 `is_available` 及分币种余额；它不返回自动充值状态。[官方错误码](https://api-docs.deepseek.com/quick_start/error_codes/) 将 402 描述为余额不足，但没有据此证明负余额处理机制。负责人已明确将该不确定性记录为剩余风险，不擅自声称供应商能够金额封顶。
 
-本次由 Codex 直接实现独立本地命令 `backend/cmd/t04-smoke/`（`main.go`、`main_test.go`、中文 `README.md`），不修改既有 `internal/ai`、依赖、服务装配或业务路由。详细流程及验证计划见 [执行器说明](../../backend/cmd/t04-smoke/README.md)。单次授权标识 `T04-20261108-local-once`；状态文件及二进制均位于现有 Git 忽略目录，不记录秘密。
+本次由 Codex 直接实现独立本地命令 `backend/cmd/t04-smoke/`（`main.go`、`main_test.go`、中文 `README.md`），不修改既有 `internal/ai`、依赖、服务装配或业务路由。该目录后因入口长期固定返回 `BLOCKED`、不再承载任何可执行路径而删除，原执行流程与验证计划保留在本记录中。单次授权标识 `T04-20261108-local-once`；状态文件及二进制均位于现有 Git 忽略目录，不记录秘密。
 
 无收费验证证据：
 

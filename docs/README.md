@@ -53,7 +53,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 通用启动、配置、测试及构建步骤见[根 README](../README.md#获取与启动)。
 - 本地 MySQL 的资源、初始化、连接及持久化核对见 [infra/mysql/README](../infra/mysql/README.md)。
 - 迁移入口、固定目标保护、失败与恢复说明见 [backend/migrations/README](../backend/migrations/README.md)。
-- T04 一次性冒烟工具的历史约束见[工具 README](../backend/cmd/t04-smoke/README.md)及[验收记录](acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项)。工具存在、文档命令或历史授权均不授权再次执行。
+- T04 一次性冒烟工具已随 `cmd/t04-smoke` 删除（入口早已固定返回 `BLOCKED`，历史约束与执行口径见[验收记录](acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项)）。历史授权与文档命令均不授权再次执行。
 
 模块专属 README 留在模块目录。上述操作说明是查阅入口，执行数据库、真实模型、部署或 Git 写操作仍须符合本轮明确授权。
 
@@ -65,6 +65,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；固定 test 后端验证之后的浏览器补测见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 
 - T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及当轮交接](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。其中 B1/B2 等待项保留原轮次语境，后续整合见 B2 记录，完整 A4/B3/A5 与真实体验状态查 TASKS。
+- 真实模型体验与评测执行（2026-11-17）：[两次授权、25 次预留、4 场实际结果、两次模型失败、一次补充授权与操作失误](acceptance/P3_REAL_MODEL_EXECUTION_2026-11-17.md)；授权参数见[调用授权登记](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)。4 场中 3 场完整，按 [ADR-029](decisions/DECISIONS.md#adr-029-phase-3-真实质量评测门槛由-5-场降为-3-场完整场次) 的 3 场门槛已满足场次条件，但 `data` 流派无合格样本、B 的人工结论未提交，不视为评测已通过。
 
 - T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。
 
@@ -87,6 +88,6 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
 - 根协作规则与局部规则优化（2026-11-17）：[文件范围、定向验证、未执行项与剩余风险](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md)；仅改文档与规则，不含代码/迁移/真实调用，不代替任何阶段结论。
-- 真实模型调用授权登记（2026-11-17）：[参数、5 场覆盖面与执行清单](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)；参数已确认、**尚未执行**，真实调用计数为 0。场次门槛见 [ADR-028](decisions/DECISIONS.md#adr-028-phase-3-真实质量评测门槛由-10-场降为-5-场)。
+- 真实模型调用授权登记（2026-11-17）：[参数、5 场覆盖面与执行清单](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)；已于 2026-11-17 实际执行，完成 4 场（3 场完整）。场次门槛见 [ADR-029](decisions/DECISIONS.md#adr-029-phase-3-真实质量评测门槛由-5-场降为-3-场完整场次)。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

@@ -9,6 +9,7 @@
 | 问题 | 权威来源 | 说明 |
 | --- | --- | --- |
 | 产品要做什么、AC 编号 | [PRD V2](product/PRD.md)（当前规格，**未实现**）；V1 的 F01–F14 / AC01–AC17 见 [PRD V1 冻结基线](product/PRD_V1_BASELINE.md) | V1/Phase 3 验收引用 V1 基线，两套编号不得混用；讨论 V2 需求与 AC 不构成开发授权 |
+| 页面/面板、字段、交互与状态恢复 | [V2 页面设计与交互细化](product/PRD_V2_UI_DESIGN.md) | **细化文档，不是事实源**；行为与 AC 冲突时以 PRD 为准；文中逐条标注已确认、补充草案、设计建议与待决 |
 | HTTP 请求/响应、错误码 | [API](api/API.md) 与 [OpenAPI](api/openapi.yaml) | 两者应一致；与代码不符时报告契约或实现偏差，核对已批准的基线与 ADR 后纠正，不擅自改动公开行为 |
 | 架构与技术约束（分层、状态机、安全边界） | [ARCHITECTURE](architecture/ARCHITECTURE.md) | 描述已实现或已定稿约束；V2 目标单独标注为待实施 |
 | 当前状态、负责人、进度与风险 | [TASKS](planning/TASKS.md) | 唯一状态入口；其他文档不复写状态快照 |
@@ -23,10 +24,11 @@
 1. [根 README](../README.md)：环境准备、配置、启动和本地检查命令。
 2. [AGENTS](../AGENTS.md)：协作规则、安全要求及操作授权边界；同时核对本轮明确授权。
 3. [PRD V2](product/PRD.md)：当前产品规格（V2 做什么、不做什么、AC-V2）——**需求已确认但未实现**；V1 只读快照见 [PRD V1 冻结基线](product/PRD_V1_BASELINE.md)。
-4. [ARCHITECTURE](architecture/ARCHITECTURE.md)：模块职责、数据关系、V1 状态机及安全约束；区分已实现内容、V2 目标设计与待评估项。
-5. [API](api/API.md) 与 [OpenAPI](api/openapi.yaml)：HTTP 契约、DTO、错误处理和接口实施边界；V2 尚无接口契约。
-6. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖、门槛与[现行功能分工原则](planning/PLAN.md#现行功能分工原则)，TASKS 管当前任务的功能负责人、进度和风险，Phase 2 按轻量 SDD 推进。
-7. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
+4. [V2 页面设计与交互细化](product/PRD_V2_UI_DESIGN.md)：页面/面板清单、入口、字段、操作、跨页数据与桌面/移动组织、共通失败态。**只做交互细化，不是产品事实源**；含待决项与设计建议，不构成开发授权。
+5. [ARCHITECTURE](architecture/ARCHITECTURE.md)：模块职责、数据关系、V1 状态机及安全约束；区分已实现内容、V2 目标设计与待评估项。
+6. [API](api/API.md) 与 [OpenAPI](api/openapi.yaml)：HTTP 契约、DTO、错误处理和接口实施边界；V2 尚无接口契约。
+7. [PLAN](planning/PLAN.md)、[TASKS](planning/TASKS.md) 与 [Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)：PLAN 管阶段依赖、门槛与[现行功能分工原则](planning/PLAN.md#现行功能分工原则)，TASKS 管当前任务的功能负责人、进度和风险，Phase 2 按轻量 SDD 推进。
+8. [DECISIONS](decisions/DECISIONS.md)：选型理由、长期决策、假设及决策替代关系；实施具体任务前再读相关计划及验收证据。
 
 **版本边界（2026-11-17）**：产品 V2（[PRD V2](product/PRD.md)）需求已确认，但**未实现、未验收、未获开发阶段授权**；其逐项确认过程见 [需求确认记录](product/PRD_V2_DECISIONS.md)，相对成本、风险、依赖顺序与待评估项见 [V2 技术评估](planning/PRD_V2_TECHNICAL_ASSESSMENT.md)（含已知的生成额度不匹配）。V1 代码与 HTTP 契约、Phase 3 验收基线、`standard_4`/`quick_3` 旧含义与流派历史数据在本轮重构中不改写（范围限定，非永久禁止）。三类「V2」须分名：产品 V2、`phase3-summary-v2`（总结 `schema_version=2` 的 0–100 四维，T14-REPORT，未开始）、`v2-training-reference`（产品 V2 的 1–4 档，未实施）；依据见 [ADR-027](decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
 
@@ -40,12 +42,12 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 | 目录 | 职责与入口 |
 | --- | --- |
-| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md) |
+| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[页面设计与交互细化](product/PRD_V2_UI_DESIGN.md)（细化文档，非事实源）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md) |
 | [architecture/](architecture/) | 当前架构与目标设计：[ARCHITECTURE](architecture/ARCHITECTURE.md)（含 V1 状态机与 [V2 目标状态模型](architecture/ARCHITECTURE.md#v2-目标状态模型与服务端权威阶段进度待实施)） |
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
 | [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)（含[现行功能分工原则](planning/PLAN.md#现行功能分工原则)）、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)、[V2 技术评估](planning/PRD_V2_TECHNICAL_ASSESSMENT.md)；已完成任务的旧计划已清理，按下方正式验收记录追溯 |
-| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)，V2 重构自测见[记录](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)，根协作规则与本轮局部规则优化见[记录](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md) |
+| [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)，V2 重构自测见[记录](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)，V2 页面设计补充自测见[记录](acceptance/PRD_V2_UI_SUPPLEMENT_ACCEPTANCE.md)，根协作规则与本轮局部规则优化见[记录](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md) |
 | [guides/](guides/) | [协作教程](guides/Codex团队协作实战教程.md)与[阶段 0 学习笔记](guides/学习笔记/)；学习资料不能替代当前契约或验收证据 |
 
 ## 启动与操作
@@ -89,6 +91,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 确认废弃代码清理：[删除依据、保留原因与验证](acceptance/REMOVE_UNUSED_CODE_ACCEPTANCE.md)；单项结果待负责人确认，不改变阶段验收状态。
 - 功能负责人分工变更（2026-11-16）：[本轮范围、验证与授权边界](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)；仅改文档，不代替 Phase 3 结项或 V2 决策。
 - 产品 V2 文档重构（2026-11-17）：[自测、变更范围与未执行项](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)；仅改文档，不含代码/迁移/真实调用，不代替 Phase 3 结项或 V2 开发授权。
+- 产品 V2 页面设计与自带 Key 需求补充（2026-11-17）：[页面文档、PRD §19 草案、技术评估 TE-14～18 与自测范围](acceptance/PRD_V2_UI_SUPPLEMENT_ACCEPTANCE.md)；仅改文档，新增 AC-V2-32～38 为待确认草案，不代替负责人签收或 V2 开发授权。
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
 - 根协作规则与局部规则优化（2026-11-17）：[文件范围、定向验证、未执行项与剩余风险](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md)；仅改文档与规则，不含代码/迁移/真实调用，不代替任何阶段结论。

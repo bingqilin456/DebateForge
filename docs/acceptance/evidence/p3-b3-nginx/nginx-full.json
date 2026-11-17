@@ -1,0 +1,83 @@
+{
+  "tested_sha": "134b845e5f9352d83c711d763471d1452ba336c0",
+  "backend_build_revision": "270eed81ee9a29f53bc25c25cb9a9992e8b50252",
+  "backend_source_equivalent_to": "134b845e5f9352d83c711d763471d1452ba336c0",
+  "recorded_at": "2026-11-16T12:22:44.452Z",
+  "chain": "Edge -> Vite:5173 -> Nginx:18080 -> Go:8080 -> siyige_test -> Fake",
+  "debate_id": "16",
+  "ai_style": "data",
+  "stance": "con",
+  "total_rounds": 4,
+  "timing": {
+    "first_length": 6,
+    "next_length": 12,
+    "elapsed_ms": 383
+  },
+  "headers": [
+    {
+      "request_id": "LH6I47QW4MDG5NR7KKVEDGTPF7",
+      "nginx_route": "matched"
+    },
+    {
+      "request_id": "UL4WMYOW6VTWHUHKFWSYUWIDYA",
+      "nginx_route": "matched"
+    },
+    {
+      "request_id": "OO3V77ZTVW7LLA6G6BKIO3E5NX",
+      "nginx_route": "matched"
+    },
+    {
+      "request_id": "NEDXS2LEEMD57KZ2TA7BA2IMER",
+      "nginx_route": "matched"
+    }
+  ],
+  "turns": [
+    {
+      "turn_id": "11",
+      "round_no": 1,
+      "client_request_id": "e37de7f3-b035-468e-b065-64bcd7874ebd",
+      "attempt_version": 1,
+      "message_ids": [
+        "21",
+        "22"
+      ]
+    },
+    {
+      "turn_id": "12",
+      "round_no": 2,
+      "client_request_id": "7fbbce43-df9d-4c9e-ba78-552513fbd40a",
+      "attempt_version": 1,
+      "message_ids": [
+        "23",
+        "24"
+      ]
+    },
+    {
+      "turn_id": "13",
+      "round_no": 3,
+      "client_request_id": "bdb2034a-0258-4884-aa82-8894ff814bd6",
+      "attempt_version": 1,
+      "message_ids": [
+        "25",
+        "26"
+      ]
+    },
+    {
+      "turn_id": "14",
+      "round_no": 4,
+      "client_request_id": "25af5cf6-efe4-4d17-b8f9-141a0bad5c38",
+      "attempt_version": 1,
+      "message_ids": [
+        "27",
+        "28"
+      ]
+    }
+  ],
+  "strategy_prompt_version": "strategy-v1",
+  "summary_status": "completed",
+  "generation_posts": 6,
+  "reload_equal": true,
+  "relogin_history_equal": true,
+  "browser_timezone": "Asia/Shanghai",
+  "local_created_at": "2026/11/16 20:22:27"
+}

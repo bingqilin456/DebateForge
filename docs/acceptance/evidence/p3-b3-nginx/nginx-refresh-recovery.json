@@ -1,0 +1,45 @@
+{
+  "tested_sha": "134b845e5f9352d83c711d763471d1452ba336c0",
+  "backend_build_revision": "270eed81ee9a29f53bc25c25cb9a9992e8b50252",
+  "backend_source_equivalent_to": "134b845e5f9352d83c711d763471d1452ba336c0",
+  "recorded_at": "2026-11-16T12:22:45.879Z",
+  "chain": "Edge -> Vite:5173 -> Nginx:18080 -> Go:8080 -> siyige_test -> Fake",
+  "debate_id": "17",
+  "ai_style": "logical",
+  "header": {
+    "request_id": "DZHTC6EQNCGZCJAYXF6HDWILZF",
+    "nginx_route": "matched"
+  },
+  "original_query": [
+    {
+      "turn_id": "15",
+      "round_no": 1,
+      "client_request_id": "46c7018c-1675-4466-9a75-dbd698072073",
+      "attempt_version": 1,
+      "message_ids": [
+        "29"
+      ]
+    }
+  ],
+  "recovered": [
+    {
+      "turn_id": "15",
+      "round_no": 1,
+      "client_request_id": "46c7018c-1675-4466-9a75-dbd698072073",
+      "attempt_version": 2,
+      "message_ids": [
+        "29",
+        "30"
+      ]
+    }
+  ],
+  "error_code": "generation_cancelled",
+  "queried_version": 1,
+  "sent_expected_version": {
+    "expected_attempt_version": 1
+  },
+  "stream_posts": 1,
+  "retry_posts": 1,
+  "strategy_posts": 0,
+  "reload_equal": true
+}

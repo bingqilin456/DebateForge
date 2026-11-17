@@ -54,7 +54,7 @@ POST 已确认失败或版本冲突的 details（提交结果不明省略 detail
 - 沿用 60 秒请求、45 秒模型、3 秒短事务、90 秒租约；启动及每 30 秒扫描过期 generating，按状态和版本置 failed。失败/取消保留版本，不推进 completed_rounds、不写 messages，不混入总结。迟到输出须 status/version 条件写回，不能覆盖新尝试。
 - 新增单表 `debate_strategies`（已核对并新增 `00013_create_debate_strategies.sql`，不修改历史迁移；后续编号从 00014 起再次核对）：唯一 debate_id、status、attempt_version、lease_expires_at、error_code、schema_version、prompt_version、model_name、content_json、生成用量及 UTC 时间。owner 经 debates 校验；无需复制 user_id。围绕会话行加锁、认领事务外调用、结果事务内提交。已成功结果不可再生成或因 Prompt 升版自动重写；历史重读返回保存版本。
 - 输出 schema 1 固定三键：`thesis` 为 1–300 Unicode 码点非空白字符串；`arguments/risks` 各 1–3 项，每项同上；完整 JSON ≤8 KiB，拒绝额外键、空白、错误类型和无效 UTF-8。前端逐字段转义展示，不渲染 HTML/Markdown 原文。无效输出变 failed，不保存成功内容。
-- 策略首版 Prompt 为 `strategy-v1`；轮次当前为 `debate-v1`，总结为 `summary-v1`。三者分别版本化，修改措辞/结构时升级对应版本；模型名与版本在服务端元数据可追溯，不由浏览器指定。对手流派会影响策略中的应对风险；轮次继续从会话行读取流派。
+- 策略首版 Prompt 为 `strategy-v1`，现行 `strategy-v2`（增加显式 JSON 骨架与“禁止代码块/解释段落”约束，降低格式漂移导致的整次失败；字段与 schema 均未变）；轮次当前为 `debate-v1`，总结为 `summary-v1`。三者分别版本化，修改措辞/结构时升级对应版本；模型名与版本在服务端元数据可追溯，不由浏览器指定。对手流派会影响策略中的应对风险；轮次继续从会话行读取流派。
 
 ## 失败路径与最小验收矩阵
 

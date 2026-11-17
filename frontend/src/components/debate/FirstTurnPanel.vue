@@ -1,34 +1,29 @@
 <script setup lang="ts">
+import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button } from '@arco-design/web-vue'
+import { AI_STYLE_LABELS } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
-import { createDebateApi, hasNonWhitespace, isEntityId, type Topic, type Stance } from '../../api/debate'
-import { createFirstTurnState, feedback } from '../../debate/firstTurn'
+import { createDebateApi, hasNonWhitespace, isEntityId } from '../../api/debate'
+import { createFirstTurnState } from '../../debate/firstTurn'
 import SummaryPanel from './SummaryPanel.vue'
+import StrategyPanel from './StrategyPanel.vue'
 
 const props = defineProps<{ auth: AuthState; route: string }>()
 const emit = defineEmits<{
   'new-practice': []
-  'open-topics': []
   'open-history': []
 }>()
 const api = createDebateApi(props.auth.client)
 const panel = createFirstTurnState(api)
 const {
-  detail, busy, uncertain, draft, notice, id,
+  detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
 } = panel
-const topics = ref<Topic[]>([])
-const topicId = ref('')
-const stance = ref<Stance>('pro')
-const loadingTopics = ref(false)
-const topicError = ref('')
-const createAttempted = ref(false)
 const input = ref('')
 
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
-const selectedTopic = computed(() => topics.value.find(topic => topic.id === topicId.value))
 const initialId = /^#debate=([1-9]\d{0,19})$/.exec(props.route)?.[1]
 const invalidRoute = Boolean(props.route && (!initialId || !isEntityId(initialId)))
 let active = true
@@ -40,23 +35,6 @@ watch(draft, value => {
   if (value) input.value = value
   else if (detail.value?.turns.length) input.value = ''
 })
-
-async function loadTopics() {
-  // 登录接受 Session 后组件可能先于认证写操作的 finally 挂载；只读初始化不能被 pending 丢弃。
-  if (loadingTopics.value) return
-  loadingTopics.value = true; topicError.value = ''
-  try {
-    const result = await api.topics()
-    if (active) { topics.value = result; topicId.value = result[0]?.id ?? '' }
-  } catch (error) { if (active) topicError.value = feedback(error) }
-  finally { if (active) loadingTopics.value = false }
-}
-
-async function create() {
-  if (locked.value || !selectedTopic.value) return
-  createAttempted.value = true
-  await panel.start(topicId.value, stance.value)
-}
 
 async function submit() {
   if (locked.value) return
@@ -73,7 +51,6 @@ function localTime(value: string) {
 
 onMounted(() => {
   if (initialId && !invalidRoute) void panel.open(initialId)
-  else if (!invalidRoute) void loadTopics()
 })
 onUnmounted(() => { active = false; panel.dispose() })
 </script>
@@ -85,38 +62,13 @@ onUnmounted(() => { active = false; panel.dispose() })
   </section>
   <template v-else>
     <p v-if="notice" class="panel-notice" role="status" aria-live="polite">{{ notice }}</p>
-    <section v-if="!id" class="card" :aria-busy="loadingTopics || busy">
-      <div class="debate-heading">
-        <h2>选题与立场</h2>
-        <div class="heading-actions">
-          <Button type="outline" data-open-topics :disabled="locked" @click="emit('open-topics')">
-            辩题列表视图
-          </Button>
-          <Button type="outline" data-open-history :disabled="locked" @click="emit('open-history')">
-            查看历史会话
-          </Button>
-        </div>
+    <section v-if="!id" class="card">
+      <h2>开始一次辩论练习</h2>
+      <p>请前往辩题列表选择辩题、立场和流派。</p>
+      <div class="heading-actions">
+        <Button type="primary" :disabled="locked" @click="newPractice">开始新的练习</Button>
+        <Button data-open-history :disabled="locked" @click="emit('open-history')">查看历史会话</Button>
       </div>
-      <p v-if="loadingTopics" role="status">正在读取预设辩题…</p>
-      <p v-else-if="topicError" role="alert">{{ topicError }}</p>
-      <p v-else-if="!topics.length">暂无可用辩题，请稍后重新读取。</p>
-      <Button v-if="!loadingTopics && (topicError || !topics.length)" :disabled="locked" @click="loadTopics">重新读取辩题</Button>
-      <form v-if="topics.length" @submit.prevent="create">
-        <label for="topic">预设辩题</label>
-        <select id="topic" v-model="topicId" name="topic" :disabled="locked">
-          <option v-for="topic in topics" :key="topic.id" :value="topic.id">{{ topic.title }}</option>
-        </select>
-        <p class="topic-description">{{ selectedTopic?.description }}</p>
-        <label for="stance">你的立场</label>
-        <select id="stance" v-model="stance" name="stance" :disabled="locked">
-          <option value="pro">正方</option>
-          <option value="con">反方</option>
-        </select>
-        <p class="muted">AI 将持相反立场，由你先发言，共进行 4 轮标准赛（立论/驳立论/自由辩/结辩）与复盘总结。</p>
-        <Button type="primary" html-type="submit" :loading="busy" :disabled="locked || !selectedTopic">
-          {{ createAttempted && !busy ? '另建新会话' : '创建会话' }}
-        </Button>
-      </form>
     </section>
 
     <section v-else class="card" :aria-busy="busy" aria-label="首轮辩论面板">
@@ -127,10 +79,13 @@ onUnmounted(() => { active = false; panel.dispose() })
       <p v-if="detail" class="muted">
         你：{{ detail.debate.user_stance === 'pro' ? '正方' : '反方' }} ·
         AI：{{ detail.debate.ai_stance === 'pro' ? '正方' : '反方' }} ·
+        <span :data-ai-style="detail.debate.ai_style">流派：{{ AI_STYLE_LABELS[detail.debate.ai_style] }}（{{ detail.debate.ai_style }}）</span> ·
         赛制：{{ detail.debate.mode === 'standard_4' ? '四轮标准赛' : '三轮快速赛' }} ·
         已完成 {{ detail.debate.completed_rounds }} / {{ detail.debate.total_rounds }} 轮
       </p>
       <p class="muted">会话 {{ id }} · 刷新可恢复当前会话</p>
+
+      <StrategyPanel v-if="detail" :auth="auth" :detail="detail" :disabled="locked || uncertain" />
 
       <div v-for="turn in detail?.turns" :key="turn.id" class="turn-block" :data-round-no="turn.round_no">
         <div class="round-title">第 {{ turn.round_no }} 轮（尝试 v{{ turn.attempt_version }}）</div>
@@ -158,6 +113,14 @@ onUnmounted(() => { active = false; panel.dispose() })
         </div>
       </div>
 
+      <section v-if="streaming" class="stream-preview" data-stream-preview aria-label="实时回复预览" :aria-busy="streaming">
+        <h3>第 {{ streamRound }} 轮 · 正在接收回复</h3>
+        <p class="muted">以下为临时片段，尚未确认保存；提交确认后才计入正式消息和完成轮数。</p>
+        <p class="stream-text" data-stream-text aria-live="polite">{{ streamText || '正在等待首个回复片段…' }}</p>
+        <Button data-stop-stream :disabled="props.auth.state.pending" @click="panel.cancelStream">停止等待并查询</Button>
+        <p class="muted">断线或停止等待后先查询已保存状态，不自动重新生成。</p>
+      </section>
+
       <form v-if="detail && nextRound !== null" data-first-turn @submit.prevent="submit">
         <label for="first-content">{{ nextRound === 1 ? '第一轮发言' : `第 ${nextRound} 轮发言` }}</label>
         <textarea
@@ -169,11 +132,11 @@ onUnmounted(() => { active = false; panel.dispose() })
           :disabled="locked || uncertain"
           aria-describedby="content-help"
         />
-        <p id="content-help" class="muted">{{ count }} / 2000 个 Unicode 字符；请围绕辩题表达你的论点。</p>
+        <p id="content-help" class="muted">{{ count }} / {{ USER_CONTENT_MAX_CHARS }} 个 Unicode 字符；请围绕辩题表达你的论点。</p>
         <Button
           type="primary"
           html-type="submit"
-          :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > 2000"
+          :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > USER_CONTENT_MAX_CHARS"
           :loading="busy"
         >
           {{ busy ? '正在处理…' : draft ? '重新发送原请求' : nextRound === 1 ? '发送首轮' : `发送第 ${nextRound} 轮` }}
@@ -200,23 +163,26 @@ onUnmounted(() => { active = false; panel.dispose() })
 
 <style scoped>
 label { display: block; font-weight: 600; margin: 20px 0 10px; }
-select, textarea { display: block; width: 100%; border: 1px solid #879aab; border-radius: 8px; background: #fff; color: #172b3a; padding: 10px 12px; }
+select, textarea { display: block; width: 100%; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); padding: 10px 12px; }
 textarea { resize: vertical; line-height: 1.8; }
 .topic-description, .panel-notice { white-space: pre-wrap; overflow-wrap: anywhere; }
-.panel-notice { color: #234f72; background: #eaf2f8; padding: 14px 18px; border-radius: 8px; }
-.muted { color: #526578; font-size: 13px; }
+.panel-notice { color: var(--app-accent); background: var(--app-info-bg); padding: 14px 18px; border-radius: var(--app-radius-control); }
+.muted { color: var(--app-text-muted); font-size: 13px; }
 .debate-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .debate-heading h2 { margin-bottom: 0; }
 .turn-block { margin-top: 20px; }
-.round-title { font-size: 13px; font-weight: 600; color: #235b81; margin-bottom: 8px; }
-.message { margin: 14px 0; padding: 20px; border: 1px solid #d8e0e8; border-radius: 12px; background: #f6f8fa; }
-.message.assistant { background: #edf5fa; border-color: #c3d8e6; }
+.round-title { font-size: 13px; font-weight: 600; color: var(--app-accent); margin-bottom: 8px; }
+.message { margin: 14px 0; padding: 20px; border: 1px solid var(--app-border); border-radius: var(--app-radius-panel); background: var(--app-background); }
+.message.assistant { background: var(--app-info-bg); border-color: var(--app-info-border); }
 .message-label { font-weight: 600; font-size: 14px; }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; }
-time { color: #526578; font-size: 12px; }
-.turn-generating { color: #234f72; font-size: 14px; }
-.turn-failed { margin: 12px 0; padding: 16px; border: 1px solid #e6b8be; border-radius: 10px; background: #fff5f6; color: #8a2330; }
+time { color: var(--app-text-muted); font-size: 12px; }
+.turn-generating { color: var(--app-accent); font-size: 14px; }
+.turn-failed { margin: 12px 0; padding: 16px; border: 1px solid var(--app-error-border); border-radius: var(--app-radius-panel); background: var(--app-error-bg); color: var(--app-error-text); }
 .turn-failed p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.stream-preview { margin: 20px 0; padding: 18px; border: 1px dashed var(--app-info-border); border-radius: var(--app-radius-panel); background: var(--app-info-bg); }
+.stream-preview h3 { margin-top: 0; }
+.stream-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 3em; }
 .heading-actions, .panel-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .panel-actions { margin-top: 24px; }
 </style>

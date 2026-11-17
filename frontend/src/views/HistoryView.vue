@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { HISTORY_PAGE_SIZE } from '../shared/limits'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Alert, Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from '../auth/state'
 import { listDebates } from '../api/debate'
 import { ApiError } from '../api/client'
+import { AI_STYLE_LABELS } from '../debate/styles'
 import type { DebateListResult } from '../types/api'
 
 export interface HistoryViewProps {
@@ -11,12 +13,10 @@ export interface HistoryViewProps {
   pageSize?: number
   disabled?: boolean
 }
-const props = withDefaults(defineProps<HistoryViewProps>(), { pageSize: 20, disabled: false })
+const props = withDefaults(defineProps<HistoryViewProps>(), { pageSize: HISTORY_PAGE_SIZE, disabled: false })
 const emit = defineEmits<{
   /** 选中某条历史会话后触发，交由顶层切换至辩论主视图重读详情或继续未完成会话 */
   'select-debate': [debateId: string]
-  /** 按会话 ID 打开辩论主视图（与 select-debate 等价） */
-  'open-debate': [debateId: string]
   /** 切换至辩题列表视图（T08） */
   'open-topics': []
   /** 返回当前辩论主视图 */
@@ -26,7 +26,7 @@ const emit = defineEmits<{
 const currentAuth = computed(() => props.auth ?? authState)
 const authenticated = computed(() => currentAuth.value.state.status === 'authenticated' && !!currentAuth.value.state.user)
 const blocked = computed(() => props.disabled || currentAuth.value.state.pending || !authenticated.value)
-function emptyHistory(): DebateListResult { return { items: [], total: 0, page: 1, page_size: 20 } }
+function emptyHistory(): DebateListResult { return { items: [], total: 0, page: 1, page_size: HISTORY_PAGE_SIZE } }
 const history = ref<DebateListResult>(emptyHistory())
 const page = ref(1)
 const loading = ref(false)
@@ -112,6 +112,7 @@ onUnmounted(() => { disposed = true; version++ })
           <dl class="record-details">
             <div><dt>你的立场</dt><dd>{{ debate.user_stance === 'pro' ? '正方' : '反方' }}</dd></div>
             <div><dt>AI 立场</dt><dd>{{ debate.ai_stance === 'pro' ? '正方' : '反方' }}</dd></div>
+            <div><dt>陪练流派</dt><dd :data-ai-style="debate.ai_style">{{ AI_STYLE_LABELS[debate.ai_style] }}（{{ debate.ai_style }}）</dd></div>
             <div><dt>完成轮数</dt><dd>{{ debate.completed_rounds }} / {{ debate.total_rounds }} 轮</dd></div>
             <div><dt>创建时间</dt><dd><time :datetime="debate.created_at">{{ localTime(debate.created_at) }}</time></dd></div>
             <div><dt>更新时间</dt><dd><time :datetime="debate.updated_at">{{ localTime(debate.updated_at) }}</time></dd></div>
@@ -138,12 +139,12 @@ onUnmounted(() => { disposed = true; version++ })
 .view-header, .view-actions, .pagination, .record-header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .view-header, .record-header { justify-content: space-between; }
 .view-header h2, .record-header h3 { margin: 0; }
-.muted, .record-details { color: #526578; font-size: 13px; line-height: 1.8; }
+.muted, .record-details { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
 .history-list { display: grid; gap: 16px; padding: 0; list-style: none; }
-.history-list li { padding: 18px; border: 1px solid #e3e8ee; border-radius: 8px; overflow-wrap: anywhere; }
+.history-list li { padding: 18px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .record-header h3 { font-size: 16px; }
-.status { padding: 3px 8px; border-radius: 4px; background: #eef5ff; color: #235b81; }
-.status.completed { background: #e8f7ed; color: #24633b; }
+.status { padding: 3px 8px; border-radius: 4px; background: var(--app-info-bg); color: var(--app-accent); }
+.status.completed { background: var(--app-success-bg); color: var(--app-success-text); }
 .record-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 20px; }
 .record-details div { min-width: 0; }
 .record-details dt { font-weight: 600; }

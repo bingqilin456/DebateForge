@@ -21,6 +21,7 @@ async function api(page: Page, handler: (route: Route, url: URL) => Promise<void
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     if (url.pathname === '/api/v1/auth/me') return json(route, session)
+    if (url.pathname.endsWith('/strategy') && route.request().method() === 'GET') return json(route, { status: 'not_started', attempt_version: null })
     await handler(route, url)
   })
 }
@@ -33,7 +34,7 @@ for (const stance of ['pro', 'con'] as const) {
       if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
       if (route.request().method() === 'POST') {
         creates++
-        expect(route.request().postDataJSON()).toEqual({ topic_id: '2', user_stance: stance })
+        expect(route.request().postDataJSON()).toEqual({ topic_id: '2', user_stance: stance, ai_style: 'logical' })
         expect(route.request().headers()['x-csrf-token']).toBe(session.csrf_token)
         return json(route, result, 201)
       }
@@ -156,3 +157,83 @@ test('历史刷新遇到 401 清除记录并回到登录', async ({ page }) => {
   await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
   await expect(page.locator('[data-history-id]')).toHaveCount(0)
 })
+
+test('统一入口：双击只创建一次，锁定导航，刷新重登和历史均读取保存详情', async ({ page }) => {
+  let creates = 0, details = 0, loggedIn = true
+  let release!: () => void
+  const saved = { ...debate(), status: 'active', completed_rounds: 0 }
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (path.endsWith('/auth/me')) return loggedIn ? json(route, session) : failure(route, 401, 'unauthenticated')
+    if (path.endsWith('/auth/logout')) { loggedIn = false; return route.fulfill({ status: 204 }) }
+    if (path.endsWith('/auth/login')) { loggedIn = true; return json(route, session) }
+    if (path.endsWith('/topics')) return json(route, { items: topics })
+    if (path.endsWith('/strategy')) return json(route, { status: 'not_started', attempt_version: null })
+    if (path === '/api/v1/debates' && route.request().method() === 'POST') {
+      creates++
+      await new Promise<void>(resolve => { release = resolve })
+      return json(route, saved, 201)
+    }
+    if (path.endsWith('/debates/11')) { details++; return json(route, { debate: saved, turns: [], summary_status: { status: 'not_started', attempt_version: null } }) }
+    return json(route, { items: [saved], total: 1, page: 1, page_size: 20 })
+  })
+  await page.goto('/')
+  await expect(page.locator('[data-view="topics"]')).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+  await page.locator('input[value="1"]').check()
+  await page.getByRole('button', { name: '创建会话', exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click() })
+  await expect.poll(() => creates).toBe(1)
+  await expect(page.locator('[data-view-tab="history"]')).toBeDisabled()
+  await expect(page.getByLabel('AI 陪练流派', { exact: true })).toBeDisabled()
+  release()
+  await expect(page.locator('#first-content')).toBeVisible()
+  expect(details).toBe(1)
+  await page.reload()
+  await expect(page.locator('#first-content')).toBeVisible()
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await page.getByLabel('用户名', { exact: true }).fill('browser_user')
+  await page.getByLabel('密码', { exact: true }).fill('synthetic-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page.locator('#first-content')).toBeVisible()
+  await page.locator('[data-view-tab="history"]').click()
+  await page.locator('[data-debate-id="11"]').click()
+  await expect(page.locator('#first-content')).toBeVisible()
+  await page.getByRole('button', { name: '开始新的练习', exact: true }).click()
+  await expect(page.locator('[data-view="topics"]')).toBeVisible()
+  await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+  expect(creates).toBe(1)
+  expect(details).toBe(4)
+})
+
+for (const kind of ['400', '401', '503', 'malformed', 'timeout'] as const) {
+  test(`统一创建 ${kind}：明确输入失败可修正，未知结果先查历史，认证失败回登录`, async ({ page }) => {
+    let creates = 0
+    await api(page, async (route, url) => {
+      if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
+      if (route.request().method() === 'POST') {
+        creates++
+        if (kind === 'timeout') { await new Promise(resolve => setTimeout(resolve, 5500)); return route.abort('timedout') }
+        if (kind === 'malformed') return json(route, { unexpected: true }, 201)
+        return failure(route, Number(kind), kind === '400' ? 'invalid_request' : kind === '401' ? 'unauthenticated' : 'dependency_unavailable')
+      }
+      return json(route, { items: [], total: 0, page: 1, page_size: 20 })
+    })
+    await page.goto('/')
+    await page.locator('input[value="1"]').check()
+    await page.getByRole('button', { name: '创建会话', exact: true }).click()
+    if (kind === '401') {
+      await expect(page.getByRole('button', { name: '登录', exact: true })).toBeVisible()
+    } else if (kind === '400') {
+      await expect(page.locator('[data-view="topics"] [role="alert"]')).toBeVisible()
+      await page.locator('input[value="2"]').check()
+      await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeEnabled()
+    } else {
+      await expect(page.getByText('创建结果尚未确认。', { exact: false })).toBeVisible()
+      await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+      await page.locator('[data-nav-history]').click()
+      await page.locator('[data-view-tab="topics"]').click()
+      await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+    }
+    expect(creates).toBe(1)
+  })
+}

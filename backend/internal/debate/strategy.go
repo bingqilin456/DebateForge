@@ -199,7 +199,7 @@ func failedStrategyDetails(d Debate, s Strategy) *FailureDetails {
 }
 func (s *Service) runStrategyGeneration(ctx context.Context, uid uint64, state StrategyState, retry bool) (StrategyStatus, int, error) {
 	d, current := state.Debate, *state.Strategy
-	result, genErr := s.generateStrategy(ctx, ai.StrategyRequest{UserID: uid, Mode: ai.Mode(d.Mode), AIStyle: ai.AIStyle(d.AIStyle), Topic: ai.Topic{Title: d.TopicTitleSnapshot, Description: d.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.UserStance)})
+	result, genErr := s.generateStrategy(ctx, ai.StrategyRequest{AttemptVersion: current.AttemptVersion, UserID: uid, Mode: ai.Mode(d.Mode), AIStyle: ai.AIStyle(d.AIStyle), Topic: ai.Topic{Title: d.TopicTitleSnapshot, Description: d.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.UserStance)})
 	validating := genErr == nil
 	// 不信任 Generator 输出，包括 Fake/未来适配器；落库前再次执行 schema 校验。
 	if genErr == nil {

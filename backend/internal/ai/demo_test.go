@@ -80,6 +80,9 @@ func TestDemoLastSlotAndRestart(t *testing.T) {
 }
 
 func TestDemoFailureAndControls(t *testing.T) {
+	// resumable 列出“单次失败后账本应继续可用”的场景：这些场景的用量已知且被预留覆盖，
+	// 费用已封顶，不需要扩散为整个窗口停用。
+	resumable := map[string]bool{"failure": true, "timeout": true, "cancel": true}
 	for _, scenario := range []string{"unknown", "failure", "timeout", "cancel", "stop_inflight", "expired_inflight", "corrupt", "unfinished", "changed", "no_approval", "identity", "window_lead", "stop_restart"} {
 		t.Run(scenario, func(t *testing.T) {
 			l, a := demoFixture(t, 10)
@@ -125,18 +128,35 @@ func TestDemoFailureAndControls(t *testing.T) {
 				_ = os.WriteFile(filepath.Join(l.root, "approval.json"), raw, 0600)
 			}
 			if scenario != "unfinished" {
-				if l.finish(c, usage, failure) == nil {
-					t.Fatal("unsafe result published")
+				finishErr := l.finish(c, usage, failure)
+				if resumable[scenario] {
+					// 费用已被预留覆盖的单次失败只标记该结果，账本继续可用，不覆盖业务错误。
+					if finishErr != nil {
+						t.Fatalf("covered failure halted the window: %v", finishErr)
+					}
+				} else if finishErr == nil {
+					t.Fatalf("unconfirmed outcome published as usable: %s", scenario)
 				}
 			}
 			_ = l.close()
 			r, err := openDemoLedger(l.root, a)
-			if err == nil {
+			_, stopErr := os.Lstat(filepath.Join(l.root, "stop"))
+			if resumable[scenario] {
+				if stopErr == nil {
+					t.Fatal("coverable failure halted the whole window")
+				}
+				if err != nil {
+					t.Fatalf("restart rejected resumable ledger: %v", err)
+				}
 				defer r.close()
 				approveDemo(t, r)
-				if r.reserve(context.Background(), &demoCall{user: 2}, 2000) == nil {
-					t.Fatal("unsafe restart admitted")
+				// 预算远未耗尽，可恢复的账本必须接受新调用；被停用的账本必须拒绝。
+				admitted := r.reserve(context.Background(), &demoCall{user: 2}, 2000) == nil
+				if !admitted || r.halted {
+					t.Fatal("restart halted a ledger whose failures were all covered by reservations")
 				}
+			} else if stopErr != nil {
+				t.Fatal("unconfirmed outcome did not retain stop")
 			}
 		})
 	}

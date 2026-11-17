@@ -1,0 +1,188 @@
+{
+  "date": "2026-11-16",
+  "timezone": "Asia/Shanghai",
+  "merged_sha": "17850a43151e473b0a306a12cf3079d1ee131eed",
+  "source_sha": "8e5e890321674bcd597ff14ba0d5d989fa6a0897",
+  "mode": "fake",
+  "target": "127.0.0.1:13307/siyige_test",
+  "browser": "Microsoft Edge",
+  "scenarios": {
+    "failure": [
+      {
+        "debate_id": "1814",
+        "mode": "standard_4",
+        "completed_rounds": 1,
+        "strategy": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "summary": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "turns": [
+          {
+            "id": "1686",
+            "round_no": 1,
+            "client_request_id": "7bc0a0a4-7828-4ac7-9139-79d5e94c80ca",
+            "attempt_version": 2,
+            "status": "completed",
+            "message_ids": [
+              "2457",
+              "2458"
+            ]
+          }
+        ]
+      },
+      {
+        "debate_id": "1811",
+        "mode": "standard_4",
+        "completed_rounds": 0,
+        "strategy": {
+          "status": "completed",
+          "attempt_version": 2
+        },
+        "summary": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "turns": []
+      }
+    ],
+    "slow": [
+      {
+        "debate_id": "1815",
+        "mode": "standard_4",
+        "completed_rounds": 1,
+        "strategy": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "summary": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "turns": [
+          {
+            "id": "1687",
+            "round_no": 1,
+            "client_request_id": "b6d7f0b0-2a6d-4ab8-9bdc-0b81e1269e25",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2459",
+              "2460"
+            ]
+          }
+        ]
+      },
+      {
+        "debate_id": "1812",
+        "mode": "standard_4",
+        "completed_rounds": 0,
+        "strategy": {
+          "status": "completed",
+          "attempt_version": 1
+        },
+        "summary": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "turns": []
+      }
+    ],
+    "stream": [
+      {
+        "debate_id": "1816",
+        "mode": "standard_4",
+        "completed_rounds": 1,
+        "strategy": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "summary": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "turns": [
+          {
+            "id": "1688",
+            "round_no": 1,
+            "client_request_id": "0097b00d-ba70-4e87-b45c-2c2033d9c7f5",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2461",
+              "2462"
+            ]
+          }
+        ]
+      },
+      {
+        "debate_id": "1813",
+        "mode": "standard_4",
+        "completed_rounds": 4,
+        "strategy": {
+          "status": "not_started",
+          "attempt_version": null
+        },
+        "summary": {
+          "status": "completed",
+          "attempt_version": 1
+        },
+        "turns": [
+          {
+            "id": "1682",
+            "round_no": 1,
+            "client_request_id": "ed86c73d-e55a-46dd-858c-f8e400309cd0",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2449",
+              "2450"
+            ]
+          },
+          {
+            "id": "1683",
+            "round_no": 2,
+            "client_request_id": "03adfcbe-b6c1-48fa-9541-a09c49ed27f1",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2451",
+              "2452"
+            ]
+          },
+          {
+            "id": "1684",
+            "round_no": 3,
+            "client_request_id": "eb99d707-029f-4dbd-9387-078babb03f0e",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2453",
+              "2454"
+            ]
+          },
+          {
+            "id": "1685",
+            "round_no": 4,
+            "client_request_id": "91afbb67-5578-4511-b7e3-abe27e37fde9",
+            "attempt_version": 1,
+            "status": "completed",
+            "message_ids": [
+              "2455",
+              "2456"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "timing": {
+    "first_length": 6,
+    "next_length": 18,
+    "elapsed_ms": 372
+  },
+  "test_sha": "593d7fcde73ed1f9cb95830ac618e2e2327c2a7d"
+}

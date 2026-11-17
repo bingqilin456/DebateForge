@@ -40,7 +40,21 @@ func TestStrategyValidationFailurePreservesGeneratorUsage(t *testing.T) {
 	}), nil)
 	_, _, err := service.runStrategyGeneration(context.Background(), 1, StrategyState{Debate: sample().Debate, Strategy: &Strategy{AttemptVersion: 1, Status: "generating"}}, false)
 	var failure *Failure
-	if !errors.As(err, &failure) || failure.Status != 502 || store.usage.PromptTokens.Value != 17 || !store.usage.PromptTokens.Known || store.meta.Model != "synthetic" || store.meta.PromptVersion != "strategy-v1" {
+	if !errors.As(err, &failure) || failure.Status != 502 || store.usage.PromptTokens.Value != 17 || !store.usage.PromptTokens.Known || store.meta.Model != "synthetic" || store.meta.PromptVersion != ai.StrategyPromptVersion {
 		t.Fatalf("lost billing metadata: %+v %+v %v", store.usage, store.meta, err)
+	}
+}
+
+func TestStrategyGenerationPassesClaimedAttemptVersion(t *testing.T) {
+	store := &strategyFailureStore{}
+	var got uint64
+	service := NewService(store, strategyGeneratorFunc(func(_ context.Context, req ai.StrategyRequest) (ai.StrategyResult, error) {
+		got = req.AttemptVersion
+		return ai.StrategyResult{}, &ai.Error{Code: ai.CodeModelUnavailable}
+	}), nil)
+	_, _, err := service.runStrategyGeneration(context.Background(), 1, StrategyState{Debate: sample().Debate, Strategy: &Strategy{AttemptVersion: 7, Status: "generating"}}, true)
+	var failure *Failure
+	if got != 7 || !errors.As(err, &failure) || failure.Details.AttemptVersion != 7 {
+		t.Fatalf("lost claimed version: %d %v", got, err)
 	}
 }

@@ -1,6 +1,7 @@
+import { GENERATION_POLL_INTERVAL_MS, GENERATION_POLL_BUDGET_MS, USER_CONTENT_MAX_CHARS } from '../shared/limits'
 import { computed, ref } from 'vue'
 import { ApiError } from '../api/client'
-import { hasNonWhitespace, type DebateApi, type DebateDetail, type Stance, type Turn } from '../api/debate'
+import { hasNonWhitespace, type DebateApi, type DebateDetail, type Turn } from '../api/debate'
 
 export function feedback(error: unknown): string {
   return error instanceof ApiError ? error.message : '操作失败，请稍后手动重试。'
@@ -21,10 +22,14 @@ export function createFirstTurnState(api: DebateApi) {
   const draft = ref('')
   const notice = ref('')
   const id = ref<string | null>(null)
+  const streamText = ref('')
+  const streaming = ref(false)
+  const streamRound = ref<number | null>(null)
+  let streamController: AbortController | null = null
   let active = true
   let timer: ReturnType<typeof setTimeout> | undefined
   let pollingSince = 0
-  let attempt: { roundNo: number; content: string; key: string } | null = null
+  let attempt: { roundNo: number; content: string; key: string; stream: boolean; turnId?: string } | null = null
   let sendFailure = ''
   let autoSummaryForId: string | null = null
 
@@ -50,11 +55,13 @@ export function createFirstTurnState(api: DebateApi) {
     && detail.value.summary_status.status === 'failed'
     && typeof detail.value.summary_status.attempt_version === 'number')
 
+  function clearStream() { streamText.value = ''; streaming.value = false; streamRound.value = null; streamController = null }
+  function cancelStream() { streamController?.abort() }
   function stopPolling() { clearTimeout(timer); timer = undefined }
   function schedulePolling(generatingText: string, timeoutText: string, preservedNotice?: string) {
-    if (Date.now() - pollingSince < 120_000) {
+    if (Date.now() - pollingSince < GENERATION_POLL_BUDGET_MS) {
       notice.value = preservedNotice ? `${preservedNotice} ${generatingText}` : generatingText
-      timer = setTimeout(() => { void query() }, 2000)
+      timer = setTimeout(() => { void query() }, GENERATION_POLL_INTERVAL_MS)
     } else {
       notice.value = preservedNotice ? `${preservedNotice} ${timeoutText}` : timeoutText
     }
@@ -84,9 +91,16 @@ export function createFirstTurnState(api: DebateApi) {
   function accept(value: DebateDetail, preservedNotice?: string): boolean {
     detail.value = value
     uncertain.value = false
-    if (attempt && value.turns.some(turn => turn.round_no === attempt?.roundNo)) {
-      draft.value = ''
-      attempt = null
+    if (attempt) {
+      // 流式恢复按原业务键定位；start 未到达也能查，不能拿另一标签页的同轮当成本请求。
+      const found = value.turns.some(turn => turn.round_no === attempt?.roundNo
+        && (!attempt.stream || (turn.client_request_id === attempt.key && (!attempt.turnId || turn.id === attempt.turnId))))
+      if (found) { draft.value = ''; attempt = null }
+      else if (attempt.stream) {
+        uncertain.value = true
+        schedulePolling('尚未匹配原请求标识，正在查询已保存状态…', '仍未确认原请求结果，请稍后手动查询；不会换键重发。', sendFailure)
+        return false
+      }
     }
     const lastTurn = value.turns.at(-1)
     if (lastTurn?.status === 'generating') {
@@ -152,6 +166,7 @@ export function createFirstTurnState(api: DebateApi) {
 
   async function open(debateId: string) {
     if (!active || busy.value) return
+    cancelStream(); clearStream(); attempt = null; draft.value = ''
     id.value = debateId
     autoSummaryForId = null
     uncertain.value = true
@@ -165,35 +180,21 @@ export function createFirstTurnState(api: DebateApi) {
     await query()
   }
 
-  async function start(topicId: string, stance: Stance) {
-    if (!active || busy.value || id.value) return
-    busy.value = true
-    notice.value = ''
-    try {
-      const debate = await api.create(topicId, stance)
-      if (active) {
-        id.value = debate.id
-        autoSummaryForId = null
-        detail.value = { debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } }
-      }
-    } catch (error) {
-      // 创建没有幂等键；仅反馈结果不明，不静默重发。再次点击由 UI 明确标成另建。
-      if (active) notice.value = `${feedback(error)} 创建可能已成功；再次创建会另建会话。`
-    } finally { if (active) busy.value = false }
-  }
-
   async function submit(content: string) {
     if (!active || !canSend.value || !id.value || nextRound.value === null) return
     const roundNo = nextRound.value
     const effective = attempt?.roundNo === roundNo ? attempt.content : content
-    if (!hasNonWhitespace(effective) || [...effective].length > 2000) {
-      notice.value = '请输入 1–2000 个 Unicode 字符，不能全为空白。'
+    if (!hasNonWhitespace(effective) || [...effective].length > USER_CONTENT_MAX_CHARS) {
+      notice.value = `请输入 1–${USER_CONTENT_MAX_CHARS} 个 Unicode 字符，不能全为空白。`
       return
     }
     if (!attempt || attempt.roundNo !== roundNo) {
-      attempt = { roundNo, content: effective, key: crypto.randomUUID() }
+      attempt = { roundNo, content: effective, key: crypto.randomUUID(), stream: typeof api.stream === 'function' }
     }
-    draft.value = attempt.content
+    const request = attempt
+    const debateId = id.value
+    const current = () => active && id.value === debateId
+    draft.value = request.content
     stopPolling()
     busy.value = true
     notice.value = '正在生成回复，请稍候…'
@@ -201,13 +202,29 @@ export function createFirstTurnState(api: DebateApi) {
     let needsQuery = false
     let shouldAutoSummary = false
     try {
-      const result = roundNo === 1
-        ? await api.send(id.value, attempt.content, attempt.key, 1, totalRounds.value)
-        : await api.send(id.value, attempt.content, attempt.key, roundNo, totalRounds.value)
-      if (active && detail.value) {
+      let result: { turn: Turn; completed_rounds: number } | null = null
+      if (typeof api.stream === 'function') {
+        const controller = new AbortController()
+        streamController = controller
+        streaming.value = true; streamRound.value = roundNo; streamText.value = ''
+        const streamed = await api.stream(debateId, request.content, request.key, roundNo, totalRounds.value, event => {
+          if (!current() || streamController !== controller || controller.signal.aborted || attempt?.key !== request.key) return
+          if (event.type === 'start') request.turnId = event.turn_id
+          else streamText.value += event.text
+        }, controller.signal)
+        if (current()) {
+          if (streamed.kind === 'pending' || streamed.data.completed_rounds !== roundNo) {
+            // 202 或已完成旧轮重放的更新快照，都先 GET 补全；不从片段/本地推测正式状态。
+            uncertain.value = true; needsQuery = true
+          } else result = streamed.data
+        }
+      } else {
+        // 保留原 JSON 适配器兼容；生产 createDebateApi 已提供 stream，不在流失败后回退 POST。
+        result = await api.send(debateId, request.content, request.key, roundNo, totalRounds.value)
+      }
+      if (current() && detail.value && result) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds
-        // 完成判定按该会话的赛制轮数，而非固定三轮。
         const status = completedRounds >= detail.value.debate.total_rounds ? 'completed' : detail.value.debate.status
         shouldAutoSummary = accept({
           ...detail.value,
@@ -216,10 +233,16 @@ export function createFirstTurnState(api: DebateApi) {
         })
       }
     } catch (error) {
-      if (active) { uncertain.value = true; sendFailure = feedback(error); notice.value = sendFailure; needsQuery = true }
-    } finally { if (active) busy.value = false }
-    if (active && needsQuery) { pollingSince = Date.now(); await query() }
-    else if (active && shouldAutoSummary) await runSummary({ retry: false })
+      if (current()) {
+        uncertain.value = true; sendFailure = feedback(error); notice.value = sendFailure
+        // 认证失效/无权读取时受控结束；其余错误、断线、EOF 无 done 均只能先 GET。
+        needsQuery = !(error instanceof ApiError && (error.status === 401 || error.status === 404))
+      }
+    } finally {
+      if (current()) { busy.value = false; clearStream() }
+    }
+    if (current() && needsQuery) { pollingSince = Date.now(); await query() }
+    else if (current() && shouldAutoSummary) await runSummary({ retry: false })
   }
 
   async function retryTurn() {
@@ -233,7 +256,7 @@ export function createFirstTurnState(api: DebateApi) {
     let needsQuery = false
     let shouldAutoSummary = false
     try {
-      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion)
+      const result = await api.retryTurn(id.value, target.id, expectedAttemptVersion, totalRounds.value)
       if (active && detail.value) {
         pollingSince = Date.now()
         const completedRounds = result.completed_rounds
@@ -272,6 +295,7 @@ export function createFirstTurnState(api: DebateApi) {
 
   function dispose() {
     active = false
+    cancelStream(); clearStream()
     stopPolling()
     detail.value = null
     draft.value = ''
@@ -280,8 +304,8 @@ export function createFirstTurnState(api: DebateApi) {
   }
 
   return {
-    detail, busy, uncertain, draft, notice, id,
+    detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound, cancelStream,
     nextRound, failedTurn, canSend, canRetryTurn, canRetrySummary,
-    start, open, refresh, submit, retryTurn, retrySummary, requestSummary, dispose,
+    open, refresh, submit, retryTurn, retrySummary, requestSummary, dispose,
   }
 }

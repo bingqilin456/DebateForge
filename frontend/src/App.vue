@@ -13,7 +13,7 @@ import TopicsView from './views/TopicsView.vue'
 function viewFromHash(hash: string): TopLevelView {
   if (hash === '#topics') return 'topics'
   if (hash === '#history') return 'history'
-  return 'debate'
+  return hash ? 'debate' : 'topics'
 }
 
 const props = defineProps<{ auth?: AuthState }>()
@@ -25,9 +25,15 @@ const route = ref(location.hash)
 const currentView = ref<TopLevelView>(viewFromHash(location.hash))
 const lastDebateRoute = ref(location.hash.startsWith('#debate=') ? location.hash : '')
 const panelVersion = ref(0)
+const creating = ref(false)
+const creationUncertain = ref(false)
 let active = true
 
 function routeChanged() {
+  if (creating.value) {
+    history.replaceState(null, '', `${location.pathname}${location.search}#topics`)
+    return
+  }
   const hash = location.hash
   if (hash.startsWith('#debate=')) lastDebateRoute.value = hash
   route.value = hash
@@ -35,6 +41,8 @@ function routeChanged() {
 }
 
 function switchView(view: TopLevelView) {
+  if (creating.value) return
+  if (view === 'debate' && !lastDebateRoute.value) view = 'topics'
   if (location.hash.startsWith('#debate=')) {
     lastDebateRoute.value = location.hash
   }
@@ -67,21 +75,18 @@ function openDebate(debateOrId: string | Debate) {
 }
 
 function newPractice() {
-  lastDebateRoute.value = ''
-  history.replaceState(null, '', location.pathname + location.search)
-  route.value = ''
-  currentView.value = 'debate'
-  panelVersion.value++
+  switchView('topics')
 }
 
 watch(() => [auth.state.status, auth.state.user?.id] as const, ([status, id], [previous, previousId]) => {
   // 认证成功会先卸载表单，再轮到其完成事件；由共享状态清除旧失效提示。
   if (status === 'authenticated' && previous !== 'authenticated') message.value = ''
   if (previous === 'authenticated' && (status !== 'authenticated' || id !== previousId)) {
-    lastDebateRoute.value = ''
-    history.replaceState(null, '', location.pathname + location.search)
-    route.value = ''
-    currentView.value = 'debate'
+    creating.value = false; creationUncertain.value = false
+    // 同一用户重新登录时仍可从地址恢复当前会话。
+    lastDebateRoute.value = location.hash.startsWith('#debate=') ? location.hash : ''
+    route.value = location.hash
+    currentView.value = viewFromHash(location.hash)
     mode.value = 'login'
     message.value = status === 'anonymous' ? '登录已结束，请重新登录。' : ''
   }
@@ -111,7 +116,7 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
       <a class="brand" href="/">思弈阁 <span>Lite</span></a>
       <div v-if="auth.state.status === 'authenticated'" class="account">
         <span>{{ auth.state.user?.username }}</span>
-        <Button :disabled="auth.state.pending || restoring" @click="logout">退出登录</Button>
+        <Button :disabled="auth.state.pending || restoring || creating" @click="logout">退出登录</Button>
       </div>
       <span v-else class="muted">文字辩论练习</span>
     </header>
@@ -136,7 +141,7 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
             :type="currentView === 'debate' ? 'primary' : 'outline'"
             data-view-tab="debate"
             :aria-current="currentView === 'debate' ? 'page' : undefined"
-            :disabled="auth.state.pending || restoring"
+            :disabled="auth.state.pending || restoring || creating"
             @click="switchView('debate')"
           >
             辩论主视图
@@ -145,7 +150,7 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
             :type="currentView === 'topics' ? 'primary' : 'outline'"
             data-view-tab="topics"
             :aria-current="currentView === 'topics' ? 'page' : undefined"
-            :disabled="auth.state.pending || restoring"
+            :disabled="auth.state.pending || restoring || creating"
             @click="switchView('topics')"
           >
             辩题列表
@@ -154,39 +159,40 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
             :type="currentView === 'history' ? 'primary' : 'outline'"
             data-view-tab="history"
             :aria-current="currentView === 'history' ? 'page' : undefined"
-            :disabled="auth.state.pending || restoring"
+            :disabled="auth.state.pending || restoring || creating"
             @click="switchView('history')"
           >
             历史会话
           </Button>
         </nav>
+        <!-- 结果不明时保留创建面板，切页不能重置提交锁；成功后正常卸载。 -->
         <TopicsView
-          v-if="currentView === 'topics'"
+          v-if="currentView === 'topics' || creating || creationUncertain"
+          v-show="currentView === 'topics'"
           :key="`topics:${auth.state.user?.id}`"
           :auth="auth"
-          :disabled="auth.state.pending || restoring"
+          :disabled="auth.state.pending || restoring || creating"
+          @creating="creating = $event"
+          @uncertain="creationUncertain = $event"
           @created="openDebate"
-          @open-debate="openDebate"
           @open-history="switchView('history')"
           @back-to-debate="switchView('debate')"
         />
         <HistoryView
-          v-else-if="currentView === 'history'"
+          v-if="currentView === 'history'"
           :key="`history:${auth.state.user?.id}`"
           :auth="auth"
-          :disabled="auth.state.pending || restoring"
+          :disabled="auth.state.pending || restoring || creating"
           @select-debate="openDebate"
-          @open-debate="openDebate"
           @open-topics="switchView('topics')"
           @back-to-debate="switchView('debate')"
         />
         <FirstTurnPanel
-          v-else
+          v-if="currentView === 'debate'"
           :key="`${auth.state.user?.id}:${route}:${panelVersion}`"
           :auth="auth"
           :route="route"
           @new-practice="newPractice"
-          @open-topics="switchView('topics')"
           @open-history="switchView('history')"
         />
       </template>
@@ -197,22 +203,22 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
 </template>
 
 <style>
-:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: #172b3a; background: #f6f8fa; font-synthesis: none; }
+:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-synthesis: none; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; }
+body { margin: 0; min-width: 320px; color: var(--app-text); background: var(--app-background); }
 .page { max-width: 1040px; min-height: 100vh; margin: auto; padding: 32px; display: flex; flex-direction: column; }
 .masthead, .account { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.brand { color: #172b3a; text-decoration: none; font-size: 22px; font-weight: 700; letter-spacing: 1px; }
-.brand span, .muted { color: #526578; font-size: 14px; font-weight: 400; }
+.brand { color: var(--app-text); text-decoration: none; font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+.brand span, .muted { color: var(--app-text-muted); font-size: 14px; font-weight: 400; }
 main { width: 100%; max-width: 760px; margin: 48px auto; }
 .intro { margin-bottom: 32px; }
-.eyebrow { color: #235b81; font-size: 13px; font-weight: 600; letter-spacing: 3px; }
+.eyebrow { color: var(--app-accent); font-size: 13px; font-weight: 600; letter-spacing: 3px; }
 h1 { margin: 12px 0; font-size: clamp(28px, 5vw, 38px); line-height: 1.4; }
 h2 { margin-top: 0; font-size: 21px; }
 p { line-height: 1.8; }
-.intro > p:last-child, .scope-note { color: #526578; }
-.card { padding: 28px; border: 1px solid #d8e0e8; border-radius: 16px; background: white; margin-bottom: 24px; }
-.page-feedback { color: #9f2936; padding: 12px 16px; background: #fff0f0; border-radius: 8px; overflow-wrap: anywhere; }
+.intro > p:last-child, .scope-note { color: var(--app-text-muted); }
+.card { padding: 28px; border: 1px solid var(--app-border); border-radius: var(--app-radius-card); background: var(--app-surface); margin-bottom: 24px; }
+.page-feedback { color: var(--app-error-text); padding: 12px 16px; background: var(--app-error-bg); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .scope-note { font-size: 13px; margin-top: 24px; }
 .restore-button { margin-bottom: 16px; }
 .view-nav { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
@@ -220,8 +226,8 @@ button, select, textarea { font: inherit; }
 .arco-btn, select { min-height: 44px; }
 button, select { cursor: pointer; }
 button:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
-button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #235b81; outline-offset: 3px; }
-footer { margin-top: auto; color: #526578; font-size: 12px; text-align: center; }
+button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--app-accent); outline-offset: 3px; }
+footer { margin-top: auto; color: var(--app-text-muted); font-size: 12px; text-align: center; }
 @media (max-width: 600px) { .page { padding: 24px 16px; } main { margin: 32px auto; } .card { padding: 22px 18px; } .account { gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>

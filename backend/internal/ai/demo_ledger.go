@@ -210,7 +210,12 @@ func openDemoLedger(root string, a DemoApproval) (*demoLedger, error) {
 		}
 		l.reservations = append(l.reservations, r)
 		result, err := readDemoRecord[demoResult](root, fmt.Sprintf("result-%06d.json", slot))
-		if err != nil || result.Outcome != "success" || !demoUsageValid(result.Usage.value(), r) {
+		// 结果缺失、用量未知或超界的预留无法确认花费，重启后一律保持停用。
+		if err != nil || !demoUsageValid(result.Usage.value(), r) {
+			l.stopLocked()
+			continue
+		}
+		if !demoOutcomeResumable(result.Outcome) {
 			l.stopLocked()
 		}
 	}
@@ -389,6 +394,14 @@ func demoUsageValid(u Usage, r demoReservation) bool {
 	return u.PromptTokens.Known && u.CompletionTokens.Known && u.TotalTokens.Known && u.PromptTokens.Value > 0 && u.CompletionTokens.Value > 0 && int64(u.PromptTokens.Value) <= r.Input && int64(u.CompletionTokens.Value) <= r.Output && u.TotalTokens.Value == u.PromptTokens.Value+u.CompletionTokens.Value
 }
 
+// demoOutcomeResumable 报告该结果能否让账本继续接受新调用。
+// success 与 failed 都以“用量已知且不超预留”为前提，说明本次实际花费已被预留完全覆盖，
+// 因此单次失败不需要扩散为整个窗口停用；halted 表示用量或控制面无法确认，必须保持停用。
+// 这与运行说明列出的停用条件一致：usage 未知/超界、记录缺失或损坏、控制面变化才拒绝新调用。
+func demoOutcomeResumable(outcome string) bool {
+	return outcome == "success" || outcome == "failed"
+}
+
 func (l *demoLedger) finish(c *demoCall, usage Usage, failure error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -398,17 +411,25 @@ func (l *demoLedger) finish(c *demoCall, usage Usage, failure error) error {
 	c.finished = true
 	delete(l.active, c.user)
 	result := demoResult{Outcome: "halted", Usage: recordedDemoUsage(usage)}
-	if failure == nil && demoUsageValid(usage, c.reservation) && l.checkLocked(c.user, 0) == nil {
+	covered := demoUsageValid(usage, c.reservation)
+	// 控制面异常（stop、批准/manifest 变化、窗口失效）一律停用，不因费用可覆盖而放行。
+	if controlErr := l.checkLocked(c.user, 0); controlErr != nil {
+		result.Outcome = "halted"
+	} else if failure == nil && covered {
 		result.Outcome = "success"
+	} else if covered {
+		// 业务失败（模型输出不合规、供应商错误等）但费用已被预留覆盖：只标记本次失败。
+		result.Outcome = "failed"
 	}
 	if err := writeTrialRecord(l.root, fmt.Sprintf("result-%06d.json", c.slot), result); err != nil {
 		l.stopLocked()
 		return errDemoDenied
 	}
-	if result.Outcome != "success" {
+	if !demoOutcomeResumable(result.Outcome) {
 		l.stopLocked()
 		return errDemoDenied
 	}
+	// failed 时业务侧原有的受控错误照常返回，账本本身保持可用；不做自动重试。
 	return nil
 }
 

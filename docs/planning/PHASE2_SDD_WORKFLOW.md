@@ -4,6 +4,10 @@
 
 本轮仅建立工作流规范与 Phase 2 任务 Spec 拆解基线，**不启动 `T08`～`T12` 的实际功能代码开发**。各任务进入编码前仍须按 [AGENTS](../../AGENTS.md#操作授权边界) 与 [PLAN](PLAN.md#phase-2核心辩论功能闭环) 核对前置条件及本轮明确授权。
 
+> **现行分工说明（2026-11-16 起）**：本文第 1–5 节的工作流方法（Spec 先行、CI 门禁、单一状态入口、验收留证）继续适用于后续任务；文中「A 主责 / B 主责」「B 页面主责，A 整合验收」等角色表述属于 Phase 2 结项时的历史语境，不再作为当前指派依据。现行规则为**一功能一负责人端到端交付**，见 [PLAN 现行功能分工原则](PLAN.md#现行功能分工原则) 与 [ADR-026](../decisions/DECISIONS.md#adr-026-功能负责人端到端交付)，当前任务负责人以 [TASKS](TASKS.md) 的负责人栏为准。新任务编写 Spec 时按新规则填写负责人，可跨前后端。
+>
+> **需求基线引用（2026-11-17 起）**：产品当前规格已改为 [PRD V2](../product/PRD.md)，但 **V2 未实现、未验收、未获开发阶段授权**。因此本文第 1–5 节的方法继续适用，而**文中对 `PRD.md` 的 F/AC 编号引用实际指向 V1 冻结基线**（V1 的 F01–F14 / AC01–AC17 见 [PRD V1 冻结基线](../product/PRD_V1_BASELINE.md)，验收索引见[该文件的 V1 验收索引](../product/PRD_V1_BASELINE.md#v1-验收索引)）。**历史记录不重写**：第 4 节按当时的 V1 语境保留原样，仅作追溯。
+
 ---
 
 ## 1. 核心原则与四层职责映射
@@ -17,7 +21,7 @@ flowchart LR
         TASKS["docs/planning/TASKS.md<br/>唯一任务状态表与分工"]
     end
     subgraph L2["2. 全局契约（单一事实来源）"]
-        PRD["docs/product/PRD.md<br/>F02–F06 / AC01–AC08"]
+        PRD["docs/product/PRD_V1_BASELINE.md<br/>V1 的 F01–F14 / AC01–AC17"]
         ARCH["docs/architecture/ARCHITECTURE.md<br/>状态机 / 数据模型 / 草案"]
         API["docs/api/API.md + openapi.yaml<br/>冻结 HTTP 契约与 Schema"]
         DEC["docs/decisions/DECISIONS.md<br/>ADR 决策记录"]
@@ -41,8 +45,8 @@ flowchart LR
 
 | 维度 | 权威载体 | 职责边界 | 明确不做的事 |
 | --- | --- | --- | --- |
-| **Phase 管理里程碑** | [PLAN](PLAN.md)、[TASKS](TASKS.md) | `PLAN.md` 管理阶段级准入/准出与 `AC01–AC08` 汇总门槛；`TASKS.md` 作为各任务「当前状态」的**唯一主入口** | 不再每次子任务推进都在 `README.md`、`PLAN.md`、`ARCHITECTURE.md`、`API.md` 顶部叠加长篇「当前状态快照」横幅 |
-| **全局契约层** | [PRD](../product/PRD.md)、[ARCHITECTURE](../architecture/ARCHITECTURE.md)、[API](../api/API.md)、[OpenAPI](../api/openapi.yaml)、[DECISIONS](../decisions/DECISIONS.md) | 维护跨任务共享的产品边界、数据库关系、轮次/总结状态机与已冻结的 HTTP 接口规范 | 不新建 `.specify/`、`specs/` 等平行契约目录，不在任务文档中大段复制粘贴全局契约原文 |
+| **Phase 管理里程碑** | [PLAN](PLAN.md)、[TASKS](TASKS.md) | `PLAN.md` 管理阶段级准入/准出、`AC01–AC08` 汇总门槛与[现行功能分工原则](PLAN.md#现行功能分工原则)；`TASKS.md` 作为各任务「当前状态」与「功能负责人」的**唯一主入口** | 不再每次子任务推进都在 `README.md`、`PLAN.md`、`ARCHITECTURE.md`、`API.md` 顶部叠加长篇「当前状态快照」横幅；不在多处并行维护负责人表 |
+| **全局契约层** | [PRD V1 冻结基线](../product/PRD_V1_BASELINE.md)（V1 的 F/AC 编号）→ [PRD V2](../product/PRD.md)（当前规格，未实现）、[ARCHITECTURE](../architecture/ARCHITECTURE.md)、[API](../api/API.md)、[OpenAPI](../api/openapi.yaml)、[DECISIONS](../decisions/DECISIONS.md) | 维护跨任务共享的产品边界、数据库关系、轮次/总结状态机与已冻结的 HTTP 接口规范 | 不新建 `.specify/`、`specs/` 等平行契约目录，不在任务文档中大段复制粘贴全局契约原文 |
 | **Spec 明确需求（功能任务驱动）** | `docs/planning/Txx_<SLUG>_SPEC.md` | 在具体任务（`T08`～`T12`）获准启动时，用**单文件轻量 Spec** 明确本任务的契约增量、状态转换、失败分支、子切片（Slice）与测试矩阵 | 不在任务尚未启动时预先批量编写长篇实现细节；不为简单样式微调拆分多份计划文件 |
 | **CI 负责基础质量** | [.github/workflows/ci.yml](../../.github/workflows/ci.yml)、`docs/acceptance/Txx_<SLUG>_ACCEPTANCE.md` | GitHub CI 自动守住代码格式、禁止路径、密钥扫描、相对链接、前后端单测、构建及隔离 MySQL `8.4.13` 迁移与集成测试；验收记录聚焦业务 AC、并发/边界专项与人工验收 | 不在验收文档中重复粘贴 CI 已覆盖的常规静态检查与全量单测控制台长日志 |
 
@@ -89,13 +93,20 @@ Phase 2 的每个任务（`T08`～`T12`）均按以下五步推进：
 
 ## 3. 轻量任务 Spec 模板（Task Spec Template）
 
-为避免文档膨胀，Phase 2 的每份 `docs/planning/Txx_<SLUG>_SPEC.md` 固定采用以下 6 小节结构（建议控制在 80～150 行以内，只写增量与可执行判定条件）：
+为避免文档膨胀，Phase 2 的每份 `docs/planning/Txx_<SLUG>_SPEC.md` 固定采用以下 6 小节结构（建议控制在 80～150 行以内，只写增量与可执行判定条件）。
+
+**模板的基线选择（2026-11-17 起）**：产品规格已改为 [PRD V2](../product/PRD.md)，但 V2 尚未实现。因此模板**允许显式选择基线**：
+
+- **V1 增量任务**（当前全部在途任务，含 Phase 3 剩余项）：填 V1 冻结基线的编号，即 `<PRD V1: Fxx / ACxx>`，并在链接里指向 [PRD V1 冻结基线](../product/PRD_V1_BASELINE.md)。
+- **产品 V2 任务**：仅在负责人分配批次并明确开发授权后使用，填 PRD V2 的 `<AC-V2-xx>` 并指向 [PRD V2](../product/PRD.md)；此时仍须先补齐接口与阶段契约设计。
+
+不得混用两套编号，也不得把 V2 的 AC 写进 V1 任务，或反之。
 
 ```markdown
 # Txx <任务名称> Spec
 
-- **任务编号与负责人**：Txx / <A 或 B 主责说明>
-- **关联需求与契约**：PRD <Fxx, ACxx> · ARCHITECTURE <[对应小节](../architecture/ARCHITECTURE.md)> · API <[对应小节](../api/API.md)>
+- **任务编号与负责人**：Txx / <功能负责人，按 [PLAN 现行功能分工原则](PLAN.md#现行功能分工原则) 填单一负责人，可跨前后端；协作与风险把关另注>
+- **关联需求与契约**：<基线选择：`PRD V1: Fxx / ACxx`（当前在途任务）或 `PRD V2: AC-V2-xx`（仅获授权后）> · ARCHITECTURE <[对应小节](../architecture/ARCHITECTURE.md)> · API <[对应小节](../api/API.md)>
 - **前置依赖与授权边界**：<上游已完成任务>；<本轮授权允许与禁止的操作>
 
 ## 1. 目标与非目标（Scope & Non-Goals）
@@ -134,6 +145,8 @@ Phase 2 的每个任务（`T08`～`T12`）均按以下五步推进：
 
 ### 4.1 任务推进与并行关系
 
+下图保留 Phase 2 结项时的分工与推进记录（历史语境），括号内的「主责」标注不代表现行指派；现行归属见 [TASKS](TASKS.md) 负责人栏与 [PLAN 现行功能分工原则](PLAN.md#现行功能分工原则)。
+
 ```mermaid
 flowchart TD
     P1["Phase 1 已结项基线<br/>T03 认证 + T04 Eino/Fake + T05 首轮/Topics + T06 首轮前端"]
@@ -157,6 +170,8 @@ flowchart TD
 
 ### 4.2 各任务 Spec 核心边界一览
 
+下表为 Phase 2 结项时的历史拆解记录，括号内的成员标注保留原语境；后续任务的负责人按 TASKS 与 [PLAN 现行功能分工原则](PLAN.md#现行功能分工原则) 填单一功能负责人，可跨前后端，不再按「A 做后端、B 做页面」切分。
+
 | 任务 | 预定 Spec 与验收文档路径 | 契约与数据库增量 | 推荐实施切片（Slices） | 关键 AC 与专项验证重点 |
 | --- | --- | --- | --- | --- |
 | **T08**<br/>辩题列表与立场选择 | `docs/planning/T08_TOPICS_STANCE_SPEC.md`<br/>`docs/acceptance/T08_TOPICS_STANCE_ACCEPTANCE.md` | **无后端契约/迁移新增**：完全复用 T05 已实现的 `GET /api/v1/topics` 与 `POST /api/v1/debates` | **Slice 1**：辩题卡片列表、加载/空/错误重试视图与正反方立场显式选择组件（B）<br/>**Slice 2**：创建会话防连点、成功后跳转/进入对应会话及真实后端联调（B+A） | `AC02`；至少 5 条真实预设题展示、正反切换明确、未选立场禁提交、401/503 错误提示受控 |
@@ -175,6 +190,6 @@ flowchart TD
 | --- | --- | --- |
 | **仓库与文档规范** | `repo-guard` Job 自动检查：禁止入库目录/后缀/真实 `.env`、残留冲突标记、私钥与 `sk-` 字面量、`git diff --check`、`gofmt -l backend`、全仓受跟踪 Markdown 本地相对链接完整性、`deploy/compose*.yaml` 静态配置 | 新增或移动文档后，可在本地运行一次链接与 `git diff --check` 预检；修改 `docs/api/openapi.yaml` 时在本地运行 `openapi-spec-validator` 核对 Schema 与示例 |
 | **后端与迁移单测** | `backend-unit` Job 自动检查：`backend` 与 `backend/tools/migrate` 的 `go mod verify`、`go vet ./...`、`go test -p 1 -count=1 ./...`、`go build ./...` 及 Nginx 413 上游透传测试 | 开发中针对修改包运行快速单测；涉及并发状态机、限流器、租约扫描（如 `T09`、`T10`）时，本地必须加跑 `go test -race ./...` |
-| **隔离 MySQL 集成** | `backend-mysql-integration` Job 自动拉起官方 `mysql:8.4.13` 容器，验证迁移 CLI 首次执行与重复执行幂等（`up` / `status`）、运行 `SIYIGE_MIGRATION_TEST=1` 迁移集成测试及 `SIYIGE_INTEGRATION=1` 后端集成测试 | 新增迁移（如 `T10` 的 `00011`）时，须同步更新 `ci.yml` 中的预期迁移版本计数断言（如 `applied=10` → `applied=11`），并在本地隔离 `mysql-test`（`127.0.0.1:13307`）先行验证 |
-| **前端质量门禁** | `frontend` Job 自动执行：`npm ci`、`npm run typecheck`（`vue-tsc`）、`npm run test`（Vitest）、`npm run build` | 本地按组件/状态模块运行 Vitest 定向测试；涉及页面联调（`T08`、`T11`、`T12`）时，使用真实浏览器通过 Vite 代理连接本地后端与隔离 MySQL（`AI_MODE=fake`）留存交互证据 |
-| **人工验收与阶段结项** | 不由 CI 代替 | 按 [AGENTS](../../AGENTS.md#测试与阶段验收) 与 [ADR-011](../decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项) 要求：不强制 A/B 互审、正式契约讲解登记或多轮重复独立审查，完成受影响范围专项验证后由项目负责人最终人工验收 |
+| **隔离 MySQL 集成** | `backend-mysql-integration` Job 自动拉起官方 `mysql:8.4.13` 容器，验证迁移 CLI 首次执行与重复执行幂等（`up` / `status`）、运行 `SIYIGE_MIGRATION_TEST=1` 迁移集成测试及 `SIYIGE_INTEGRATION=1` 后端集成测试 | 新增迁移（如之后的 `00014`）时，须同步更新 `ci.yml` 中当前为 `applied=13` 的预期迁移版本计数断言，并在本地隔离 `mysql-test`（`127.0.0.1:13307`）先行验证；仅改文档或与该链路无关的改动不重跑集成门禁，直接复用未受影响的既有证据 |
+| **前端质量门禁** | `frontend` Job 自动执行：`npm ci`、`npm run typecheck`（`vue-tsc`）、`npm run test`（Vitest）、`npm run build`，并安装 Chromium 后运行 `npm run test:e2e`（`views.spec.ts`/`style.spec.ts`/`stream.spec.ts`，响应由用例内隔离 Mock 提供，无模型调用）；`test:e2e:live` 与 `test:e2e:b2:live` 不在 CI 运行 | 按改动影响选择验证：本地按组件/状态模块运行 Vitest 定向测试；涉及页面联调（`T08`、`T11`、`T12`）时，使用真实浏览器通过 Vite 代理连接本地后端与隔离 MySQL（`AI_MODE=fake`）留存交互证据，需要真实链路的用 `npm run test:e2e:live`。已通过且未受本次改动影响的检查与浏览器证据直接复用，不做无关全量复跑 |
+| **人工验收与阶段结项** | 不由 CI 代替 | 按 [AGENTS](../../AGENTS.md#测试与阶段验收) 与 [ADR-011](../decisions/DECISIONS.md#adr-011-简化验收流程与-t01-结项) 要求：不强制 A/B 互审、正式契约讲解登记或多轮重复独立审查，完成受影响范围专项验证后由项目负责人最终人工验收；任务归属按 [ADR-026](../decisions/DECISIONS.md#adr-026-功能负责人端到端交付) 由单一功能负责人端到端负责 |

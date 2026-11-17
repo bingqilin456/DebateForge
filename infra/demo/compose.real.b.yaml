@@ -1,0 +1,9 @@
+# 补充授权（p3-eval-demo-2026-11-b）专用叠加：只把账本卷换到新卷。
+# 旧卷 siyige-p3-demo_demo-ledger 保留全部 13 条历史记录作为证据，不修改、不删除。
+# 新卷从零开始计数，避免旧卷那条 halted 记录让账本一启动就停用。
+services:
+  app:
+    volumes: !override
+      - demo-ledger-b:/var/lib/siyige/demo
+volumes:
+  demo-ledger-b:

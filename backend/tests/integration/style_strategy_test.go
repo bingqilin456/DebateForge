@@ -99,7 +99,7 @@ func TestT14StrategyHTTPContract(t *testing.T) {
 	f.gate = debate.NewGate(nil)
 	f.mount(t, fake)
 	r = f.request(t, "POST", path, map[string]any{})
-	if r.status != 201 || string(r.data()["status"]) != `"completed"` || string(r.data()["prompt_version"]) != `"strategy-v1"` || string(r.data()["ai_style"]) != `"logical"` {
+	if r.status != 201 || string(r.data()["status"]) != `"completed"` || string(r.data()["prompt_version"]) != `"strategy-v2"` || string(r.data()["ai_style"]) != `"logical"` {
 		t.Fatalf("strategy: %d %s", r.status, r.body)
 	}
 	original := string(r.data()["content"])
@@ -170,12 +170,12 @@ func TestT14StrategyFailureRetryVersionAndSnapshot(t *testing.T) {
 		t.Fatal("retry called model more than once")
 	}
 	for _, record := range fake.Records() {
-		if record.Request.UserStance != ai.StanceCon || record.Request.AIStyle != ai.StyleAggressive || record.Prompt.Version != "strategy-v1" {
+		if record.Request.UserStance != ai.StanceCon || record.Request.AIStyle != ai.StyleAggressive || record.Prompt.Version != "strategy-v2" {
 			t.Fatal("lost immutable snapshot")
 		}
 	}
 	var saved debate.Strategy
-	if err := f.db.ORM.First(&saved, "debate_id = ?", id).Error; err != nil || saved.PromptVersion == nil || *saved.PromptVersion != "strategy-v1" || saved.SchemaVersion == nil || *saved.SchemaVersion != 1 || saved.ModelName == nil || *saved.ModelName != "fake" {
+	if err := f.db.ORM.First(&saved, "debate_id = ?", id).Error; err != nil || saved.PromptVersion == nil || *saved.PromptVersion != "strategy-v2" || saved.SchemaVersion == nil || *saved.SchemaVersion != 1 || saved.ModelName == nil || *saved.ModelName != "fake" {
 		t.Fatal("metadata not persisted", err)
 	}
 	// 重建 Service 模拟刷新/服务重启，重读不能覆盖保存的版本或调用模型。

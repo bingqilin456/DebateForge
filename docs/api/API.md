@@ -606,7 +606,7 @@ generating 仅含 status/attempt_version；failed 增加受控 error_code（mode
 {"data":{"status":"completed","attempt_version":1,"schema_version":1,"prompt_version":"strategy-v1","ai_style":"aggressive","content":{"thesis":"开放式考核应兼顾应用能力与评价公平。","arguments":["用统一评分标准评估真实任务成果。"],"risks":["预先回应评分一致性与代做风险。"]}},"request_id":"req-strategy-complete"}
 ```
 
-内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 为 strategy-v1，输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
+内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 现为 `strategy-v2`（`strategy-v1` 为历史版本，仅出现在已保存记录中），输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
 
 与轮次/总结共用 Gate：6/分钟、20/UTC 日、单用户并发 1、单进程全局 2；失败消耗认领额度，重放不消耗每日额度但受分钟限制。60 秒请求、45 秒模型、3 秒短事务、90 秒租约及版本条件写回；过期恢复同现有扫描。GET 不消费模型额度。标准 400/401/403/404/413/429/500 及模型 502/503/504 信封沿用；已确认失败或版本冲突附 `details:{status,attempt_version,query_url}`，query_url 为本策略 GET，无 turn_id；提交不明省略 details。策略接口不改变现有 Turn 错误结构。`AI_MODE=fake` 支持完整策略链路；disabled 和现有真实试运行包装器都受控不可用，后者未暴露策略能力，不能绕过专用费用账本。OpenAI 策略适配器仅用合成 Transport 验证，本轮没有真实调用或新的收费装配。
 

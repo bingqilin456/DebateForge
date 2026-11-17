@@ -576,7 +576,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 八个辩论与辩题业务接口已装配到真实 main。HTTP 入口对轮次生成、轮次重试与总结生成请求使用 60 秒预算、模型 45 秒、数据库短事务 3 秒；普通查询接口保留 5 秒短预算。并发“全局 2”仅指单个 Go 进程内所有用户合计，不提供跨实例协调。分钟防刷 6 次也适用于重放，每日 20 次只计新认领（含显式重试与总结生成成功认领），失败也计入；内存计数重启会丢失。
 
-AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式目前装配 T07 单次 trialGenerator，仅 Linux/内部中继可用，尚不具备完整 Demo 所需总结与流式能力；最小改造方案见 [首批 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-10-场评测的最小方案)，真实调用仍需独立授权。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
+AI_MODE 默认 disabled，显式 fake 仅用于无收费联调；真实 deepseek 模式目前装配 T07 单次 trialGenerator，仅 Linux/内部中继可用，尚不具备完整 Demo 所需总结与流式能力；最小改造方案见 [首批 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md#本地完整-demo-与-5-场评测的最小方案)，真实调用仍需独立授权。技术证据见 [T05 记录](../acceptance/T05_FIRST_TURN_ACCEPTANCE.md)，Fake 成功不代表真实模型已验收。
 
 ## Phase 2 接口晋升说明
 

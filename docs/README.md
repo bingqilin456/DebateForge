@@ -87,5 +87,6 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
 - 根协作规则与局部规则优化（2026-11-17）：[文件范围、定向验证、未执行项与剩余风险](acceptance/AGENT_RULES_OPTIMIZATION_ACCEPTANCE.md)；仅改文档与规则，不含代码/迁移/真实调用，不代替任何阶段结论。
+- 真实模型调用授权登记（2026-11-17）：[参数、5 场覆盖面与执行清单](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)；参数已确认、**尚未执行**，真实调用计数为 0。场次门槛见 [ADR-028](decisions/DECISIONS.md#adr-028-phase-3-真实质量评测门槛由-10-场降为-5-场)。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

@@ -95,5 +95,6 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 真实模型调用授权登记（2026-11-17）：[参数、5 场覆盖面与执行清单](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)；已于 2026-11-17 实际执行，完成 4 场（3 场完整）。场次门槛见 [ADR-029](decisions/DECISIONS.md#adr-029-phase-3-真实质量评测门槛由-5-场降为-3-场完整场次)。
 
 - T13-Lite 签收草案（2026-11-17，**结论待负责人确认**）：[历史已复验项、平台与 CI 边界](acceptance/PHASE3_T13_LITE_SIGNOFF_DRAFT.md)。草案登记历史累计回归，说明 Windows 跳过 Linux 持久化与 Nginx 专项、四项 CI 属历史证据且当前 HEAD 未核实；「无新增 P0/P1 缺陷」只限已实际执行的回归项，跳过与未执行项不在结论内，也不覆盖真实模型已知失败。
+- AC17 A4/A5 签收草案（2026-11-17，**结论待负责人确认**）：[累计矩阵、启动前置条件与未登记项](acceptance/PHASE3_AC17_A4_A5_SIGNOFF_DRAFT.md)。草案以会话 22 起草 A4/A5，逐项引用执行记录；只登记「四轮与总结完整」这一事实，SSE 流式观察与刷新重登本轮未执行，浏览器具体动作、镜像 SHA、Prompt 版本未登记故不补造。`data` 无合格样本、账本修复未在真实调用验证、B 的人工评测未完成，不替代 T14-EVAL 或阶段结项。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。

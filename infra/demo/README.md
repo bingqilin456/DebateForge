@@ -27,6 +27,14 @@
 
 先检查 `git status --short --branch` 与 `docker --context desktop-linux compose -f infra/demo/compose.yaml ps`，确认没有另一成员正在体验。若已运行直接访问，不为刷新计数重启。
 
+### 快捷入口（推荐）
+
+Windows 下可直接双击仓库根的 `启动思弈阁 Demo.cmd`，它调用 `infra/demo/quick-start.ps1` 完成下文全部步骤：校验 Docker 与 Linux 容器模式、确认无他人体验、按需初始化秘密、构建前端 `dist` 与 app/migrate 镜像、`migrate up`、授权业务表、启动并等待 healthy、`nginx -t`、最后打开页面。
+
+脚本带有防护：检测到已有 Demo 容器部分运行时**直接中止**，不重启也不替换；发现数据卷存在但秘密文件缺失时**拒绝启动**，避免与库内口令不匹配；任何一步非零退出即停止并打印原因。它不执行真实模型调用，`AI_MODE` 仍为 `fake`。
+
+### 逐步手动启动（需要看清每一步时）
+
 ```powershell
 pwsh -NoProfile -File infra/demo/init-secrets.ps1
 $env:P3_DEMO_SECRETS_DIR = (Resolve-Path .cache/p3-demo/secrets).Path

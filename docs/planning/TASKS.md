@@ -315,6 +315,17 @@ T13-Lite 只做累计回归、参数调优与恶劣场景验证，不首次补�
 
 交接要求：接手前先确认对方已交付并可复核的成果与证据位置，不把未收到的成果记为已交接；共享状态机、迁移编号与公共契约在同一时间只由一名负责人修改，移交时同步文件范围与接口边界。Phase 3 阶段结项仍须五项必要 P0 与阶段审查通过并获得下一阶段授权，本节不构成结项结论。
 
+### Phase 3 技术债登记（待负责人确认）
+
+以下两项由本轮只读核对确认存在，登记为技术债，不改变任何任务状态、优先级或验收结论；修复须另行授权，且不得借修复扩大范围。
+
+| 编号 | 现象与证据 | 影响 |
+| --- | --- | --- |
+| P3-DEBT-01 | [frontend/src/types/api.ts](../../frontend/src/types/api.ts) 第 38 行定义了 `DebateStage`，但全前端仅此一处引用，没有任何组件或逻辑消费它；[backend/internal/ai/stage.go](../../backend/internal/ai/stage.go) 的 `StageFor`/`StagesFor` 已按 `(赛制, 轮号)` 推导环节，该语义却未进入前端展示 | 环节（立论/驳立论/自由辩/结辩）在界面上不展示，用户看不到当前轮次属于哪个环节；前端存在一个已定义但未使用的能力 |
+| P3-DEBT-02 | [backend/internal/ai/summary.go](../../backend/internal/ai/summary.go) 第 220 行调用 `summarySystemPrompt(req.Topic, req.UserStance, aiStance, rounds)`。`SummaryRequest`（第 52 行）含 `Mode`，且在第 122、126、212 行用于轮数与消息条数推导；但 `summarySystemPrompt`（第 234 行签名）只接收 `rounds`，**未传赛制标识与每轮环节映射**，prompt 正文也未引用 [stage.go](../../backend/internal/ai/stage.go) 的 `StageFor` | 总结 Prompt 无法按环节定位问题，复盘只能给到「第 N 轮」粒度；T14-EVAL 要求的「按环节定位问题」当前缺 Prompt 侧支撑 |
+
+本轮只登记，未修复、未运行产品测试；两项不作为真实调用失败根因结论。
+
 ### 2026-11-14 文档增量验证（历史）
 
 以下两段中的“本轮”“仍为”“未开始”仅描述当时的文档核对结果，不代表后续实现状态或持续操作授权。

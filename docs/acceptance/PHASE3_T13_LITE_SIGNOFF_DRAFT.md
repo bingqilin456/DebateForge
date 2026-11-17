@@ -1,4 +1,6 @@
-# T13-Lite 安全及故障回归签收草案（待负责人确认）
+# T13-Lite 安全及故障回归签收草案（历史口径已确认）
+
+> 后续正式技术结论见 [T13-Lite 正式技术验收](PHASE3_T13_LITE_ACCEPTANCE.md)。下文保留起草阶段及负责人第一次确认的历史记录；不再以第 4 节的“当前 HEAD 未核实”描述后续 PR CI 状态。
 
 日期：2026-11-17（Asia/Shanghai）。分支 `codex/research-and-demo-launcher`，HEAD `ee87ddb08b36311d4f63e53df4863c3df686c7bd`。本文是**草案**，只整理已有证据与其适用边界，等待负责人确认；不构成任务通过或 Phase 3 结项的结论。
 

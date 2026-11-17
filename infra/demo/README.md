@@ -1,9 +1,9 @@
 # Phase 3 本地 Demo（无收费准备）
 
-本环境只启用 Fake，用于在隔离的 Compose 项目里验证多个生成能力的费用保护、启停与 HTTP 链路；它**不读取真实模型密钥，也不构成真实体验、5 场评测或任何 AC 的验收结论**。
+本目录是 A 的独立 local-demo 环境说明，默认只启用 Fake，用于在隔离的 Compose 项目里验证多个生成能力的费用保护、启停与 HTTP 链路。B1 流派/策略卡与 B2 SSE/恢复已整合到固定受测基线 `134b845e5f9352d83c711d763471d1452ba336c0`，见 [B2 整合记录](../../docs/acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；B3 已在该基线完成固定 test/Fake + Nginx 浏览器补验，见 [B3 记录](../../docs/acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md) 与 [B2/B3 签收记录](../../docs/acceptance/PHASE3_B2_B3_SIGNOFF.md)。**B3 使用的是固定 test 库，不等于本目录的 `siyige_demo` 库已验收。**
 
-- **当前稳定操作条件**：只按本文命令启动、体验、停止，不修改共享数据库或计数；真实模式入口未启用。
-- **不要用本页状态推断验收结论**：AC12/AC13/AC16/AC17 的当前状态、B1/B2/B3 与真实体验的待办，一律以 [TASKS](../../docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚) 为唯一入口；历史轮次的边界见 [准备验收记录](../../docs/acceptance/T15_DEMO_PREP_ACCEPTANCE.md) 与 [B2 整合记录](../../docs/acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
+- **当前稳定操作条件**：只按本文命令启动、体验、停止，不修改共享数据库或计数。
+- **不要用本页状态推断验收结论**：AC12/AC13/AC16/AC17 的当前状态与 B3、真实体验的待办，一律以 [TASKS](../../docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚) 为唯一入口；真实调用的实际结果见 [执行记录](../../docs/acceptance/P3_REAL_MODEL_EXECUTION_2026-11-17.md)。
 
 已验证能力与未验收项的区分见 TASKS；本页只描述操作条件，不在此复写任务状态。
 
@@ -33,7 +33,7 @@ $env:P3_DEMO_SECRETS_DIR = (Resolve-Path .cache/p3-demo/secrets).Path
 docker --context desktop-linux compose -f infra/demo/compose.yaml config --quiet
 ```
 
-前端依赖未安装时执行 `npm ci`；已安装直接检查并构建。使用待体验提交构建的 `dist`；切换提交或修改前端后重新构建，不能挂载另一分支的旧产物。
+前端依赖未安装时执行 `npm ci`；已安装直接按改动影响范围检查并构建。使用待体验提交构建的 `dist`；切换提交或修改前端后重新构建，不能挂载另一分支的旧产物。B1/B2 已整合，但启动本目录环境时仍须从**实际受测提交**构建；不要用固定 test 库的 B3 证据替代本目录构建与验收。
 
 ```powershell
 Push-Location frontend
@@ -52,7 +52,7 @@ docker --context desktop-linux compose -f infra/demo/compose.yaml exec -T edge n
 
 逐条检查退出码；`migrate up` 只执行未执行的前向 SQL，服务启动不自动迁移/播种。数据库初始化只发生在新空卷，口令文件改变不会改已有账户。`grant-app.sql` 由 root 在这个专用隔离库显式执行；应用无 DDL 和 Goose 历史权限。依赖与镜像沿用仓库版本，无新增 Go/npm 产品依赖。
 
-打开页面，注册/登录合成账号，查看辩题与历史；流派/策略卡与 SSE 入口当前是否可用、是否已验收，按 [TASKS](../../docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚) 核对，不在本页推断。可用时按“选题→立场→四流派之一→创建→显式生成策略卡→四轮 SSE→显式总结→刷新→退出重登→历史重读”执行。分钟额度满时等待，不自动重复调用。
+打开页面，注册后单独登录合成账号，按“选题→立场→四流派之一→创建→可选显式生成策略卡→四轮 SSE→自动总结→刷新→退出重登→历史重读”操作。流派/策略卡与 SSE 入口当前是否已验收，按 [TASKS](../../docs/planning/TASKS.md#phase-3赛制流式破局亮点与质量攻坚) 核对，不在本页推断。总结/策略失败时先查询、再由用户显式按最新版本重试；分钟额度满时等待，不自动重复调用。具体按钮和失败处理见 [浏览器操作指南](../../docs/guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)；注意该指南的创建入口描述以 `134b845` 为历史基线，`73bf1d0` 起只在辩题列表创建，主视图改为“开始新的练习”。Fake 不代表真实体验或真实质量评测通过；真实调用的实际结果见 [执行记录](../../docs/acceptance/P3_REAL_MODEL_EXECUTION_2026-11-17.md)。
 
 无人体验时可执行 `python infra/demo/probe.py`，先核对固定容器 `APP_ENV=demo` + `AI_MODE=fake`，再走 18081 的完整后端 HTTP 链路：四流派、分页/空列表/非法值、一策略+四轮增量 SSE+总结、重登/历史。它只新增合成记录并保留，不重启、不迁移、不重置，绝不替代 B 的生产解析器和浏览器专项。
 

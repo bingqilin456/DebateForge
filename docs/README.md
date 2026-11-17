@@ -61,10 +61,12 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 **2026-11-17 清理说明**：已删除 9 份已完成任务的旧计划/临时进度和 3 份已被后续验收覆盖的早期交接记录。正式验收证据、尚未关闭风险、Phase 3 在途 Spec 与 V2 规划保留；Phase 2 SDD 文件仍含现行工作流方法，继续保留。历史文件可从 Git `91a4056d72b751473657a8329e45b86b5f2f4b33` 查询；删除不改变任务状态、历史贡献或授权边界。
 
+- main 强制质量门禁：[规则 JSON、实际 CI 名称、触发核查及待确认远端配置](acceptance/MAIN_REQUIRED_CHECKS_ACCEPTANCE.md)；配置准备不代表已启用远端保护。
+
 - Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。记录中“B1 故障待补、B2 未交付”是该轮历史状态，后续补测与整合见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 - B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；固定 test 后端验证之后的浏览器补测见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 
-- T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及当轮交接](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。其中 B1/B2 等待项保留原轮次语境，后续整合见 B2 记录，完整 A4/B3/A5 与真实体验状态查 TASKS。
+- T15-DEMO-REAL 无收费准备：[Spec](planning/T15_DEMO_PREP_SPEC.md)、[费用/Fake 环境验证及当轮交接](acceptance/T15_DEMO_PREP_ACCEPTANCE.md)、[本地启动/配置/停止](../infra/demo/README.md)。其中 B1/B2 等待项保留原轮次语境，后续整合见 B2 记录；A4 累计矩阵与 A5 启动前置条件见 [B2/B3 签收记录](acceptance/PHASE3_B2_B3_SIGNOFF.md)，真实体验状态查 TASKS。
 - 真实模型体验与评测执行（2026-11-17）：[两次授权、25 次预留、4 场实际结果、两次模型失败、一次补充授权与操作失误](acceptance/P3_REAL_MODEL_EXECUTION_2026-11-17.md)；授权参数见[调用授权登记](acceptance/P3_EVAL_DEMO_AUTHORIZATION.md)。4 场中 3 场完整，按 [ADR-029](decisions/DECISIONS.md#adr-029-phase-3-真实质量评测门槛由-5-场降为-3-场完整场次) 的 3 场门槛已满足场次条件，但 `data` 流派无合格样本、B 的人工结论未提交，不视为评测已通过。
 
 - T15-Core：[后端专项与 B 交接](acceptance/T15_CORE_BACKEND_ACCEPTANCE.md)、[实施计划](planning/T15_CORE_BACKEND_PLAN.md)、[本地 Fake 三链路入口](../infra/sse/README.md)。
@@ -82,6 +84,8 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)、[T14-STYLE 后端专项与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)；后续前端与故障验证分别见 B1/B2 记录，不回写早期证据为完整 AC16 通过。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、浏览器 Fake 结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；实现与实测不替代负责人签收及阶段结项，当前待确认项查 TASKS。
+- Phase 3 B3：[浏览器补验结果、证据与边界](acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md)、[操作说明及 10 场真实评测准备](guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)。固定受测基线 134b845，交付 SHA 为 d22487f；新增真实 Fake/Nginx 浏览器 2/2 与最终只读启停 1/1 通过。真实模型评测保持未授权/未执行。
+- Phase 3 B2/B3 正式签收：[签收结论、累计验收矩阵(A4)、启动前置条件(A5)与复现边界](acceptance/PHASE3_B2_B3_SIGNOFF.md)。签收范围限定 134b845 的固定 test/Fake 无收费工作，不含真实 Demo、10 场评测与阶段结项。
 - 确认废弃代码清理：[删除依据、保留原因与验证](acceptance/REMOVE_UNUSED_CODE_ACCEPTANCE.md)；单项结果待负责人确认，不改变阶段验收状态。
 - 功能负责人分工变更（2026-11-16）：[本轮范围、验证与授权边界](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)；仅改文档，不代替 Phase 3 结项或 V2 决策。
 - 产品 V2 文档重构（2026-11-17）：[自测、变更范围与未执行项](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)；仅改文档，不含代码/迁移/真实调用，不代替 Phase 3 结项或 V2 开发授权。

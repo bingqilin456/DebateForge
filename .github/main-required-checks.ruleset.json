@@ -1,0 +1,39 @@
+{
+  "name": "main-required-checks",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {"context": "仓库规范与静态门禁", "integration_id": 15368},
+          {"context": "后端与迁移工具无收费检查", "integration_id": 15368},
+          {"context": "隔离 MySQL 8.4.13 迁移与集成测试", "integration_id": 15368},
+          {"context": "前端类型检查、单测与构建", "integration_id": 15368}
+        ]
+      }
+    }
+  ]
+}

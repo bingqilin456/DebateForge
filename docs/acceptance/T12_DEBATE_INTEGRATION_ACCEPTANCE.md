@@ -3,7 +3,7 @@
 - **任务编号**：T12 核心辩论页面联调（Phase 2）
 - **日期**：2026-11-11
 - **主责**：成员 A（辩论页三轮状态机、显式重试、自动请求总结、`SummaryPanel` 结构化安全渲染与 AC01–AC08 联调）
-- **对应 Spec**：[T12_DEBATE_INTEGRATION_SPEC](../planning/T12_DEBATE_INTEGRATION_SPEC.md)
+- **对应 Spec**：[T12_DEBATE_INTEGRATION_SPEC（历史文件，已清理）](https://github.com/bingqilin456/DebateForge/blob/91a4056d72b751473657a8329e45b86b5f2f4b33/docs/planning/T12_DEBATE_INTEGRATION_SPEC.md)
 
 ## 1. 交付文件范围
 

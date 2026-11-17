@@ -1,6 +1,6 @@
 # 思弈阁 Lite 文档导航
 
-本文负责文档入口、阅读顺序与路径迁移对照。产品范围、技术契约、任务进度及验收证据仍由各自文档维护，不在此重复整份状态说明。
+本文负责文档入口与阅读顺序。产品范围、技术契约、任务进度及验收证据仍由各自文档维护，不在此重复整份状态说明。
 
 ## 新成员阅读顺序
 
@@ -24,11 +24,11 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 | 目录 | 职责与入口 |
 | --- | --- |
-| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md)、[早期草案归档](product/PRD_V2_DRAFT.md) |
+| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md) |
 | [architecture/](architecture/) | 当前架构与目标设计：[ARCHITECTURE](architecture/ARCHITECTURE.md)（含 V1 状态机与 [V2 目标状态模型](architecture/ARCHITECTURE.md#v2-目标状态模型与服务端权威阶段进度待实施)） |
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
-| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)（含[现行功能分工原则](planning/PLAN.md#现行功能分工原则)）、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)、[V2 技术评估](planning/PRD_V2_TECHNICAL_ASSESSMENT.md)；历史实施计划按原文件名保留 |
+| [planning/](planning/) | 阶段与任务：[PLAN](planning/PLAN.md)（含[现行功能分工原则](planning/PLAN.md#现行功能分工原则)）、[TASKS](planning/TASKS.md)、[Phase 2 轻量 SDD 工作流](planning/PHASE2_SDD_WORKFLOW.md)、[V2 技术评估](planning/PRD_V2_TECHNICAL_ASSESSMENT.md)；已完成任务的旧计划已清理，按下方正式验收记录追溯 |
 | [acceptance/](acceptance/) | 技术验证、审查、人工验收及实施交接记录；保留原证据与各轮语境。分工变更见[功能负责人分工变更验收](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)，V2 重构自测见[记录](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md) |
 | [guides/](guides/) | [协作教程](guides/Codex团队协作实战教程.md)与[阶段 0 学习笔记](guides/学习笔记/)；学习资料不能替代当前契约或验收证据 |
 
@@ -43,6 +43,8 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 ## 历史计划与验收证据
 
+**2026-11-17 清理说明**：已删除 9 份已完成任务的旧计划/临时进度和 3 份已被后续验收覆盖的早期交接记录。正式验收证据、尚未关闭风险、Phase 3 在途 Spec 与 V2 规划保留；Phase 2 SDD 文件仍含现行工作流方法，继续保留。历史文件可从 Git `91a4056d72b751473657a8329e45b86b5f2f4b33` 查询；删除不改变任务状态、历史贡献或授权边界。
+
 - Phase 3 B1 指定提交整合：[合入、契约接线与受影响检查](acceptance/PHASE3_B1_INTEGRATION_ACCEPTANCE.md)、[B 原始实测](acceptance/T14_STYLE_FRONTEND_ACCEPTANCE.md)。记录中“B1 故障待补、B2 未交付”是该轮历史状态，后续补测与整合见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 - B1 策略故障补测：[A 本地 Fake 装配交接](acceptance/P3_A_STRATEGY_FAKE_ACCEPTANCE.md)、[独占环境与运行说明](../infra/strategy-fake/README.md)；固定 test 后端验证之后的浏览器补测见 [B2 整合记录](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)。
 
@@ -53,16 +55,14 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 阶段 0 / PB：[INIT_ACCEPTANCE](acceptance/INIT_ACCEPTANCE.md)。
 - T02：[环境](acceptance/T02_MYSQL_ENV_ACCEPTANCE.md)、[后端连接](acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md)、[dotenv](acceptance/T02_DOTENV_ACCEPTANCE.md)、[配置修复](acceptance/T02_CONFIG_FIX_ACCEPTANCE.md)、[初始迁移](acceptance/T02_MIGRATIONS_ACCEPTANCE.md)、[种子与持久化](acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)。
 - T03：[认证验收记录](acceptance/T03_AUTH_ACCEPTANCE.md)，后续结论在[独立审查与人工验收结果](acceptance/T03_AUTH_ACCEPTANCE.md#独立审查与人工验收结果)。
-- T04：[AI 验收记录](acceptance/T04_AI_ACCEPTANCE.md)、[实施交接](acceptance/T04_AI_IMPLEMENTATION.md)及[实施计划](planning/T04_AI_PLAN.md)。
-- T05：[首轮验收记录](acceptance/T05_FIRST_TURN_ACCEPTANCE.md)、[实施计划](planning/T05_FIRST_TURN_PLAN.md)及 [DSH 实施进度](planning/T05_DSH_PROGRESS.md)；结项范围限于无收费实现，真实模型链路未验收。
-- T05 / T06-B：[Git 集成验证记录](acceptance/T05_T06_B_GIT_INTEGRATION.md)；来源 SHA、冲突处理、验证与未执行项。
-- T06-B 历史交付见 [认证与本地预览交接](acceptance/T06_B_HANDOFF.md)。
-- T06 已完成人工验收，见 [实施计划](planning/T06_COMPLETION_PLAN.md) 和 [验收记录](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
+- T04：[AI 最终验收记录](acceptance/T04_AI_ACCEPTANCE.md)。
+- T05：[首轮最终验收记录](acceptance/T05_FIRST_TURN_ACCEPTANCE.md)；结项范围限于无收费实现，真实模型链路未验收。
+- T06：[正式入口与首轮联调最终验收](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
 - T07 部署准备见 [配置与运行清单](../deploy/README.md) 和 [验收记录](acceptance/T07_DEPLOYMENT_PREPARATION_ACCEPTANCE.md)。
 - T09 三轮状态机与失败恢复（含 T11 后端历史分页）见 [T09 验收记录](acceptance/T09_THREE_TURNS_RECOVERY_ACCEPTANCE.md)。
 - T10 结构化总结与重试见 [T10 验收记录](acceptance/T10_SUMMARY_RETRY_ACCEPTANCE.md)。
-- T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 Spec](planning/T12_DEBATE_INTEGRATION_SPEC.md) 和 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
-- Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [整合 Spec 与清单](planning/PHASE2_FINAL_INTEGRATION_SPEC.md) 和 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
+- T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
+- Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)、[T14-STYLE 后端专项与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)；后续前端与故障验证分别见 B1/B2 记录，不回写早期证据为完整 AC16 通过。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、浏览器 Fake 结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；实现与实测不替代负责人签收及阶段结项，当前待确认项查 TASKS。
 - 确认废弃代码清理：[删除依据、保留原因与验证](acceptance/REMOVE_UNUSED_CODE_ACCEPTANCE.md)；单项结果待负责人确认，不改变阶段验收状态。
@@ -70,48 +70,5 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - 产品 V2 文档重构（2026-11-17）：[自测、变更范围与未执行项](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)；仅改文档，不含代码/迁移/真实调用，不代替 Phase 3 结项或 V2 开发授权。
 - 创建会话流程统一：[入口取舍、本地验证与未执行项](acceptance/UNIFY_DEBATE_CREATION_ACCEPTANCE.md)；技术验证完成，待负责人确认。
 - 前端常量与基础样式收敛：[范围、边界测试与桌面/窄屏验证](acceptance/FRONTEND_SHARED_VALUES_ACCEPTANCE.md)；本地技术验证完成，待负责人确认。
-- 历史实施计划：[T02 连接](planning/2026-11-08-t02-database-connection.md)、[T02 迁移](planning/2026-11-08-t02-migrations.md)、[T03 认证](planning/2026-11-08-t03-auth.md)。原 `superpowers/plans/` 仅承担计划存放职责，本次归并到 `planning/`，文件名保留。
 
 历史记录保留当时的授权和证据。当前状态以 [TASKS](planning/TASKS.md) 为入口，操作以负责人本轮明确授权为准。
-
-## 2026-11-08 目录迁移时发现的状态差异与保留项
-
-下表记录目录迁移时发现的差异。当前状态统一从 [TASKS](planning/TASKS.md) 和对应验收记录查阅。
-
-| 差异或保留项 | 查阅依据与处理 |
-| --- | --- |
-| 根 README、AGENTS、PLAN、ARCHITECTURE 及 TASKS 的部分 T03 说明仍写待独立审查或待人工验收 | [T03 后续验收章节](acceptance/T03_AUTH_ACCEPTANCE.md#独立审查与人工验收结果)已记载有条件独立审查通过、负责人人工验收及接受风险延期；接受延期不代表问题已修复。迁移时发现的旧说明仅属历史语境；当前入口已同步，后续进度从 TASKS 查阅 |
-| AGENTS、ARCHITECTURE 的 T04 未结项快照已在 2026-11-08 结项登记后修正；迁移时 PLAN 与部分 T04 计划、交接内容仍含未启动、阻塞或待验收快照 | [T04 最终人工验收与结项](acceptance/T04_AI_ACCEPTANCE.md#最终人工验收与结项)及 [TASKS](planning/TASKS.md)已登记后续结论；当前入口已指向 TASKS；原实施和验收记录保留历史语境，不重新判定结项、不改写验收结论 |
-| T07-COST-01 的供应商硬预算缺口仍保留 | [风险登记与关闭条件](planning/TASKS.md#t07-cost-01-供应商硬预算缺失)明确其仍未关闭，T04 结项不解除公网开放阻塞 |
-| OpenAPI 的说明性来源字段曾使用原路径 | 目录迁移时按“只移动、内容不变”保留；2026-11-14 首批契约已将 `x-contract-source` 修正为 `docs/api/API.md`，历史 `source: docs/ARCHITECTURE.md#phase-2-api-草案` 若仍出现则保留草案语境。对应入口现为 [API](api/API.md) 与 [Phase 2 草案](architecture/ARCHITECTURE.md#phase-2-api-草案)；这些旧路径不作为有效文件链接，内部 `$ref` 不受移动影响 |
-
-## 本次路径迁移对照
-
-以下旧路径仅用于追溯，不是仍存在的文件入口。除新增本文外，原文件名全部保留；文档内的运行命令仅随迁移修复文档路径，不改变执行目录或命令行为。`backend/`、`frontend/`、`infra/` 中的文件均未移动。
-
-| 原路径 | 新路径 |
-| --- | --- |
-| `docs/T06_B_HANDOFF.md` | [docs/acceptance/T06_B_HANDOFF.md](acceptance/T06_B_HANDOFF.md) |
-| `docs/PRD.md` | [docs/product/PRD.md](product/PRD.md) |
-| `docs/ARCHITECTURE.md` | [docs/architecture/ARCHITECTURE.md](architecture/ARCHITECTURE.md) |
-| `docs/API.md` | [docs/api/API.md](api/API.md) |
-| `docs/openapi.yaml` | [docs/api/openapi.yaml](api/openapi.yaml) |
-| `docs/DECISIONS.md` | [docs/decisions/DECISIONS.md](decisions/DECISIONS.md) |
-| `docs/PLAN.md` | [docs/planning/PLAN.md](planning/PLAN.md) |
-| `docs/TASKS.md` | [docs/planning/TASKS.md](planning/TASKS.md) |
-| `docs/T04_AI_PLAN.md` | [docs/planning/T04_AI_PLAN.md](planning/T04_AI_PLAN.md) |
-| `docs/superpowers/plans/2026-11-08-t02-database-connection.md` | [docs/planning/2026-11-08-t02-database-connection.md](planning/2026-11-08-t02-database-connection.md) |
-| `docs/superpowers/plans/2026-11-08-t02-migrations.md` | [docs/planning/2026-11-08-t02-migrations.md](planning/2026-11-08-t02-migrations.md) |
-| `docs/superpowers/plans/2026-11-08-t03-auth.md` | [docs/planning/2026-11-08-t03-auth.md](planning/2026-11-08-t03-auth.md) |
-| `docs/INIT_ACCEPTANCE.md` | [docs/acceptance/INIT_ACCEPTANCE.md](acceptance/INIT_ACCEPTANCE.md) |
-| `docs/T02_MYSQL_ENV_ACCEPTANCE.md` | [docs/acceptance/T02_MYSQL_ENV_ACCEPTANCE.md](acceptance/T02_MYSQL_ENV_ACCEPTANCE.md) |
-| `docs/T02_DATABASE_CONNECTION_ACCEPTANCE.md` | [docs/acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md](acceptance/T02_DATABASE_CONNECTION_ACCEPTANCE.md) |
-| `docs/T02_DOTENV_ACCEPTANCE.md` | [docs/acceptance/T02_DOTENV_ACCEPTANCE.md](acceptance/T02_DOTENV_ACCEPTANCE.md) |
-| `docs/T02_CONFIG_FIX_ACCEPTANCE.md` | [docs/acceptance/T02_CONFIG_FIX_ACCEPTANCE.md](acceptance/T02_CONFIG_FIX_ACCEPTANCE.md) |
-| `docs/T02_MIGRATIONS_ACCEPTANCE.md` | [docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md](acceptance/T02_MIGRATIONS_ACCEPTANCE.md) |
-| `docs/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md` | [docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md](acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md) |
-| `docs/T03_AUTH_ACCEPTANCE.md` | [docs/acceptance/T03_AUTH_ACCEPTANCE.md](acceptance/T03_AUTH_ACCEPTANCE.md) |
-| `docs/T04_AI_ACCEPTANCE.md` | [docs/acceptance/T04_AI_ACCEPTANCE.md](acceptance/T04_AI_ACCEPTANCE.md) |
-| `docs/T04_AI_IMPLEMENTATION.md` | [docs/acceptance/T04_AI_IMPLEMENTATION.md](acceptance/T04_AI_IMPLEMENTATION.md) |
-| `docs/Codex团队协作实战教程.md` | [docs/guides/Codex团队协作实战教程.md](guides/Codex团队协作实战教程.md) |
-| `docs/学习笔记/思弈阁阶段0核心源码复习笔记（11.2~11.5）.md` | [docs/guides/学习笔记/思弈阁阶段0核心源码复习笔记（11.2~11.5）.md](guides/学习笔记/思弈阁阶段0核心源码复习笔记（11.2~11.5）.md) |

@@ -35,7 +35,7 @@
 - `backend/cmd/server/main.go`：只组装池，不在启动时联网、迁移或建表；HTTP 退出后关闭池，保留 PB HTTP 超时参数。
 - `backend/internal/platform/*_test.go`、`backend/cmd/server/main_test.go`：配置/目标/秘密、取消/超时、健康/脱敏、真实 HTTP 入口与关闭测试。
 - `backend/tests/integration/database_test.go`：TestMain 在读秘密/联网前校验固定目标；连接后核对 DATABASE()、CURRENT_USER()。仅 SELECT/Ping，不做清库等操作。
-- `backend/go.mod`、`go.sum` 锁定新增依赖；README/API/5 份已有在途文档增量同步；[实施计划](../planning/2026-11-08-t02-database-connection.md) 保留步骤和执行记录。
+- `backend/go.mod`、`go.sum` 锁定新增依赖；README/API/5 份已有在途文档增量同步；[实施计划（历史文件，已清理）](https://github.com/bingqilin456/DebateForge/blob/91a4056d72b751473657a8329e45b86b5f2f4b33/docs/planning/2026-11-08-t02-database-connection.md) 保留步骤和执行记录。
 
 ## 实际验证
 

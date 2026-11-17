@@ -10,7 +10,7 @@
 - 保留既有赛制前向迁移、轮数驱动、环节映射与 Prompt 指令、版本重试、租约、所有权、总结及已定流式契约/代理配置；本轮不实现 SSE 或其他 Phase 3 增量。
 - 本轮负责人明确授权必要分支、Commit、Push、PR 与 Merge，要求全部检查成功后合入 `main` 并正式结项。该授权不构成真实模型、部署或下一阶段授权，也不补记未发生的人工演示/成员互审。
 
-实施边界与测试矩阵见 [最终整合 Spec](../planning/PHASE2_FINAL_INTEGRATION_SPEC.md)。
+实施边界与测试矩阵见 [最终整合 Spec（历史文件，已清理）](https://github.com/bingqilin456/DebateForge/blob/91a4056d72b751473657a8329e45b86b5f2f4b33/docs/planning/PHASE2_FINAL_INTEGRATION_SPEC.md)。
 
 ## 实际验证结果
 

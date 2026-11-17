@@ -21,7 +21,7 @@
 - `AI_MODE` 默认空/disabled，真实入口受控不可用；显式 fake 使用 T04 Fake。显式 deepseek 模式装配既有 Eino Adapter，要求 `AI_MAX_OUTPUT_TOKENS`，固定 DeepSeek 地址/模型和已核实窗口配置。本轮只构造适配器作无网络验证，**未开启或调用真实模式**。后续真实调用必须另行授权；`.env.example` 只增加非秘密说明，未修改 `.env` 或凭据。
 - `backend/tests/integration/debate*.go`：固定测试目标前后验证、真实注册登录/Session/CSRF、真实 HTTP 与 MySQL、并发/取消/额度/故障测试。新 T05 夹具按本次已登记 user ID 清理其 Session、Debate、Turn、Message，不批量清空既有数据；不会改容器或卷。
 - 必要回归修正仅涉及 `auth/handler_test.go`：独立复现固定 Service 时钟与真实墙钟混用导致的 Cookie Expires 失败，改为比较注入时钟的 24h。**未修改认证产品源码**，也未宣称原 T03 P2 清理问题已修复。
-- 同步 AGENTS、README、API/OpenAPI、架构、决策、PLAN/TASKS 的当前状态，保留历史证据；新增 [计划](../planning/T05_FIRST_TURN_PLAN.md) 与 [DSH 进度](../planning/T05_DSH_PROGRESS.md)。无新产品依赖，原迁移/Go 锁定依赖/前端/infra 未修改。
+- 同步 AGENTS、README、API/OpenAPI、架构、决策、PLAN/TASKS 的当前状态，保留历史证据；新增 [计划（历史文件，已清理）](https://github.com/bingqilin456/DebateForge/blob/91a4056d72b751473657a8329e45b86b5f2f4b33/docs/planning/T05_FIRST_TURN_PLAN.md) 与 [DSH 进度（历史文件，已清理）](https://github.com/bingqilin456/DebateForge/blob/91a4056d72b751473657a8329e45b86b5f2f4b33/docs/planning/T05_DSH_PROGRESS.md)。无新产品依赖，原迁移/Go 锁定依赖/前端/infra 未修改。
 
 ## 协作记录
 

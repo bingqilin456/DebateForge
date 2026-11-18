@@ -12,6 +12,18 @@ import (
 // 便于 T05 在 debate_turns.prompt_version 中留下可追溯记录。
 const PromptVersion = "debate-v1"
 
+// CustomPromptVersion 是私有自定义辩题（V2-03）对辩的独立版本标识。
+// 自定义题把用户原文放在 user 消息的数据段而不是 system 规则段，
+// 结构不同就必须换版本，不能与预设题共用一个可追溯标识。
+const CustomPromptVersion = "debate-custom-v1"
+
+// CustomSummaryPromptVersion 与 CustomStrategyPromptVersion 同样是自定义辩题的
+// 独立版本标识：题目原文只作为 user 数据段出现，system 不含用户题目。
+const (
+	CustomSummaryPromptVersion  = "summary-custom-v1"
+	CustomStrategyPromptVersion = "strategy-custom-v1"
+)
+
 // Mode 是会话的赛制模式标识。它是轮数上限的唯一事实来源：
 // 数据库 debates.mode 决定该会话跑几轮，代码不再保留固定的轮数常量。
 type Mode string
@@ -94,6 +106,10 @@ const (
 	MaxTopicTitleCodepoints = 200
 	// MaxTopicDescriptionCodepoints 限制受信任辩题描述长度。
 	MaxTopicDescriptionCodepoints = 2000
+	// MaxCustomTopicTitleCodepoints 与 PRD §12 一致：自定义辩题 1–200 字。
+	MaxCustomTopicTitleCodepoints = 200
+	// MaxCustomTopicBackgroundCodepoints 与 PRD §12 一致：背景 0–1000 字。
+	MaxCustomTopicBackgroundCodepoints = 1000
 )
 
 // DefaultRequestBudget 是单个生成请求从 HTTP 入口开始计算的总预算。
@@ -170,6 +186,10 @@ type Request struct {
 	RoundNo        int
 	CompletedTurns []CompletedTurn
 	UserContent    string
+	// Custom 表示本场是私有自定义辩题（会话快照无 topic_id）。
+	// 为真时 Topic 是用户原文：只作为 user 消息的数据段外发，
+	// system 规则段不出现题目文本，且改用独立 Prompt 版本。
+	Custom bool
 }
 
 // PromptMessage 是一条待发送消息，角色由服务端构造，调用方不可指定。
@@ -301,11 +321,22 @@ func ValidateRequest(req Request) error {
 		!utf8.ValidString(req.UserContent) {
 		return invalidInput("输入必须是合法 UTF-8")
 	}
-	if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
-		return err
-	}
-	if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
-		return err
+	if req.Custom {
+		// 自定义辩题快照来自用户原文：标题必填且不得为空白，背景选填可为空。
+		// 上界按 PRD §12 的实际输入范围收窄，避免用预设题更宽的 2000 掩盖越界。
+		if err := validateText("自定义辩题", req.Topic.Title, MaxCustomTopicTitleCodepoints); err != nil {
+			return err
+		}
+		if utf8.RuneCountInString(req.Topic.Description) > MaxCustomTopicBackgroundCodepoints {
+			return invalidInput("自定义辩题背景最多 1000 个 Unicode 码点")
+		}
+	} else {
+		if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
+			return err
+		}
+		if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
+			return err
+		}
 	}
 	// 轮数上限来自会话赛制，不从常量读取；未知赛制在 RoundsFor 处受控失败。
 	rounds, err := RoundsFor(req.Mode)

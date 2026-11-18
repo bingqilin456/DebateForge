@@ -378,6 +378,7 @@ paths:
       description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
         T14-STYLE 已实现可选 ai_style，省略默认 logical，显式 null、空串、非字符串或未知/大小写不符的枚举为 400 invalid_request 且不创建；校验后与会话一起保存并在响应、详情和历史返回，创建后不可修改。
         mode 仍由服务端固定 standard_4，客户端传入不生效；流派不改变轮次、立场、状态机或配额。策略生成与创建分离，不隐式调用模型。
+        V2-03 新增私有自定义辩题。topic_id 与 custom_topic 按是否出现严格二选一，显式 null 也视为出现。自定义分支拒绝顶层及 custom_topic 对象中的未知与重复字段。自定义原文随会话快照保存，仅登录用户本人可通过会话读取。标题 1–200、背景 0–1000 个 Unicode 码点，拒绝纯空白标题，保留原文。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -443,6 +444,12 @@ paths:
               user_stance: pro
               ai_style: aggressive
             x-example-implementation-status: implemented
+            x-v2-03-custom-example:
+              custom_topic:
+                title: 是否应把远程办公设为默认？
+                background: 讨论协作成本与人才半径
+              user_stance: pro
+              x-example-implementation-status: implemented
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
@@ -1715,21 +1722,87 @@ components:
           - active
           - completed
     CreateDebateRequest:
+      description: V2-03 起严格二选一：topic_id 与 custom_topic 恰有一个出现，以字段是否出现判定。两者同时出现、都缺失或任一显式 null 为 400 invalid_request。预设分支沿用既有顶层未知字段忽略行为；自定义分支严格拒绝顶层未知与重复字段。mode、轮次与归属不由客户端决定。
+      oneOf:
+      - type: object
+        required:
+        - topic_id
+        - user_stance
+        not:
+          required:
+          - custom_topic
+        properties:
+          topic_id:
+            $ref: '#/components/schemas/EntityId'
+          user_stance:
+            $ref: '#/components/schemas/Stance'
+          ai_style:
+            $ref: '#/components/schemas/AIStyle'
+            default: logical
+            description: T14-STYLE 已实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
+            x-implementation-status: implemented
+            x-task: T14-STYLE
+        x-implementation-status: implemented
+      - type: object
+        additionalProperties: false
+        required:
+        - custom_topic
+        - user_stance
+        not:
+          required:
+          - topic_id
+        properties:
+          custom_topic:
+            $ref: '#/components/schemas/CustomTopic'
+          user_stance:
+            $ref: '#/components/schemas/Stance'
+          ai_style:
+            $ref: '#/components/schemas/AIStyle'
+            default: logical
+            description: 同预设分支：省略默认 logical，显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request。
+            x-implementation-status: implemented
+        x-implementation-status: implemented
+        x-task: V2-03
+      x-task: V2-03
+    CustomTopic:
       type: object
+      additionalProperties: false
       required:
-      - topic_id
-      - user_stance
+      - title
       properties:
-        topic_id:
-          $ref: '#/components/schemas/EntityId'
-        user_stance:
-          $ref: '#/components/schemas/Stance'
-        ai_style:
-          $ref: '#/components/schemas/AIStyle'
-          default: logical
-          description: T14-STYLE 已实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
-          x-implementation-status: implemented
-          x-task: T14-STYLE
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '[^\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]'
+          description: 必填，1–200 个 Unicode 码点，拒绝纯空白（Unicode White_Space 与 U+FEFF），保存原文。
+        background:
+          type: string
+          maxLength: 1000
+          description: 选填，0–1000 个 Unicode 码点，可省略或为空串，长度包含空白，保存原文。
+      description: 私有自定义辩题原文，只存在于本场会话快照；不进入公共题库，也没有编辑接口。仅 title 必填，background 可省略。
+      x-implementation-status: implemented
+    DebateTopic:
+      description: 会话快照中的辩题。预设题 id 为原字符串；私有自定义辩题 id 为 null，title/description 为该会话固定快照（缺失背景为空字符串）。公共 Topic 类型仍要求字符串 ID。
+      oneOf:
+      - $ref: '#/components/schemas/Topic'
+      - type: object
+        required:
+        - id
+        - title
+        - description
+        properties:
+          id:
+            type: 'null'
+          title:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description:
+            type: string
+            maxLength: 1000
+        x-implementation-status: implemented
+        x-task: V2-03
     Debate:
       type: object
       required:
@@ -1748,7 +1821,7 @@ components:
         id:
           $ref: '#/components/schemas/EntityId'
         topic:
-          $ref: '#/components/schemas/Topic'
+          $ref: '#/components/schemas/DebateTopic'
         user_stance:
           $ref: '#/components/schemas/Stance'
         ai_stance:

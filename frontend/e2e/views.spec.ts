@@ -129,6 +129,69 @@ for (const kind of ['503', 'network', 'malformed'] as const) {
   })
 }
 
+test('V2-03 自定义辩题：私有提示、码点计数、超限保留输入、只提交 custom_topic', async ({ page }) => {
+  const title = '是否应把远程办公设为默认？'
+  const background = '讨论协作成本与人才半径'
+  const custom: Debate = {
+    ...debate('77'), topic: { id: null, title, description: background }, status: 'active', completed_rounds: 0,
+  }
+  const posts: unknown[] = []
+  await api(page, async (route, url) => {
+    if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
+    if (url.pathname === '/api/v1/debates' && route.request().method() === 'POST') {
+      posts.push(route.request().postDataJSON())
+      return json(route, custom, 201)
+    }
+    return json(route, { debate: custom, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
+  })
+  await page.goto('/#topics')
+  await expect(page.locator('[data-topic-id]')).toHaveCount(5)
+  await page.locator('input[data-source="custom"]').check()
+
+  // 私有性与两个独立计数可见。
+  await expect(page.getByText('自定义辩题仅你可在本站查看', { exact: false })).toBeVisible()
+  await expect(page.locator('[data-custom-title-count]')).toContainText('0 / 200')
+  await expect(page.locator('[data-custom-background-count]')).toContainText('0 / 1000')
+
+  // 超限时保留输入并阻止提交，不静默截断。
+  const over = '题'.repeat(201)
+  await page.locator('[data-custom-title]').fill(over)
+  await expect(page.locator('[data-custom-title]')).toHaveValue(over)
+  await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+  await expect(page.locator('[data-custom-title-count]')).toContainText('201 / 200')
+
+  // 补充平面字符按一个码点计数。
+  await page.locator('[data-custom-title]').fill('𠮷𠮷𠮷')
+  await expect(page.locator('[data-custom-title-count]')).toContainText('3 / 200')
+
+  await page.locator('[data-custom-title]').fill(title)
+  await page.locator('[data-custom-background]').fill(background)
+  await page.getByRole('button', { name: '创建会话', exact: true }).click()
+  await expect.poll(() => posts.length).toBe(1)
+  expect(posts[0]).toEqual({ custom_topic: { title, background }, user_stance: 'pro', ai_style: 'logical' })
+  await expect(page).toHaveURL(/#debate=77$/)
+})
+
+test('V2-03 题库为空时仍可创建自定义辩题，预览按纯文本展示', async ({ page }) => {
+  const title = '<img src=x onerror=unsafe>'
+  await api(page, async (route, url) => {
+    if (url.pathname.endsWith('/topics')) return json(route, { items: [] })
+    if (url.pathname === '/api/v1/debates' && route.request().method() === 'POST') {
+      return json(route, { ...debate('78'), topic: { id: null, title, description: '' }, status: 'active', completed_rounds: 0 }, 201)
+    }
+    return json(route, { status: 'not_started', attempt_version: null })
+  })
+  await page.goto('/#topics')
+  await expect(page.getByText('暂无可用辩题，请稍后刷新。')).toBeVisible()
+  await page.locator('input[data-source="custom"]').check()
+  await page.locator('[data-custom-title]').fill(title)
+  await expect(page.locator('[data-topic-preview]')).toContainText(title)
+  await expect(page.locator('[data-topic-preview] img')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeEnabled()
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
 test('创建响应丢失锁定提交并引导历史核实', async ({ page }) => {
   let creates = 0
   await api(page, async (route, url) => {

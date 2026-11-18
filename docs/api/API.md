@@ -5,12 +5,12 @@
 **本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
 
 - **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
-- **V2 尚未设计任何 HTTP 接口**：产品 V2 需要的自定义辩题、训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等能力，**均未设计接口契约**。本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
-- **不预先占用 V1 路由**：V2 是否新增端点、是否扩展既有 DTO，必须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。
+- **V2 增量只包含 V2-03**：截至 2026-11-18，产品 V2 中**只有 V2-03 私有自定义辩题**落地为本地代码切片，作为**加法式扩展**：`POST /api/v1/debates` 新增可选 `custom_topic`，会话快照的 `topic.id` 允许为 `null`。其余 V2 能力（训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等）**仍未设计接口契约**，本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
+- **不预先占用 V1 路由**：除 V2-03 已实现的上述两处扩展外，其它 V2 端点与 DTO 变更仍须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。V2-03 未修改既有预设请求、`GET /topics`、轮次、SSE、策略与总结的任何已实现语义。
 - **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
 - **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
 
-**产品 V2 未实现、未验收、未获开发阶段授权。** 本节的边界说明不代表已开始设计或排期。
+产品 V2 的整体开发与验收待安排。V2-03 已按本地隔离 MySQL、Fake 联调和前端 Mock 的证据范围签收。
 
 **T03 当前增量（2026 年 11 月 8 日）：四条认证接口已通过有条件独立审查与人工验收，原延期风险保留；T05 四接口无收费实现、累计验证与新会话独立复审 PASS，三关人工验收通过，无收费范围正式结项；真实模型链路仍待另行授权验证。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
 
@@ -113,7 +113,10 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | --- | --- | --- | --- | --- |
 | `Credentials`（注册/登录复用） | `username` | string | 是 | trim 后转小写；归一化后 3–32 位 ASCII 字母、数字、下划线。限制作用于归一化值。 |
 | `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
-| `CreateDebateRequest` | `topic_id` | string | 是 | 辩题 ID，正整数十进制字符串。 |
+| `CreateDebateRequest` | `topic_id` | string | 二选一 | 预设题 ID，正整数十进制字符串。与 `custom_topic` **恰有一个出现**。 |
+| `CreateDebateRequest` | `custom_topic` | object | 二选一 | 私有自定义辩题，包含必填 `title` 和可选 `background`。与 `topic_id` 恰有一个出现。 |
+| `CreateDebateRequest.custom_topic` | `title` | string | 是 | 1–200 个 Unicode 码点，拒绝纯空白（Unicode White_Space 与 U+FEFF），保存原文不裁剪。 |
+| `CreateDebateRequest.custom_topic` | `background` | string | 否 | 0–1000 个 Unicode 码点，可省略或为空串，长度计算包含空白，保存原文。 |
 | `CreateDebateRequest` | `user_stance` | string | 是 | `pro` 正方或 `con` 反方。 |
 | `CreateDebateRequest` | `ai_style` | string | 否 | **Phase 3 计划增量**：精确枚举 logical/aggressive/empathic/data，省略默认 logical；null、空串、未知值、大小写不符或非字符串为 400 invalid_request，不写会话。创建后不可修改。 |
 | `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；须满足 `round_no = completed_rounds + 1` 且不超过该会话 `mode` 的轮数上限（`quick_3` 为 3、`standard_4` 为 4）；越界或状态/轮序不允许时 409 `round_conflict`。 |
@@ -134,7 +137,8 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `User` | `id`: EntityId；`username`: string | 用户名为归一化小写值，不返回口令或哈希。 |
 | `AuthData` | `user`: User；`csrf_token`: string | 登录及当前用户复用；Session 原值不在 JSON 中。 |
 | `Topic` | `id`: EntityId；`title`: string；`description`: string | 辩题列表为当前启用题目；会话中的 topic 为创建时快照。 |
-| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
+| `DebateTopic` | `id`: EntityId 或 null；`title`: string；`description`: string | **V2-03 起的会话快照**：预设题 `id` 为原字符串；私有自定义辩题 `id` 为 `null`。`title`/`description` 为该会话固定快照，缺失背景为空字符串。公共 `Topic` 类型仍要求字符串 ID。 |
+| `Debate` | `id`: EntityId；`topic`: DebateTopic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
 | `Turn` | `id`: EntityId；`round_no`: integer；`client_request_id`: string（UUID）；`status`: string；`attempt_version`: integer；`error_code`: string 或 null；`messages`: Message[] | 轮号和版本为正整数；状态 `generating/completed/failed`；错误枚举见详情节；按同轮 user、assistant 顺序返回消息。 |
 | `Message` | `id`: EntityId；`role`: string；`content`: string；`created_at`: string | role 仅 `user/assistant`；内容为原文或正式 AI 回复；时间为 UTC RFC 3339。 |
 | `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（`1` 或 `2`）与结构化 `content`（`schema_version=1` 为 `strengths`、`issues`、`suggestions`；`schema_version=2` 即 `phase3-summary-v2`，另含 `scores` 四维 0–100 参考值，属 T14-REPORT 目标设计、未实现）。客户端必须按 `schema_version` 分支渲染，不得把 `1` 判为格式错误。注意 `phase3-summary-v2` 不是产品 PRD V2，产品 V2 的四维 1–4 档尚无任何接口契约。 |
@@ -263,11 +267,48 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 **T14-STYLE 已实现契约：** 用户在创建前选择 `logical`（逻辑型）、`aggressive`（进攻型）、`empathic`（共情型）或 `data`（数据型）。可选请求字段 `ai_style` 省略时默认 `logical`，显式 null、空串、非字符串或非精确枚举值返回 `400 invalid_request`，校验失败不创建会话。Service 校验后由 Repository 在创建事务中写入 `debates.ai_style`，响应返回所保存值；详情/历史及后续 Prompt、策略卡统一读取会话值。创建后不可修改，无流派更新接口。`mode` 仍不接受客户端选择，传入不生效，统一 `standard_4`；流派不改变轮数、立场、状态机、配额或所有权规则。历史会话不回填、不切换。策略卡调用不合并到创建事务或创建请求，具体生成接口、配额和失败响应在实施前另行细化，不在本次新增已实现路径。
 
+**V2-03 私有自定义辩题（已实现）：** 请求严格二选一 —— `topic_id` 与 `custom_topic` **恰有一个出现**，以字段是否出现判定；显式 `null` 视为该字段出现，因此 `topic_id` 与 `null` 的 `custom_topic` 一起提交同样被拒。两者同时出现、都缺失、任一显式 `null`、自定义对象含未知/重复字段、`title` 缺失或非字符串、`background` 非字符串，均返回 `400 invalid_request` 且不写任何会话。
+
+顶层字段的严格程度按分支区分：**自定义分支**拒绝任何顶层未知字段与重复字段（新入口，避免混入赛制、归属或轮次）；**预设分支**沿用本接口既有行为——顶层未知与重复字段被忽略，重复键取最后一次赋值。无论哪条分支，`mode` 固定 `standard_4`、`user_id` 来自 Session。
+
+自定义题不进入公共题库：服务端跳过 `topics` 查询，把原文与登录用户 ID 一次写入会话快照，`debates.topic_id` 写 `NULL`。`GET /topics` 仍只返回启用的预设题；另一账号查不到该会话（跨账号详情沿用 `404 not_found`）。题目与背景长度按解码后的 Unicode 码点计算（组合字符计多个、补充平面字符计一个），标题 1–200、背景 0–1000；服务端只做判空与长度校验，持久化保留首尾空白、换行与原字符。创建不调用模型、不触发策略卡或审题，也没有编辑接口。客户端遇到传输故障不得自动重发创建请求。
+
+预设请求示例（旧示例继续有效）：
+
 ```json
 {"topic_id":"7","user_stance":"pro","ai_style":"aggressive"}
 ```
 
-上述为 Phase 3 目标请求；当前 Phase 2 客户端仍仅提交 topic_id/user_stance。以下为目标 `201` 响应示例，省略 ai_style 的兼容请求则返回 logical。
+自定义请求示例：
+
+```json
+{"custom_topic":{"title":"是否应把远程办公设为默认？","background":"讨论协作成本与人才半径"},"user_stance":"pro"}
+```
+
+自定义成功时 `topic` 为会话内快照，`id` 为 `null`：
+
+```json
+{
+  "data": {
+    "id": "124",
+    "topic": {"id":null,"title":"是否应把远程办公设为默认？","description":"讨论协作成本与人才半径"},
+    "user_stance": "pro",
+    "ai_stance": "con",
+    "mode": "standard_4",
+    "ai_style": "logical",
+    "total_rounds": 4,
+    "status": "active",
+    "completed_rounds": 0,
+    "created_at": "2026-11-18T08:00:00Z",
+    "updated_at": "2026-11-18T08:00:00Z"
+  },
+  "request_id": "req-create-custom"
+}
+```
+
+后续对辩（普通、SSE、重试）、策略卡与总结都从同一份会话快照取题。预设题 Prompt 保持旧结构（`debate-v1`/`summary-v1`/`strategy-v2`）；自定义题使用独立版本标识（`debate-custom-v1`/`summary-custom-v1`/`strategy-custom-v1`），system 规则段不含用户题目原文，题目以 JSON 数据段放在第一条 user 消息中，JSON 转义阻断伪造角色与规则段。既有计费准入、Prompt 窗口预检、生成认领与 SSE 事件契约不变。
+
+预设题 `201` 响应沿用以下形状（`topic.id` 仍为原字符串）：
 
 ```json
 {

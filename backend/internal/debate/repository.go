@@ -73,33 +73,52 @@ func readTurns(tx *gorm.DB, d Debate, key string) (Detail, error) {
 	}
 	return result, nil
 }
-func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance, style string) (d Debate, err error) {
+
+// Create 在单个短事务内创建会话，并保持严格二选一的两条分支：
+//   - 预设：锁定并读取启用题目，把同一份题目快照写入会话，topic_id 为题目 ID。
+//   - 自定义：跳过题库查询，把用户原文与登录用户 ID 一次写入，topic_id 为 NULL。
+//
+// 两条分支共用立场、流派与固定 standard_4 的写入结构；
+// 私有自定义题不进入公共 topics 表，因此不会出现在任何公共题库查询中。
+func (r *Repository) Create(ctx context.Context, uid uint64, in CreateInput) (d Debate, err error) {
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
-		var topic struct {
-			ID          uint64
-			Title       string
-			Description string
-		}
-		e := tx.Table("topics").Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND enabled = ?", tid, true).First(&topic).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
-		if e != nil {
-			return dependency(e, false)
-		}
 		// 新会话固定 standard_4；流派由 Service 精确校验后保存。
 		// quick_3 仅供历史数据与隔离 E2E 使用，生产创建路径不提供该选项。
 		d = Debate{
-			UserID:                   uid,
-			TopicID:                  topic.ID,
-			TopicTitleSnapshot:       topic.Title,
-			TopicDescriptionSnapshot: topic.Description,
-			UserStance:               stance,
-			Mode:                     string(ai.ModeStandard4),
-			AIStyle:                  style,
-			Status:                   "active",
+			UserID:     uid,
+			UserStance: in.UserStance,
+			Mode:       string(ai.ModeStandard4),
+			AIStyle:    in.AIStyle,
+			Status:     "active",
 		}
-		if e = tx.Create(&d).Error; e != nil {
+		if in.CustomTopic != nil {
+			if in.TopicID != nil {
+				return ErrInvalidRequest
+			}
+			d.TopicTitleSnapshot = in.CustomTopic.Title
+			d.TopicDescriptionSnapshot = in.CustomTopic.Background
+		} else {
+			if in.TopicID == nil {
+				return ErrInvalidRequest
+			}
+			var topic struct {
+				ID          uint64
+				Title       string
+				Description string
+			}
+			e := tx.Table("topics").Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND enabled = ?", *in.TopicID, true).First(&topic).Error
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			if e != nil {
+				return dependency(e, false)
+			}
+			id := topic.ID
+			d.TopicID = &id
+			d.TopicTitleSnapshot = topic.Title
+			d.TopicDescriptionSnapshot = topic.Description
+		}
+		if e := tx.Create(&d).Error; e != nil {
 			return dependency(e, false)
 		}
 		return nil

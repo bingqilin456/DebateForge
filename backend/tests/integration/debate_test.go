@@ -303,6 +303,13 @@ func (f *debateFixture) mountDB(t *testing.T, g ai.Generator, orm *gorm.DB) {
 	f.server.Config.WriteTimeout = platform.HTTPWriteTimeout
 	f.server.Start()
 }
+
+// topicIDEquals 比较会话快照中的题目 ID 与预设题 ID：
+// 快照 ID 对预设题为字符串，对私有自定义题为 null。
+func topicIDEquals(snapshot *string, want string) bool {
+	return snapshot != nil && *snapshot == want
+}
+
 func (f *debateFixture) request(t *testing.T, method, path string, body any) apiResult {
 	t.Helper()
 	s := ""

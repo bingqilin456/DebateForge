@@ -16,13 +16,39 @@ export interface AuthSession {
 
 export type Stance = 'pro' | 'con'
 
+/**
+ * 预设辩题：id 必为十进制字符串，来自 GET /topics。
+ * 会话快照中的 topic 可能是私有自定义题，那时 id 为 null，见 DebateTopic。
+ */
 export interface Topic {
   id: string
   title: string
   description: string
 }
 
-export interface CreateDebateRequest {
+/** 会话快照中的辩题：预设题 id 为字符串，私有自定义题 id 为 null。 */
+export interface DebateTopic {
+  id: string | null
+  title: string
+  description: string
+}
+
+/** 私有自定义辩题原文：只存在于本场会话快照，不进入公共题库。 */
+export interface CustomTopic {
+  title: string
+  background?: string
+}
+
+/**
+ * 创建会话请求是严格二选一：topic_id 与 custom_topic 恰有一个出现。
+ * 服务端按“字段是否出现”判定互斥，两者同时出现或都缺失都是 400。
+ */
+export type CreateDebateRequest =
+  | { topic_id: string; user_stance: Stance; ai_style?: AIStyle }
+  | { custom_topic: CustomTopic; user_stance: Stance; ai_style?: AIStyle }
+
+/** LegacyCreateDebateRequest 是预设题的兼容形状，供已有调用方继续引用。 */
+export interface LegacyCreateDebateRequest {
   topic_id: string
   user_stance: Stance
   ai_style?: AIStyle
@@ -39,7 +65,7 @@ export type DebateStage = 'opening' | 'rebuttal' | 'free_debate' | 'closing'
 
 export interface Debate {
   id: string
-  topic: Topic
+  topic: DebateTopic
   user_stance: Stance
   ai_stance: Stance
   /** 赛制模式由服务端在创建时固定，客户端不可修改。 */

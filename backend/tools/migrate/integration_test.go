@@ -71,8 +71,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 14 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本 + 一个策略表版本。
-		t.Fatalf("版本历史条数 = %d，期望 14", len(before))
+	if len(before) != 15 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本 + 一个策略表版本 + 一个自定义辩题可空版本。
+		t.Fatalf("版本历史条数 = %d，期望 15", len(before))
 	}
 	var tables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 8 {
@@ -85,8 +85,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 7 {
 		t.Fatal("冻结的七条外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 13").Scan(&historyIDs); err != nil || historyIDs != 13 {
-		t.Fatal("十三个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 14").Scan(&historyIDs); err != nil || historyIDs != 14 {
+		t.Fatal("十四个版本未逐一记录成功", err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -102,8 +102,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 13 {
-		t.Fatal("状态未显示十三个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 14 {
+		t.Fatal("状态未显示十四个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -176,6 +176,21 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	debateSQL := "INSERT INTO debates(user_id,topic_id,topic_title_snapshot,topic_description_snapshot,user_stance) VALUES (?,?,?,?,?)"
 	debate := insert(debateSQL, user, topic, "中文辩题🌱", "快照", "pro")
 	reject(1452, debateSQL, 0, topic, "x", "y", "pro")
+	// 00014 之后 topic_id 可空：NULL 表示私有自定义辩题，不参与外键引用检查；
+	// 非 NULL 的非法 ID 仍必须被外键拒绝，两条语义不能混为一谈。
+	var nullTopicColumn string
+	if err := tx.QueryRow("SELECT IS_NULLABLE FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='debates' AND column_name='topic_id'").Scan(&nullTopicColumn); err != nil {
+		t.Fatal("无法核对 topic_id 可空性", err)
+	}
+	if nullTopicColumn != "YES" {
+		t.Fatalf("00014 后 debates.topic_id 必须可空，实际 IS_NULLABLE=%q", nullTopicColumn)
+	}
+	customDebate := insert(debateSQL, user, nil, "自定义辩题原文", "自定义背景", "con")
+	var storedNull bool
+	if err := tx.QueryRow("SELECT topic_id IS NULL FROM debates WHERE id=?", customDebate).Scan(&storedNull); err != nil || !storedNull {
+		t.Fatalf("自定义会话必须写入 NULL topic_id，实际 null=%t err=%v", storedNull, err)
+	}
+	reject(1452, debateSQL, user, 999999, "不存在的题目", "y", "pro")
 	reject(3819, "UPDATE debates SET completed_rounds=7 WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET mode='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET ai_style='other' WHERE id=?", debate)

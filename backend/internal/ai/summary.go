@@ -56,6 +56,9 @@ type SummaryRequest struct {
 	UserStance Stance
 	Turns      []CompletedTurn
 	Messages   []PromptMessage
+	// Custom 表示本场是私有自定义辩题：题目原文只作为第一条 user 消息的数据段，
+	// system 规则段不出现用户文本，并使用独立的 Prompt 版本。
+	Custom bool
 }
 
 // SummaryPoint 表示 strengths 或 issues 中的单条训练反馈。
@@ -109,11 +112,20 @@ func normalizeSummaryMessages(req SummaryRequest) ([]PromptMessage, error) {
 	if !utf8.ValidString(req.Topic.Title) || !utf8.ValidString(req.Topic.Description) {
 		return nil, invalidInput("输入必须是合法 UTF-8")
 	}
-	if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
-		return nil, err
-	}
-	if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
-		return nil, err
+	if req.Custom {
+		if err := validateText("自定义辩题", req.Topic.Title, MaxCustomTopicTitleCodepoints); err != nil {
+			return nil, err
+		}
+		if utf8.RuneCountInString(req.Topic.Description) > MaxCustomTopicBackgroundCodepoints {
+			return nil, invalidInput("自定义辩题背景最多 1000 个 Unicode 码点")
+		}
+	} else {
+		if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
+			return nil, err
+		}
+		if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := req.UserStance.Opposite(); err != nil {
 		return nil, err
@@ -200,6 +212,9 @@ func normalizeSummaryMessages(req SummaryRequest) ([]PromptMessage, error) {
 // 消息顺序固定为：system（训练反馈规则+辩题快照+双方立场+JSON Schema+防注入说明）
 // → 已持久化的有序 user/assistant 消息 → 服务端固定总结触发指令（user）。
 // 用户历史发言只保留在各自消息中，绝不拼入 system 规则段。
+//
+// 私有自定义辩题同样不把题目原文放进 system：题目数据段挂在第一条 user 消息前，
+// 并使用 CustomSummaryPromptVersion，便于按版本追溯实际外发结构。
 func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 	history, err := normalizeSummaryMessages(req)
 	if err != nil {
@@ -213,11 +228,18 @@ func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 	if err != nil {
 		return Prompt{}, err
 	}
+	if req.Custom {
+		if len(history) == 0 {
+			return Prompt{}, invalidInput("自定义辩题总结必须包含已完成的辩论消息")
+		}
+		// 与对辩一致：题目数据段固定在整场第一条 user 消息上。
+		history[0] = PromptMessage{Role: history[0].Role, Content: customTopicUserBlock(req.Topic) + history[0].Content}
+	}
 
 	messages := make([]PromptMessage, 0, 2+len(history))
 	messages = append(messages, PromptMessage{
 		Role:    RoleSystem,
-		Content: summarySystemPrompt(req.Topic, req.UserStance, aiStance, rounds),
+		Content: summarySystemPrompt(req.Topic, req.UserStance, aiStance, rounds, req.Custom),
 	})
 	messages = append(messages, history...)
 	messages = append(messages, PromptMessage{
@@ -225,17 +247,26 @@ func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 		Content: summaryTriggerPrompt(req.UserStance, rounds),
 	})
 
+	version := SummaryPromptVersion
+	if req.Custom {
+		version = CustomSummaryPromptVersion
+	}
 	return Prompt{
-		Version:  SummaryPromptVersion,
+		Version:  version,
 		Messages: messages,
 	}, nil
 }
 
-func summarySystemPrompt(topic Topic, userStance, aiStance Stance, rounds int) string {
+func summarySystemPrompt(topic Topic, userStance, aiStance Stance, rounds int, custom bool) string {
+	// 自定义辩题的题目是用户原文，只能作为 user 数据段外发。
+	topicBlock := "辩题：" + topic.Title + "\n" +
+		"辩题说明：" + topic.Description + "\n"
+	if custom {
+		topicBlock = customTopicSystemNote()
+	}
 	return "你是中文辩论训练中的“训练反馈者”，任务是基于已完成的 " + strconv.Itoa(rounds) + " 轮（共 " + strconv.Itoa(rounds*2) + " 条消息）辩论记录，聚焦用户（练习者）的论证表现提供结构化复盘反馈。\n\n" +
 		"【本场信息】\n" +
-		"辩题：" + topic.Title + "\n" +
-		"辩题说明：" + topic.Description + "\n" +
+		topicBlock +
 		"用户立场：" + userStance.label() + "；陪练 AI 立场：" + aiStance.label() + "。\n" +
 		"总轮数：" + strconv.Itoa(rounds) + " 轮（按第 1 轮至第 " + strconv.Itoa(rounds) + " 轮顺序，每轮依次为 user 发言与 assistant 回复）。\n\n" +
 		"【评估与输出规则】\n" +
@@ -772,6 +803,7 @@ func (f *Fake) GenerateSummary(ctx context.Context, req SummaryRequest) (Summary
 			Topic:      req.Topic,
 			UserStance: req.UserStance,
 			RoundNo:    MustRoundsFor(req.Mode),
+			Custom:     req.Custom,
 		},
 		Prompt: clonedPrompt,
 	})
@@ -817,7 +849,7 @@ func (f *Fake) GenerateSummary(ctx context.Context, req SummaryRequest) (Summary
 		SchemaVersion: SummarySchemaVersion,
 		Summary:       summary,
 		ContentJSON:   string(canonical),
-		Metadata:      Metadata{PromptVersion: SummaryPromptVersion, FinishReason: "stop"},
+		Metadata:      Metadata{PromptVersion: prompt.Version, FinishReason: "stop"},
 	}, nil
 }
 

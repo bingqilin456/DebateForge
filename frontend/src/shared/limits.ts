@@ -9,6 +9,10 @@ export const USER_CONTENT_MAX_CHARS = 2000
 export const AI_CONTENT_MAX_CHARS = 2000
 export const TOPIC_TITLE_MAX_CHARS = 200
 export const TOPIC_DESCRIPTION_MAX_CHARS = 2000
+/** PRD §12：自定义辩题 1–200 字。 */
+export const CUSTOM_TOPIC_TITLE_MAX_CHARS = 200
+/** PRD §12：自定义辩题背景选填，最多 1000 字。 */
+export const CUSTOM_TOPIC_BACKGROUND_MAX_CHARS = 1000
 export const SUMMARY_TEXT_MAX_CHARS = 300
 export const SUMMARY_LIST_MAX_ITEMS = 3
 export const STRATEGY_TEXT_MAX_CHARS = 300

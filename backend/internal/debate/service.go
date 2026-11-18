@@ -108,14 +108,20 @@ func (s *Service) waitStartupScan(ctx context.Context) error {
 	}
 }
 
-func (s *Service) Create(ctx context.Context, uid, tid uint64, stance, style string) (Debate, error) {
-	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") || !ai.AIStyle(style).Valid() {
+// Create 是创建会话的规则入口：严格二选一、立场与流派在调用仓储前校验；
+// 归属取自认证会话的 uid，赛制恒为服务端固定值，均不从请求接收。
+func (s *Service) Create(ctx context.Context, uid uint64, in CreateInput) (Debate, error) {
+	if uid == 0 {
 		return Debate{}, ErrInvalidRequest
+	}
+	in, err := ValidateCreateInput(in)
+	if err != nil {
+		return Debate{}, err
 	}
 	if err := s.waitStartupScan(ctx); err != nil {
 		return Debate{}, dependency(err, false)
 	}
-	return s.store.Create(ctx, uid, tid, stance, style)
+	return s.store.Create(ctx, uid, in)
 }
 func (s *Service) List(ctx context.Context, uid uint64, page, pageSize int) (DebateList, error) {
 	if uid == 0 || page < 1 || page > MaxPage || pageSize < 1 || pageSize > MaxPageSize {
@@ -346,6 +352,7 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 		Topic:      ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
 		UserStance: ai.Stance(d.Debate.UserStance),
 		Turns:      completedTurns,
+		Custom:     d.Debate.Custom(),
 	})
 	if genErr == nil {
 		var parsed ai.Summary
@@ -429,6 +436,8 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 		RoundNo:        turn.RoundNo,
 		CompletedTurns: completedTurns,
 		UserContent:    turn.Messages[0].Content,
+		// topic_id 为空即自定义语义：题目原文只作为 user 数据段外发。
+		Custom: d.Debate.Custom(),
 	}, emit)
 	if genErr == nil {
 		genErr = ai.ValidateReply(result.Content)

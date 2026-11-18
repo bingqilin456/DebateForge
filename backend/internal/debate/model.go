@@ -59,14 +59,16 @@ func dependency(cause error, unknown bool) error {
 }
 
 type Topic struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	// ID 为预设题目的十进制字符串；私有自定义辩题没有题目实体，
+	// 因此会话快照中该字段为 JSON null（对应数据库 topic_id 为 NULL）。
+	ID          *string `json:"id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
 }
 type Debate struct {
 	ID                       uint64    `json:"-" gorm:"primaryKey"`
 	UserID                   uint64    `json:"-"`
-	TopicID                  uint64    `json:"-"`
+	TopicID                  *uint64   `json:"-"`
 	TopicTitleSnapshot       string    `json:"-"`
 	TopicDescriptionSnapshot string    `json:"-"`
 	UserStance               string    `json:"-"`
@@ -79,6 +81,26 @@ type Debate struct {
 }
 
 func (Debate) TableName() string { return "debates" }
+
+// Custom 报告本场是否使用私有自定义辩题。
+// topic_id 为空就是自定义语义的唯一事实来源，不额外落库布尔列。
+func (d Debate) Custom() bool { return d.TopicID == nil }
+
+// CustomTopic 是创建请求中的私有自定义辩题原文。
+// 它只存在于本场会话快照中，不是可复用的题库实体，也没有编辑或收藏生命周期。
+type CustomTopic struct {
+	Title      string `json:"title"`
+	Background string `json:"background"`
+}
+
+// CreateInput 是严格二选一的创建输入：TopicID 与 CustomTopic 恰有一个非 nil。
+// 服务端归属、赛制与轮次都不从请求接收。
+type CreateInput struct {
+	TopicID     *uint64
+	CustomTopic *CustomTopic
+	UserStance  string
+	AIStyle     string
+}
 
 type DebateDTO struct {
 	ID              string    `json:"id"`
@@ -112,7 +134,17 @@ func (d Debate) DTO() DebateDTO {
 	if !ai.AIStyle(style).Valid() {
 		style = string(ai.StyleLogical)
 	}
-	return DebateDTO{ID: formatID(d.ID), Topic: Topic{formatID(d.TopicID), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	return DebateDTO{ID: formatID(d.ID), Topic: Topic{d.topicIDString(), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+}
+
+// topicIDString 只对预设题输出字符串 ID；自定义题没有题目实体，输出 null，
+// 避免用一个不存在的编号伪装成可查询的公共辩题。
+func (d Debate) topicIDString() *string {
+	if d.TopicID == nil {
+		return nil
+	}
+	id := formatID(*d.TopicID)
+	return &id
 }
 
 type Turn struct {
@@ -313,6 +345,52 @@ func ValidateSubmit(in SubmitInput) (SubmitInput, error) {
 	in.ClientRequestID = id.String()
 	return in, nil
 }
+
+// ValidateCreateInput 校验严格二选一的创建输入。
+//
+// 约束（PRD §4.2、§12 与设计文档）：
+//   - topic_id 与 custom_topic 恰有一个非 nil；两者同时出现或都缺失都拒绝。
+//   - 自定义标题 1–200 码点、拒绝纯空白（Unicode White_Space 与 U+FEFF）；
+//     背景 0–1000 码点，可省略或为空串，长度计算包含空白。
+//   - 长度按解码后的 Unicode 码点计，组合字符计多个、补充平面字符计一个。
+//   - 持久化保留原文：不 trim、不折行、不做任何 Unicode 归一化。
+//   - 立场与流派仍由服务端精确校验，赛制与归属不从请求接收。
+func ValidateCreateInput(in CreateInput) (CreateInput, error) {
+	if (in.TopicID == nil) == (in.CustomTopic == nil) {
+		return in, ErrInvalidRequest
+	}
+	if in.UserStance != "pro" && in.UserStance != "con" {
+		return in, ErrInvalidRequest
+	}
+	if !ai.AIStyle(in.AIStyle).Valid() {
+		return in, ErrInvalidRequest
+	}
+	if in.TopicID != nil {
+		if *in.TopicID == 0 {
+			return in, ErrInvalidRequest
+		}
+		return in, nil
+	}
+	custom := *in.CustomTopic
+	if !utf8.ValidString(custom.Title) || !utf8.ValidString(custom.Background) {
+		return in, ErrInvalidRequest
+	}
+	if utf8.RuneCountInString(custom.Title) < 1 || utf8.RuneCountInString(custom.Title) > ai.MaxCustomTopicTitleCodepoints {
+		return in, ErrInvalidRequest
+	}
+	if strings.TrimFunc(custom.Title, isBlankRune) == "" {
+		return in, ErrInvalidRequest
+	}
+	if utf8.RuneCountInString(custom.Background) > ai.MaxCustomTopicBackgroundCodepoints {
+		return in, ErrInvalidRequest
+	}
+	in.CustomTopic = &custom
+	return in, nil
+}
+
+// isBlankRune 与 ai 包的判空口径一致：Unicode White_Space 加上 U+FEFF。
+// 前端 hasNonWhitespace 使用 \p{White_Space} 与 U+FEFF，二者结果必须一致。
+func isBlankRune(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' }
 func ValidateRetry(in RetryInput) (RetryInput, error) {
 	if in.ExpectedAttemptVersion < 1 || in.ExpectedAttemptVersion == ^uint64(0) {
 		return in, ErrInvalidRequest
@@ -357,7 +435,7 @@ func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
 
 // Store 将短事务和提交不确定性留在 Repository；admit 必须非阻塞且不调用模型。
 type Store interface {
-	Create(context.Context, uint64, uint64, string, string) (Debate, error)
+	Create(context.Context, uint64, CreateInput) (Debate, error)
 	List(context.Context, uint64, int, int) (DebateList, error)
 	Detail(context.Context, uint64, uint64) (Detail, error)
 	Claim(context.Context, uint64, uint64, SubmitInput, func() error) (Detail, bool, error)

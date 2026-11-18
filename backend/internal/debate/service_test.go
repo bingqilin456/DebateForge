@@ -21,7 +21,7 @@ type testStore struct {
 	completed   bool
 }
 
-func (s *testStore) Create(context.Context, uint64, uint64, string, string) (Debate, error) {
+func (s *testStore) Create(context.Context, uint64, CreateInput) (Debate, error) {
 	return Debate{}, nil
 }
 func (s *testStore) List(context.Context, uint64, int, int) (DebateList, error) {
@@ -29,7 +29,7 @@ func (s *testStore) List(context.Context, uint64, int, int) (DebateList, error) 
 }
 func (s *testStore) Detail(context.Context, uint64, uint64) (Detail, error) { return sample(), nil }
 func sample() Detail {
-	return Detail{Debate: Debate{ID: 3, UserID: 1, TopicID: 1, TopicTitleSnapshot: "题目", TopicDescriptionSnapshot: "说明", UserStance: "pro", Mode: string(ai.ModeStandard4), AIStyle: string(ai.StyleLogical), Status: "active"}, Turns: []Turn{{ID: 4, DebateID: 3, RoundNo: 1, ClientRequestID: "550e8400-e29b-41d4-a716-446655440000", Status: "generating", AttemptVersion: 1, Messages: []Message{{ID: 5, Role: "user", Content: "原文"}}}}}
+	return Detail{Debate: Debate{ID: 3, UserID: 1, TopicID: topicID(1), TopicTitleSnapshot: "题目", TopicDescriptionSnapshot: "说明", UserStance: "pro", Mode: string(ai.ModeStandard4), AIStyle: string(ai.StyleLogical), Status: "active"}, Turns: []Turn{{ID: 4, DebateID: 3, RoundNo: 1, ClientRequestID: "550e8400-e29b-41d4-a716-446655440000", Status: "generating", AttemptVersion: 1, Messages: []Message{{ID: 5, Role: "user", Content: "原文"}}}}}
 }
 func (s *testStore) Claim(_ context.Context, _, _ uint64, _ SubmitInput, admit func() error) (Detail, bool, error) {
 	s.claiming = true
@@ -198,26 +198,35 @@ func (m *memoryStore) allocID() uint64 {
 	return m.nextID
 }
 
-func (m *memoryStore) Create(_ context.Context, uid, tid uint64, stance, style string) (Debate, error) {
+func (m *memoryStore) Create(_ context.Context, uid uint64, in CreateInput) (Debate, error) {
 	now := m.now().UTC()
-	// 与生产 Repository 保持一致：新会话固定 standard_4。
+	// 与生产 Repository 保持一致：新会话固定 standard_4，且预设与自定义严格二选一。
 	d := Debate{
 		ID:                       m.allocID(),
 		UserID:                   uid,
-		TopicID:                  tid,
 		TopicTitleSnapshot:       "大学课程是否应采用开放式考核",
 		TopicDescriptionSnapshot: "讨论学习效果与评价公平",
-		UserStance:               stance,
+		UserStance:               in.UserStance,
 		Mode:                     string(ai.ModeStandard4),
-		AIStyle:                  style,
+		AIStyle:                  in.AIStyle,
 		Status:                   "active",
 		CompletedRounds:          0,
 		CreatedAt:                now,
 		UpdatedAt:                now,
 	}
+	if in.CustomTopic != nil {
+		// 自定义题没有题库实体：topic_id 保持 nil，快照保存用户原文。
+		d.TopicTitleSnapshot = in.CustomTopic.Title
+		d.TopicDescriptionSnapshot = in.CustomTopic.Background
+	} else {
+		d.TopicID = in.TopicID
+	}
 	m.debates[d.ID] = d
 	return d, nil
 }
+
+// topicID 生成预设题目的指针 ID，避免测试里反复取地址。
+func topicID(id uint64) *uint64 { return &id }
 
 // testRounds 为内存测试替身解析轮数；空赛制按 quick_3 处理，
 // 使未显式设置 Mode 的历史夹具保持原有三轮语义。
@@ -576,7 +585,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	gate := NewGate(func() time.Time { return clock })
 	service := NewService(store, fake, gate)
 
-	created, err := service.Create(context.Background(), 1, 1, "pro", "logical")
+	created, err := service.Create(context.Background(), 1, CreateInput{TopicID: topicID(1), UserStance: "pro", AIStyle: "logical"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +676,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	}
 
 	// 验证租约过期扫描与历史分页
-	d2, _ := service.Create(context.Background(), 1, 1, "con", "logical")
+	d2, _ := service.Create(context.Background(), 1, CreateInput{TopicID: topicID(1), UserStance: "con", AIStyle: "logical"})
 	expiredTime := clock.Add(-time.Second)
 	store.turns[d2.ID] = []Turn{{
 		ID:              store.allocID(),
@@ -689,7 +698,7 @@ func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {
 	}
 
 	// 另一个用户创建的会话不应出现在用户 1 的分页列表中
-	_, _ = service.Create(context.Background(), 2, 1, "pro", "logical")
+	_, _ = service.Create(context.Background(), 2, CreateInput{TopicID: topicID(1), UserStance: "pro", AIStyle: "logical"})
 	list, err := service.List(context.Background(), 1, 1, 20)
 	if err != nil || list.Total != 2 || len(list.Items) != 2 || list.Items[0].ID != d2.ID || list.Items[1].ID != created.ID {
 		t.Fatalf("unexpected history list: %+v err=%v", list, err)
@@ -703,7 +712,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	gate := NewGate(func() time.Time { return clock })
 	service := NewService(store, fake, gate)
 
-	created, err := service.Create(context.Background(), 1, 1, "pro", "logical")
+	created, err := service.Create(context.Background(), 1, CreateInput{TopicID: topicID(1), UserStance: "pro", AIStyle: "logical"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +811,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	}
 
 	// 验证第二个完成会话首次生成成功返回 201，以及过期 generating 总结租约回收
-	d2, _ := service.Create(context.Background(), 1, 1, "con", "logical")
+	d2, _ := service.Create(context.Background(), 1, CreateInput{TopicID: topicID(1), UserStance: "con", AIStyle: "logical"})
 	// 第二场同样验证三轮语义，显式改用 quick_3。
 	store.setMode(d2.ID, string(ai.ModeQuick3))
 	service.generator = ai.NewFake()
@@ -824,7 +833,7 @@ func TestT10SummaryGenerationReplayRetryConflictAndLeaseRecovery(t *testing.T) {
 	}
 
 	// 模拟第三个会话总结卡在 generating 且租约过期
-	d3, _ := service.Create(context.Background(), 1, 1, "pro", "logical")
+	d3, _ := service.Create(context.Background(), 1, CreateInput{TopicID: topicID(1), UserStance: "pro", AIStyle: "logical"})
 	expired := clock.Add(-time.Second)
 	store.summaries[d3.ID] = Summary{
 		ID:             store.allocID(),

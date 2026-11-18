@@ -2,6 +2,7 @@ import {
   USER_CONTENT_MAX_CHARS, AI_CONTENT_MAX_CHARS, TOPIC_TITLE_MAX_CHARS, TOPIC_DESCRIPTION_MAX_CHARS,
   SUMMARY_TEXT_MAX_CHARS, SUMMARY_LIST_MAX_ITEMS, STRATEGY_TEXT_MAX_CHARS, STRATEGY_LIST_MAX_ITEMS,
   STRATEGY_CONTENT_MAX_BYTES, HISTORY_PAGE_SIZE, HISTORY_MAX_PAGE_SIZE,
+  CUSTOM_TOPIC_TITLE_MAX_CHARS, CUSTOM_TOPIC_BACKGROUND_MAX_CHARS,
 } from '../shared/limits'
 import { readSSE } from './sse'
 import { authState } from '../auth/state'
@@ -13,11 +14,13 @@ import type {
   StrategyStatus,
   StrategyRequest,
   CreateDebateRequest,
+  CustomTopic,
   Debate,
   DebateDetail,
   DebateListResult,
   DebateMode,
   DebateStatus,
+  DebateTopic,
   Message,
   MessageRole,
   Stance,
@@ -35,10 +38,12 @@ import { ApiError, GENERATION_TIMEOUT_MS, isRecord, streamError, type ApiClient 
 
 export type {
   CreateDebateRequest,
+  CustomTopic,
   Debate,
   DebateDetail,
   DebateListResult,
   DebateStatus,
+  DebateTopic,
   Message,
   MessageRole,
   Stance,
@@ -75,11 +80,26 @@ export function hasNonWhitespace(value: string): boolean {
 function text(value: unknown, max: number): value is string {
   return typeof value === 'string' && hasNonWhitespace(value) && [...value].length <= max
 }
+// 自定义辩题标题必填且不得为纯空白：与后端 isBlankRune 同一口径（White_Space + U+FEFF）。
+function customTitleInRange(value: string): boolean {
+  const length = [...value].length
+  return hasNonWhitespace(value) && length >= 1 && length <= CUSTOM_TOPIC_TITLE_MAX_CHARS
+}
 function date(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d\d-\d\dT.*Z$/.test(value) && Number.isFinite(Date.parse(value))
 }
 function isTopic(value: unknown): value is Topic {
   return isRecord(value) && isEntityId(value.id) && text(value.title, TOPIC_TITLE_MAX_CHARS) && typeof value.description === 'string' && [...value.description].length <= TOPIC_DESCRIPTION_MAX_CHARS
+}
+// 会话快照的 topic：预设题 id 为字符串，私有自定义题为 null。
+// 标题仍必须非空且不超上限；背景可为空串（自定义题可选背景），长度按码点校验。
+function isDebateTopic(value: unknown): value is DebateTopic {
+  if (!isRecord(value)) return false
+  const id = value.id
+  if (id !== null && !isEntityId(id)) return false
+  return text(value.title, TOPIC_TITLE_MAX_CHARS)
+    && typeof value.description === 'string'
+    && [...value.description].length <= TOPIC_DESCRIPTION_MAX_CHARS
 }
 // 仅检查协议支持的总轮数；业务推进与响应校验始终使用当前会话传入值。
 function isTotalRounds(value: number): boolean {
@@ -95,7 +115,7 @@ function isAIStyle(value: unknown): value is AIStyle {
 }
 
 function isDebate(value: unknown): value is Debate {
-  if (!(isRecord(value) && isEntityId(value.id) && isTopic(value.topic)
+  if (!(isRecord(value) && isEntityId(value.id) && isDebateTopic(value.topic)
     && (value.user_stance === 'pro' || value.user_stance === 'con')
     && value.ai_stance === (value.user_stance === 'pro' ? 'con' : 'pro')
     && isMode(value.mode) && isAIStyle(value.ai_style)
@@ -199,26 +219,54 @@ export function createDebateApi(client: ApiClient = authState.client) {
   function createDebate(topicId: string, stance: Stance, aiStyle?: AIStyle): Promise<Debate>
   function createDebate(request: CreateDebateRequest): Promise<Debate>
   async function createDebate(topicOrRequest: string | CreateDebateRequest, stance?: Stance, aiStyle?: AIStyle): Promise<Debate> {
-    const topicId = typeof topicOrRequest === 'string'
-      ? topicOrRequest
-      : isRecord(topicOrRequest) && typeof topicOrRequest.topic_id === 'string'
-        ? topicOrRequest.topic_id
-        : ''
-    const resolvedStance = typeof topicOrRequest === 'string'
-      ? stance
-      : isRecord(topicOrRequest)
-        ? topicOrRequest.user_stance
-        : undefined
-    const resolvedStyle = typeof topicOrRequest === 'string' ? aiStyle : topicOrRequest?.ai_style
+    const creatorIsRequest = typeof topicOrRequest !== 'string'
+    const request = creatorIsRequest ? (topicOrRequest as CreateDebateRequest) : null
+    // 严格二选一：运行时同时拒绝“两者都出现”与“两者都缺失”。
+    // 类型层是联合类型，但调用方可能来自 JS 或 `as any`，不能只依赖编译期。
+    const hasTopicKey = creatorIsRequest && isRecord(request) && 'topic_id' in request
+    const hasCustomKey = creatorIsRequest && isRecord(request) && 'custom_topic' in request
+    if (creatorIsRequest && hasTopicKey === hasCustomKey) {
+      throw new ApiError('format', '辩题参数必须二选一：topic_id 与 custom_topic 不能同时出现或同时缺失。')
+    }
+    const custom = hasCustomKey
+    const resolvedStyle = creatorIsRequest ? (request as { ai_style?: AIStyle })?.ai_style : aiStyle
     if (resolvedStyle !== undefined && !isAIStyle(resolvedStyle)) throw new ApiError('format', 'AI 流派参数无效。')
-    const validTopicId = entityId(topicId)
+    const resolvedStance = typeof topicOrRequest === 'string' ? stance : request?.user_stance
     if (!isStance(resolvedStance)) {
       throw new ApiError('format', '立场参数无效。')
     }
+    // 严格二选一：与后端一致，两个字段不能同时出现，也不能都缺失。
+    // 预设分支保持原有键顺序，避免影响既有调用方与既有测试的请求形状。
+    const body: Record<string, unknown> = {}
+    if (custom) {
+      const customTopic = (request as { custom_topic: CustomTopic }).custom_topic
+      if (!isRecord(customTopic)) throw new ApiError('format', '自定义辩题参数无效。')
+      const title = customTopic.title
+      const background = customTopic.background
+      if (typeof title !== 'string' || !customTitleInRange(title)) throw new ApiError('format', '自定义辩题标题需为 1–200 字。')
+      if (background !== undefined && (typeof background !== 'string' || [...background].length > CUSTOM_TOPIC_BACKGROUND_MAX_CHARS)) {
+        throw new ApiError('format', '自定义辩题背景最多 1000 字。')
+      }
+      body.custom_topic = { title, ...(background === undefined ? {} : { background }) }
+    } else {
+      // 预设分支：兼容字符串重载与 { topic_id } 对象形态。
+      const preset = typeof topicOrRequest === 'string' ? null : (topicOrRequest as Record<string, unknown>)
+      const topicId = typeof topicOrRequest === 'string'
+        ? topicOrRequest
+        : typeof preset?.topic_id === 'string'
+          ? preset.topic_id as string
+          : ''
+      if (preset !== null && 'topic_id' in preset && typeof preset.topic_id !== 'string') {
+        throw new ApiError('format', '会话或辩题编号无效。')
+      }
+      body.topic_id = entityId(topicId)
+    }
+    body.user_stance = resolvedStance
+    if (resolvedStyle !== undefined) body.ai_style = resolvedStyle
     return client.request('/api/v1/debates', {
       method: 'POST',
       expectedStatus: 201,
-      body: { topic_id: validTopicId, user_stance: resolvedStance, ...(resolvedStyle === undefined ? {} : { ai_style: resolvedStyle }) },
+      body,
       validate: isDebate,
     })
   }

@@ -33,6 +33,10 @@ const messageOverheadTokens = 8
 // 轮数上限由赛制决定，因此取所有已知赛制中最坏的一个（四轮）：
 // 三轮完整历史加本轮发言，全部取上限长度，正文用 4 字节字符堆满 2000 码点。
 // 用四轮建模可覆盖 quick_3，因为 quick_3 的历史更短，其 Prompt 必然是四轮的子集。
+//
+// 同时必须覆盖私有自定义辩题（V2-03）：题目与背景以 JSON 数据段挂在第一条
+// user 消息前，JSON 转义会把控制字符放大到 6 字节/码点，因此单独按同一方法
+// 构造一次并取两者较大值，避免用预设结构的上界掩盖自定义结构。
 func WorstCaseTurnPromptTokens() int {
 	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
 	rounds := MaxRounds()
@@ -59,6 +63,35 @@ func WorstCaseTurnPromptTokens() int {
 	return EstimatePromptTokens(prompt)
 }
 
+// WorstCaseCustomTurnPromptTokens 是自定义辩题结构的最坏输入估算。
+// 背景取 1000 码点的 U+0001：JSON 转义后每个码点占 6 字节，是转义放大的极端值；
+// 标题取 200 码点的同一字符。历史与当前发言仍按 2000 码点 4 字节字符堆满。
+func WorstCaseCustomTurnPromptTokens() int {
+	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
+	rounds := MaxRounds()
+	completed := make([]CompletedTurn, 0, rounds-1)
+	for round := 1; round < rounds; round++ {
+		completed = append(completed, CompletedTurn{RoundNo: round, UserContent: worst, AssistantContent: worst})
+	}
+	req := Request{
+		Mode: ModeStandard4,
+		Topic: Topic{
+			Title:       strings.Repeat("\x01", MaxCustomTopicTitleCodepoints),
+			Description: strings.Repeat("\x01", MaxCustomTopicBackgroundCodepoints),
+		},
+		UserStance:     StancePro,
+		RoundNo:        rounds,
+		UserContent:    worst,
+		CompletedTurns: completed,
+		Custom:         true,
+	}
+	prompt, err := BuildPrompt(req)
+	if err != nil {
+		panic("自定义最坏输入无法构建 Prompt: " + err.Error())
+	}
+	return EstimatePromptTokens(prompt)
+}
+
 // MaxRounds 返回所有已知赛制中最大的轮数上限，用于按最坏情况估算预算。
 func MaxRounds() int {
 	max := 0
@@ -72,7 +105,23 @@ func MaxRounds() int {
 
 // WorstCaseSummaryPromptTokens 估算总结输入的最坏规模：总结需要
 // 最坏赛制下全部轮次的正式消息（每轮一 user 一 assistant），加辩题快照与总结指令。
+//
+// 自定义辩题的题目以 JSON 数据段挂在第一条 user 消息上，控制字符转义后
+// 每个码点会放大到 6 字节。这里同时按预设与自定义两种结构真实构建最坏 Prompt，
+// 再与算术上界取较大值，避免用预设口径掩盖转义放大。
 func WorstCaseSummaryPromptTokens() int {
+	best := worstCaseSummaryArithmetic()
+	for _, custom := range []bool{false, true} {
+		if built := worstCaseSummaryPromptTokens(custom); built > best {
+			best = built
+		}
+	}
+	return best
+}
+
+// worstCaseSummaryArithmetic 是保持既有口径的算术上界：
+// 每轮两条 2000 码点正文、辩题快照与 2 KiB 指令段落。
+func worstCaseSummaryArithmetic() int {
 	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
 	conversation := 2 * MaxRounds() * EstimateTokens(worst)
 	snapshot := EstimateTokens(strings.Repeat("𠮷", MaxTopicTitleCodepoints)) +
@@ -80,6 +129,50 @@ func WorstCaseSummaryPromptTokens() int {
 	// 总结指令段落按 2 KiB 上界计入，避免依赖具体措辞。
 	instructions := 2048
 	return conversation + snapshot + instructions + messageOverheadTokens*(2*MaxRounds()+2)
+}
+
+// worstCaseSummaryPromptTokens 按指定结构真实构建最坏总结 Prompt 并估算。
+// custom 为真时标题与背景取 0x01：json.Marshal 会把它转义成 6 字节的 \u0001，
+// 这是转义放大的极端值。
+func worstCaseSummaryPromptTokens(custom bool) int {
+	worst := strings.Repeat("𠮷", MaxUserContentCodepoints)
+	turns := make([]CompletedTurn, 0, MaxRounds())
+	for round := 1; round <= MaxRounds(); round++ {
+		turns = append(turns, CompletedTurn{RoundNo: round, UserContent: worst, AssistantContent: worst})
+	}
+	topic := Topic{
+		Title:       strings.Repeat("𠮷", MaxTopicTitleCodepoints),
+		Description: strings.Repeat("𠮷", MaxTopicDescriptionCodepoints),
+	}
+	if custom {
+		topic = Topic{
+			Title:       strings.Repeat("\x01", MaxCustomTopicTitleCodepoints),
+			Description: strings.Repeat("\x01", MaxCustomTopicBackgroundCodepoints),
+		}
+	}
+	prompt, err := BuildSummaryPrompt(SummaryRequest{
+		Mode:       ModeStandard4,
+		Topic:      topic,
+		UserStance: StancePro,
+		Turns:      turns,
+		Custom:     custom,
+	})
+	if err != nil {
+		panic("最坏总结输入无法构建 Prompt: " + err.Error())
+	}
+	return EstimatePromptTokens(prompt)
+}
+
+// WorstCaseTurnPromptBound 返回对辩 Prompt 的启动期保守上界：
+// 预设结构与自定义结构各算一次真实最坏输入，取较大值。
+// 启动时用它做窗口预检，新增结构不能悄悄突破既有上界。
+func WorstCaseTurnPromptBound() int {
+	preset := WorstCaseTurnPromptTokens()
+	custom := WorstCaseCustomTurnPromptTokens()
+	if custom > preset {
+		return custom
+	}
+	return preset
 }
 
 // WindowLimits 必须由调用方显式配置，未核实的能力不得被默认值掩盖。
@@ -126,7 +219,7 @@ func (w WindowLimits) Validate() error {
 		summaryPrompt = worstSummary
 	}
 	required := summaryPrompt +
-		int64(WorstCaseTurnPromptTokens()) +
+		int64(WorstCaseTurnPromptBound()) +
 		int64(w.MaxOutputTokens) +
 		int64(w.SummaryOutputReserveTokens)
 	if int64(w.ContextTokens) < required {
@@ -245,14 +338,15 @@ func (f *Fake) Generate(ctx context.Context, req Request) (Result, error) {
 			return Result{}, err
 		}
 		if result.Metadata.PromptVersion == "" {
-			result.Metadata.PromptVersion = PromptVersion
+			// 版本取自本次实际外发的 Prompt，自定义结构与预设结构不能混用标识。
+			result.Metadata.PromptVersion = prompt.Version
 		}
 		return result, nil
 	}
 	// 未配置脚本时用确定性回声，便于并发隔离断言；用量保持未知。
 	return Result{
 		Content:  defaultFakeReply(req.UserContent),
-		Metadata: Metadata{PromptVersion: PromptVersion, FinishReason: "stop"},
+		Metadata: Metadata{PromptVersion: prompt.Version, FinishReason: "stop"},
 	}, nil
 }
 
@@ -350,7 +444,8 @@ func (f *Fake) Stream(ctx context.Context, req Request, emit func(text string) e
 	result := step.Result
 	result.Content = content
 	if result.Metadata.PromptVersion == "" {
-		result.Metadata.PromptVersion = PromptVersion
+		// 与 Generate 一致：流式也取本次实际外发的 Prompt 版本。
+		result.Metadata.PromptVersion = prompt.Version
 	}
 	if result.Metadata.FinishReason == "" {
 		result.Metadata.FinishReason = "stop"

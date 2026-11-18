@@ -5,7 +5,8 @@ import { authState, type AuthState } from '../auth/state'
 import { createDebate, listTopics } from '../api/debate'
 import { ApiError } from '../api/client'
 import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../debate/styles'
-import type { AIStyle, Debate, Stance, Topic } from '../types/api'
+import { CUSTOM_TOPIC_BACKGROUND_MAX_CHARS, CUSTOM_TOPIC_TITLE_MAX_CHARS } from '../shared/limits'
+import type { AIStyle, Debate, DebateTopic, Stance, Topic } from '../types/api'
 
 export interface TopicsViewProps {
   auth?: AuthState
@@ -28,6 +29,10 @@ const authenticated = computed(() => currentAuth.value.state.status === 'authent
 const blocked = computed(() => props.disabled || currentAuth.value.state.pending || !authenticated.value)
 const topics = ref<Topic[]>([])
 const selectedTopicId = ref('')
+// 选题来源：预设与自定义严格二选一，与后端请求形状一致。
+const source = ref<'preset' | 'custom'>('preset')
+const customTitle = ref('')
+const customBackground = ref('')
 const stance = ref<Stance>('pro')
 const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
 const loading = ref(false)
@@ -40,6 +45,20 @@ const creationUncertain = ref(false)
 const id = useId()
 const formDisabled = computed(() => blocked.value || loading.value || creating.value || !!createdDebate.value || creationUncertain.value)
 const navigationDisabled = computed(() => blocked.value || creating.value || !!createdDebate.value)
+
+// 计数按解码后的 Unicode 码点，与后端一致：补充平面字符算一个，组合字符算多个。
+// 不使用 .length（UTF-16 码元），也不使用会截断输入的 maxlength。
+const titleCount = computed(() => [...customTitle.value].length)
+const backgroundCount = computed(() => [...customBackground.value].length)
+const titleBlank = computed(() => !/[^\p{White_Space}\u{FEFF}]/u.test(customTitle.value))
+const titleInvalid = computed(() => titleBlank.value || titleCount.value > CUSTOM_TOPIC_TITLE_MAX_CHARS)
+const backgroundInvalid = computed(() => backgroundCount.value > CUSTOM_TOPIC_BACKGROUND_MAX_CHARS)
+const customInvalid = computed(() => titleInvalid.value || backgroundInvalid.value)
+const canSubmit = computed(() => {
+  if (formDisabled.value) return false
+  if (source.value === 'custom') return !customInvalid.value
+  return !!selectedTopicId.value && topics.value.some(topic => topic.id === selectedTopicId.value)
+})
 watch(creating, value => emit('creating', value), { flush: 'sync' })
 watch(creationUncertain, value => emit('uncertain', value), { flush: 'sync' })
 let version = 0
@@ -59,6 +78,7 @@ async function loadTopics() {
     if (!items.some(topic => topic.id === selectedTopicId.value)) selectedTopicId.value = ''
   } catch (error) {
     if (!current(request)) return
+    // 题库加载失败不清空草稿：自定义题仍可填写并提交。
     topics.value = []
     selectedTopicId.value = ''
     loadError.value = error instanceof ApiError ? error.message : '辩题加载失败，请手动重试。'
@@ -67,19 +87,28 @@ async function loadTopics() {
   }
 }
 
+function selectSource(value: 'preset' | 'custom') {
+  if (formDisabled.value) return
+  source.value = value
+}
+
 async function create() {
-  if (formDisabled.value || !topics.value.some(topic => topic.id === selectedTopicId.value)) return
+  if (!canSubmit.value) return
   // 同步置位：DOM 更新 disabled 前连续提交也不能创建两个不同会话。
   creating.value = true
   createError.value = ''
   const request = ++version
   try {
-    const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
+    // 严格二选一：请求体只带当前来源的字段，不带另一个。
+    const debate = source.value === 'custom'
+      ? await createDebate({ custom_topic: { title: customTitle.value, background: customBackground.value }, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
+      : await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
     emit('created', debate)
   } catch (error) {
     if (!current(request)) return
+    // 草稿保留在表单内：超长、服务端错误与结果不明都不清空用户输入。
     createError.value = error instanceof ApiError ? error.message : '创建会话未获确认。'
     // 创建不是幂等操作；仅明确在创建前拒绝的状态允许修正/手动重提，其余先查历史。
     creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http'
@@ -90,10 +119,22 @@ async function create() {
 function openHistory() { if (!navigationDisabled.value) emit('open-history') }
 function back() { if (!navigationDisabled.value) emit('back-to-debate') }
 
+// 当前来源下用于展示的题目预览：预设题与自定义题共用同一套会话快照文本。
+const previewTopic = computed<DebateTopic | null>(() => {
+  if (source.value === 'custom') {
+    return customTitle.value || customBackground.value
+      ? { id: null, title: customTitle.value, description: customBackground.value }
+      : null
+  }
+  const selected = topics.value.find(topic => topic.id === selectedTopicId.value)
+  return selected ? { id: selected.id, title: selected.title, description: selected.description } : null
+})
+
 watch([() => currentAuth.value, () => currentAuth.value.state.status, () => currentAuth.value.state.user?.id], () => {
-  // 账号变化立即作废在途响应，旧用户的结果不能回填到新视图。
+  // 账号变化立即作废在途响应，旧用户的结果不能回填到新视图；草稿随账号清理。
   version++
   topics.value = []; selectedTopicId.value = ''; stance.value = 'pro'; aiStyle.value = DEFAULT_AI_STYLE
+  source.value = 'preset'; customTitle.value = ''; customBackground.value = ''
   loading.value = false; loaded.value = false; creating.value = false
   loadError.value = ''; createError.value = ''; createdDebate.value = null; creationUncertain.value = false
   void loadTopics()
@@ -112,15 +153,60 @@ onUnmounted(() => { disposed = true; version++ })
     <p v-if="!authenticated" role="status">请先登录，再选择辩题。</p>
     <p v-else-if="loading" role="status">正在加载辩题…</p>
     <Alert v-if="loadError" type="error" :title="loadError" role="alert" />
+    <!-- 题库为空或加载失败时不清空表单：自定义辩题仍可填写并提交。
+         保留原提示文案，避免改动既有页面契约与浏览器回归断言。 -->
     <p v-if="authenticated && loaded && !loading && !loadError && !topics.length" role="status">暂无可用辩题，请稍后刷新。</p>
     <form v-if="authenticated" @submit.prevent="create">
-      <fieldset :disabled="formDisabled" class="topic-options">
+      <fieldset :disabled="formDisabled" class="source-options" data-source-options>
+        <legend>辩题来源</legend>
+        <label><input :checked="source === 'preset'" type="radio" :name="`${id}-source`" value="preset" data-source="preset" @change="selectSource('preset')">从公共题库选择</label>
+        <label><input :checked="source === 'custom'" type="radio" :name="`${id}-source`" value="custom" data-source="custom" @change="selectSource('custom')">自定义辩题（仅本人可见）</label>
+      </fieldset>
+      <fieldset v-if="source === 'preset'" :disabled="formDisabled" class="topic-options">
         <legend>选择辩题</legend>
         <label v-for="topic in topics" :key="topic.id" class="topic-option" :class="{ selected: selectedTopicId === topic.id }" :data-topic-id="topic.id">
           <input v-model="selectedTopicId" type="radio" :name="`${id}-topic`" :value="topic.id">
           <span><strong>{{ topic.title }}</strong><span class="description">{{ topic.description }}</span></span>
         </label>
       </fieldset>
+      <!-- 未选自定义时不渲染输入框：既避免隐藏控件参与表单查询，
+           也保证草稿仍保存在组件状态里，切换来源不会丢输入。 -->
+      <div v-if="source === 'custom'" class="custom-topic" data-custom-topic>
+        <p class="muted">自定义辩题仅你可在本站查看，不会进入公共题库；创建后题目与立场固定，不可修改。</p>
+        <div class="custom-field">
+          <label :for="`${id}-custom-title`">辩题（必填，1–200 字）</label>
+          <textarea
+            :id="`${id}-custom-title`"
+            v-model="customTitle"
+            name="custom_title"
+            rows="2"
+            :disabled="formDisabled"
+            data-custom-title
+            :aria-describedby="`${id}-custom-title-count`"
+          ></textarea>
+          <p :id="`${id}-custom-title-count`" class="counter" :class="{ invalid: titleInvalid }" data-custom-title-count>
+            {{ titleCount }} / {{ CUSTOM_TOPIC_TITLE_MAX_CHARS }}
+            <span v-if="titleBlank && customTitle.length > 0">题目不能为纯空白</span>
+            <span v-else-if="titleCount > CUSTOM_TOPIC_TITLE_MAX_CHARS">超出上限，请删减后再提交</span>
+          </p>
+        </div>
+        <div class="custom-field">
+          <label :for="`${id}-custom-background`">背景（选填，0–{{ CUSTOM_TOPIC_BACKGROUND_MAX_CHARS }} 字）</label>
+          <textarea
+            :id="`${id}-custom-background`"
+            v-model="customBackground"
+            name="custom_background"
+            rows="4"
+            :disabled="formDisabled"
+            data-custom-background
+            :aria-describedby="`${id}-custom-background-count`"
+          ></textarea>
+          <p :id="`${id}-custom-background-count`" class="counter" :class="{ invalid: backgroundInvalid }" data-custom-background-count>
+            {{ backgroundCount }} / {{ CUSTOM_TOPIC_BACKGROUND_MAX_CHARS }}
+            <span v-if="backgroundInvalid">超出上限，请删减后再提交</span>
+          </p>
+        </div>
+      </div>
       <fieldset :disabled="formDisabled" class="stance-options">
         <legend>选择你的立场</legend>
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
@@ -133,11 +219,16 @@ onUnmounted(() => { disposed = true; version++ })
         </select>
         <p class="muted">默认逻辑型。创建后流派固定，历史和策略均以服务端保存值为准。</p>
       </div>
-      <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。请选择一个辩题后创建会话。</p>
+      <div v-if="previewTopic" class="topic-preview" data-topic-preview>
+        <p class="muted">本场题目预览（按纯文本展示，创建后保存为快照）</p>
+        <h3>{{ previewTopic.title }}</h3>
+        <p v-if="previewTopic.description" class="description">{{ previewTopic.description }}</p>
+      </div>
+      <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。{{ source === 'custom' ? '请填写辩题后创建会话。' : '请选择一个辩题后创建会话。' }}</p>
       <Alert v-if="createError" type="error" :title="createError" role="alert" />
       <p v-if="creationUncertain" role="status">创建结果尚未确认。请先查看历史会话，核实是否已创建，避免重复创建。</p>
       <p v-if="createdDebate" role="status">会话已创建。</p>
-      <Button type="primary" html-type="submit" :loading="creating" :disabled="formDisabled || !selectedTopicId">{{ creating ? '创建中…' : '创建会话' }}</Button>
+      <Button type="primary" html-type="submit" :loading="creating" :disabled="!canSubmit">{{ creating ? '创建中…' : '创建会话' }}</Button>
     </form>
     <div class="view-actions">
       <Button type="outline" data-nav-debate :disabled="navigationDisabled" @click="back">返回辩论主视图</Button>
@@ -147,12 +238,13 @@ onUnmounted(() => { disposed = true; version++ })
 </template>
 
 <style scoped>
-.view-header, .view-actions, .stance-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.view-header, .view-actions, .stance-options, .source-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .view-header { justify-content: space-between; }
 .view-header h2 { margin-bottom: 0; }
 .muted, .description { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
 fieldset { min-width: 0; padding: 0; margin: 20px 0; border: 0; }
 legend { margin-bottom: 12px; font-weight: 600; }
+.source-options label { display: inline-flex; gap: 8px; align-items: center; }
 .topic-options { display: grid; gap: 10px; }
 .topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .topic-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
@@ -160,7 +252,14 @@ legend { margin-bottom: 12px; font-weight: 600; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
 .view-actions { margin-top: 20px; }
-[role="alert"] { margin-bottom: 16px; }
+[role="alert"], .custom-topic { margin-bottom: 16px; }
+.custom-field { margin: 16px 0; }
+.custom-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.custom-field textarea { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); font: inherit; resize: vertical; }
+.counter { margin: 6px 0 0; font-size: 12px; color: var(--app-text-muted); }
+.counter.invalid { color: var(--app-danger-text, #cb2634); }
 .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
 .style-field select { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
+.topic-preview { padding: 16px; border: 1px dashed var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.topic-preview h3 { margin: 8px 0; white-space: pre-wrap; }
 </style>

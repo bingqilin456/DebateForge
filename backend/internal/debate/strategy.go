@@ -199,7 +199,7 @@ func failedStrategyDetails(d Debate, s Strategy) *FailureDetails {
 }
 func (s *Service) runStrategyGeneration(ctx context.Context, uid uint64, state StrategyState, retry bool) (StrategyStatus, int, error) {
 	d, current := state.Debate, *state.Strategy
-	result, genErr := s.generateStrategy(ctx, ai.StrategyRequest{AttemptVersion: current.AttemptVersion, UserID: uid, Mode: ai.Mode(d.Mode), AIStyle: ai.AIStyle(d.AIStyle), Topic: ai.Topic{Title: d.TopicTitleSnapshot, Description: d.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.UserStance)})
+	result, genErr := s.generateStrategy(ctx, ai.StrategyRequest{AttemptVersion: current.AttemptVersion, UserID: uid, Mode: ai.Mode(d.Mode), AIStyle: ai.AIStyle(d.AIStyle), Topic: ai.Topic{Title: d.TopicTitleSnapshot, Description: d.TopicDescriptionSnapshot}, UserStance: ai.Stance(d.UserStance), Custom: d.Custom()})
 	validating := genErr == nil
 	// 不信任 Generator 输出，包括 Fake/未来适配器；落库前再次执行 schema 校验。
 	if genErr == nil {
@@ -230,13 +230,18 @@ func (s *Service) runStrategyGeneration(ctx context.Context, uid uint64, state S
 	if validating && genErr != nil {
 		genErr = (&ai.Error{Code: ai.CodeModelError, Message: "策略结构无效", Usage: result.Usage, Metadata: result.Metadata}).WithCause(genErr)
 	}
-	// Prompt 版本由本次服务端生成路径确定，失败也留下可追踪版本。
-	result.Metadata.PromptVersion = ai.StrategyPromptVersion
+	// Prompt 版本由本次服务端生成路径确定，失败也留下可追踪版本；
+	// 自定义辩题使用独立版本，便于按版本追溯实际外发结构。
+	promptVersion := ai.StrategyPromptVersion
+	if d.Custom() {
+		promptVersion = ai.CustomStrategyPromptVersion
+	}
+	result.Metadata.PromptVersion = promptVersion
 	if genErr != nil {
 		var ae *ai.Error
 		if errors.As(genErr, &ae) {
 			clone := *ae
-			clone.Metadata.PromptVersion = ai.StrategyPromptVersion
+			clone.Metadata.PromptVersion = promptVersion
 			genErr = &clone
 		}
 	}

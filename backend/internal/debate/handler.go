@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/bingqilin456/DebateForge/backend/internal/ai"
 	"github.com/bingqilin456/DebateForge/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 	"io"
@@ -73,23 +74,186 @@ func decode(c *gin.Context, payload any) bool {
 	}
 	return true
 }
-func (h *Handler) create(c *gin.Context) {
-	var in struct {
-		TopicID    string          `json:"topic_id"`
-		UserStance string          `json:"user_stance"`
-		AIStyle    json.RawMessage `json:"ai_style"`
+
+// createRequest 是 POST /api/v1/debates 的原始请求形状。
+// 用 RawMessage 保留“字段是否出现”，以便严格二选一：
+// 字段缺失与显式 null 必须区分，两个字段都出现也要拒绝。
+type createRequest struct {
+	TopicID     json.RawMessage
+	CustomTopic json.RawMessage
+	UserStance  string
+	AIStyle     json.RawMessage
+	// unknown/duplicate 记录顶层额外键与重复键。自定义分支是新入口，
+	// 必须严格拒绝；预设分支保留既有“忽略未知字段”的行为，避免破坏旧客户端。
+	unknown   []string
+	duplicate []string
+}
+
+// UnmarshalJSON 逐键扫描顶层对象，记录未知键与重复键，同时保留
+// encoding/json 的“重复键取最后一次”赋值语义供预设分支沿用。
+func (in *createRequest) UnmarshalJSON(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return ErrInvalidRequest
 	}
-	if !decode(c, &in) {
-		return
+	*in = createRequest{}
+	seen := map[string]bool{}
+	for decoder.More() {
+		token, err = decoder.Token()
+		if err != nil {
+			return ErrInvalidRequest
+		}
+		key, ok := token.(string)
+		if !ok {
+			return ErrInvalidRequest
+		}
+		if seen[key] {
+			in.duplicate = append(in.duplicate, key)
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return ErrInvalidRequest
+		}
+		switch key {
+		case "topic_id":
+			in.TopicID = value
+		case "custom_topic":
+			in.CustomTopic = value
+		case "user_stance":
+			if isJSONNull(value) || json.Unmarshal(value, &in.UserStance) != nil {
+				return ErrInvalidRequest
+			}
+		case "ai_style":
+			in.AIStyle = value
+		default:
+			in.unknown = append(in.unknown, key)
+		}
+	}
+	if token, err = decoder.Token(); err != nil || token != json.Delim('}') {
+		return ErrInvalidRequest
+	}
+	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
+// customTopicRequest 只接受 title 与 background 两个字段；
+// 未知字段、重复字段与 null 值在 parse 阶段直接拒绝。
+type customTopicRequest struct {
+	Title      string `json:"title"`
+	Background string `json:"background"`
+}
+
+// parseCreateRequest 把原始请求严格解析为 CreateInput。
+//
+// 二选一以“字段是否出现”为准：两个字段同时出现、都缺失、或任一显式 null 均为 400。
+// 自定义题目的 title 必填为字符串，background 可省略或为空字符串。
+func parseCreateRequest(in createRequest) (CreateInput, error) {
+	out := CreateInput{UserStance: in.UserStance}
+	hasTopic := len(in.TopicID) > 0
+	hasCustom := len(in.CustomTopic) > 0
+	if hasTopic == hasCustom {
+		return out, ErrInvalidRequest
+	}
+	if hasCustom {
+		// 自定义分支是新入口：顶层未知键与重复键都严格拒绝，
+		// 不能让客户端借额外字段混入赛制、轮次或归属。
+		if len(in.unknown) > 0 || len(in.duplicate) > 0 {
+			return out, ErrInvalidRequest
+		}
+	}
+	if hasTopic {
+		var raw string
+		if isJSONNull(in.TopicID) || json.Unmarshal(in.TopicID, &raw) != nil {
+			return out, ErrInvalidRequest
+		}
+		id, err := ParseID(raw)
+		if err != nil {
+			return out, ErrInvalidRequest
+		}
+		out.TopicID = &id
+	} else {
+		if isJSONNull(in.CustomTopic) {
+			return out, ErrInvalidRequest
+		}
+		custom, err := decodeCustomTopic(in.CustomTopic)
+		if err != nil {
+			return out, err
+		}
+		out.CustomTopic = custom
 	}
 	style := "logical"
 	if len(in.AIStyle) > 0 {
-		if string(in.AIStyle) == "null" || json.Unmarshal(in.AIStyle, &style) != nil {
-			serviceError(c, ErrInvalidRequest)
-			return
+		// 显式 null、空串、非字符串、大小写不符与未知值都是 400，不静默回退默认值。
+		if isJSONNull(in.AIStyle) || json.Unmarshal(in.AIStyle, &style) != nil || !ai.AIStyle(style).Valid() {
+			return out, ErrInvalidRequest
 		}
 	}
-	id, e := ParseID(in.TopicID)
+	out.AIStyle = style
+	return out, nil
+}
+
+// decodeCustomTopic 严格解码自定义辩题对象：拒绝未知键、重复键、null 与类型不符。
+func decodeCustomTopic(raw json.RawMessage) (*CustomTopic, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, ErrInvalidRequest
+	}
+	seen := map[string]bool{}
+	out := &CustomTopic{}
+	for decoder.More() {
+		token, err = decoder.Token()
+		if err != nil {
+			return nil, ErrInvalidRequest
+		}
+		key, ok := token.(string)
+		if !ok || seen[key] {
+			return nil, ErrInvalidRequest
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil || isJSONNull(value) {
+			return nil, ErrInvalidRequest
+		}
+		switch key {
+		case "title":
+			if json.Unmarshal(value, &out.Title) != nil {
+				return nil, ErrInvalidRequest
+			}
+		case "background":
+			if json.Unmarshal(value, &out.Background) != nil {
+				return nil, ErrInvalidRequest
+			}
+		default:
+			return nil, ErrInvalidRequest
+		}
+	}
+	if token, err = decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, ErrInvalidRequest
+	}
+	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, ErrInvalidRequest
+	}
+	if !seen["title"] {
+		return nil, ErrInvalidRequest
+	}
+	return out, nil
+}
+
+// isJSONNull 判断原始 JSON 值是否为显式 null（含前后空白）。
+func isJSONNull(raw json.RawMessage) bool { return string(bytes.TrimSpace(raw)) == "null" }
+
+func (h *Handler) create(c *gin.Context) {
+	var in createRequest
+	if !decode(c, &in) {
+		return
+	}
+	input, e := parseCreateRequest(in)
 	if e != nil {
 		serviceError(c, e)
 		return
@@ -99,7 +263,7 @@ func (h *Handler) create(c *gin.Context) {
 		writeError(c, 401, "unauthenticated", nil)
 		return
 	}
-	d, e := h.service.Create(c.Request.Context(), current.User.ID, id, in.UserStance, style)
+	d, e := h.service.Create(c.Request.Context(), current.User.ID, input)
 	if e != nil {
 		serviceError(c, e)
 		return

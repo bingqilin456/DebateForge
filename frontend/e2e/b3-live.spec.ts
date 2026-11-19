@@ -10,7 +10,11 @@ import type { AuthSession, Debate, DebateDetail, StrategyStatus, Turn } from '..
 test.use({ trace: 'off', screenshot: 'off' })
 test.describe.configure({ mode: 'serial' })
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
-const FIXED = '134b845e5f9352d83c711d763471d1452ba336c0'
+const HISTORICAL_BASE = '134b845e5f9352d83c711d763471d1452ba336c0'
+const FIXED = process.env.SIYIGE_B3_BASELINE_SHA ?? HISTORICAL_BASE
+if (!/^[a-f0-9]{40}$/.test(FIXED)) throw new Error('B3 必须指定完整固定 SHA')
+const environmentFile = process.env.SIYIGE_B3_ENV_FILE ?? '.cache/b3-live-env.json'
+if (!['.cache/b3-live-env.json', '.cache/p3-final-review-env.json'].includes(environmentFile)) throw new Error('B3 环境文件不在允许的本机元数据清单内')
 const EXISTING_B2_BUILD = '270eed81ee9a29f53bc25c25cb9a9992e8b50252'
 let backendBuildRevision = ''
 // 公开的合成测试输入，不是真实账号口令；禁止替换成真实凭据或保存登录 trace。
@@ -81,13 +85,13 @@ async function nginxStream(response: Response) {
 test.beforeEach(async ({ page }) => {
   test.skip(process.env.SIYIGE_BROWSER_LIVE !== '1', '需明确开启固定 test/Fake + Nginx 环境，不自动启动数据库')
   expect(execFileSync('git', ['--no-optional-locks', 'rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim()).toBe(FIXED)
-  const env = JSON.parse(fs.readFileSync(path.join(ROOT, '.cache/b3-live-env.json'), 'utf8')) as {
+  const env = JSON.parse(fs.readFileSync(path.join(ROOT, environmentFile), 'utf8')) as {
     status: string; tested_sha: string; backend_revision: string; source_equivalent_to?: string; app_env: string; ai_mode: string; db_addr: string; db_name: string; scenario: string
   }
   expect(env).toMatchObject({ status: 'ready', tested_sha: FIXED, app_env: 'test', ai_mode: 'fake', db_addr: '127.0.0.1:13307', db_name: 'siyige_test', scenario: 'slow' })
   // 允许复用已核实的 B2 Fake，但明确记录真实构建版本，不将它写成固定 SHA 新构建。
   // 任意旧版本均不接受；该 B2 启动记录已核实构建时后端无修改，且两提交 backend 完全相同。
-  expect(env.backend_revision === FIXED || (env.backend_revision === EXISTING_B2_BUILD && env.source_equivalent_to === FIXED)).toBe(true)
+  expect(env.backend_revision === FIXED || (FIXED === HISTORICAL_BASE && env.backend_revision === EXISTING_B2_BUILD && env.source_equivalent_to === FIXED)).toBe(true)
   execFileSync('git', ['--no-optional-locks', 'diff', '--exit-code', env.backend_revision, FIXED, '--', 'backend', 'infra/sse/start-local.ps1'], { cwd: ROOT, encoding: 'utf8' })
   expect(execFileSync('git', ['--no-optional-locks', 'status', '--porcelain=v1', '--untracked-files=all', '--', 'backend', 'frontend/src'], { cwd: ROOT, encoding: 'utf8' }).trim()).toBe('')
   backendBuildRevision = env.backend_revision
@@ -118,6 +122,7 @@ test('B3 Nginx 真链路：注册、反方数据流派、策略、四轮、总�
   expect(strategy.status).toBe('completed')
   if (strategy.status !== 'completed') throw new Error('策略没有真实保存成功')
   expect(strategy.ai_style).toBe('data')
+  if (process.env.SIYIGE_B3_EXPECTED_STRATEGY_PROMPT) expect(strategy.prompt_version).toBe(process.env.SIYIGE_B3_EXPECTED_STRATEGY_PROMPT)
   let timing: { first_length: number; next_length: number; elapsed_ms: number } | undefined
   const headers: { request_id: string | undefined; nginx_route: string }[] = []
   for (let round = 1; round <= created.total_rounds; round++) {
@@ -176,6 +181,10 @@ test('B3 Nginx 真链路：注册、反方数据流派、策略、四轮、总�
 test('B3 Nginx 刷新中断：原键查询、持久失败、显式版本重试，无重复消息', async ({ page }) => {
   test.setTimeout(60_000)
   await registerAndLogin(page)
+  // 当前 main 已统一到辩题页创建；显式选题，不重新引入主视图创建表单。
+  await page.locator('[data-view-tab="topics"]').click()
+  await page.locator('[data-topic-id="1"] input').check()
+  await expect(page.getByLabel('AI 陪练流派', { exact: true })).toHaveValue('logical')
   const created = await create(page)
   expect(created.ai_style).toBe('logical')
   const posts: string[] = []

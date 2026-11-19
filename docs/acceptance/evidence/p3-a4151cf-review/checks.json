@@ -1,0 +1,149 @@
+{
+  "review_date": "2026-11-17",
+  "production_sha": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5",
+  "branch": "codex/p3-b-review",
+  "new_real_model_calls": 0,
+  "frontend": {
+    "typecheck": "passed",
+    "unit_files": 18,
+    "unit_tests": 305,
+    "build": "passed",
+    "build_modules": 668
+  },
+  "browser_mock": {
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "duration_ms": 45740,
+    "original_report": ".cache/p3-final-review-mock-2026-11-17T11-35-25-582Z/results.json",
+    "cases": "See committed test sources and original report"
+  },
+  "backend": {
+    "strategy_top_level_passed": [
+      "TestStrategySchemaBoundaries",
+      "TestStrategyPromptUsesUserStanceAndSavedOpponentStyle",
+      "TestStrategyFakeInvalidOutputPreservesKnownUsage",
+      "TestStrategyAdapterSingleAttemptAndStrictOutput",
+      "TestStrategyFakeRejectsCanonicalJSONOverLimit"
+    ],
+    "ledger_linux_assertions_verified_on_windows": false,
+    "ledger_skipped_entries": [
+      "TestDemoAllCapabilitiesShareProtectedAdapter",
+      "TestDemoStopCancelsProviderAndRetainsReservation",
+      "TestDemoUnknownFailureAndPanicNeverRefund/unknown_usage",
+      "TestDemoUnknownFailureAndPanicNeverRefund/stream_without_usage",
+      "TestDemoUnknownFailureAndPanicNeverRefund/http_failure",
+      "TestDemoUnknownFailureAndPanicNeverRefund/panic",
+      "TestDemoLastSlotAndRestart",
+      "TestDemoFailureAndControls/unknown",
+      "TestDemoFailureAndControls/failure",
+      "TestDemoFailureAndControls/timeout",
+      "TestDemoFailureAndControls/cancel",
+      "TestDemoFailureAndControls/stop_inflight",
+      "TestDemoFailureAndControls/expired_inflight",
+      "TestDemoFailureAndControls/corrupt",
+      "TestDemoFailureAndControls/unfinished",
+      "TestDemoFailureAndControls/changed",
+      "TestDemoFailureAndControls/no_approval",
+      "TestDemoFailureAndControls/identity",
+      "TestDemoFailureAndControls/window_lead",
+      "TestDemoFailureAndControls/stop_restart",
+      "TestDemoTokenMoneyAndDailyLimits/input",
+      "TestDemoTokenMoneyAndDailyLimits/output",
+      "TestDemoTokenMoneyAndDailyLimits/money",
+      "TestDemoTokenMoneyAndDailyLimits/minute",
+      "TestDemoTokenMoneyAndDailyLimits/day",
+      "TestDemoLockAndApprovalBinding",
+      "TestDemoPersistenceFailureRetainsStop/reserve",
+      "TestDemoPersistenceFailureRetainsStop/result",
+      "TestDemoPersistenceFailureRetainsStop/missing_manifest",
+      "TestDemoUnknownUsageStoredAsNull",
+      "TestDemoMissingTailNeverRestoresBudget/tail",
+      "TestDemoMissingTailNeverRestoresBudget/head"
+    ],
+    "fresh_windows_server_built_from": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5",
+    "fresh_binary_running": true,
+    "running_binary_path": ".cache/t15-local/server.exe",
+    "running_pid": 43384,
+    "running_binary_revision": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5"
+  },
+  "live": {
+    "selected_cases": 7,
+    "executed_cases": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "duration_ms": 89951.31499999999,
+    "status": "5_direct_fake_passed_2_nginx_cases_not_executed",
+    "chain": "Edge -> Vite:5173 -> Go:8080 -> siyige_test -> Fake",
+    "nginx_in_chain": false,
+    "evidence": "direct-live.json",
+    "nginx_cases_not_executed": 2,
+    "additional_execution_in_minimal_closeout": false,
+    "environment_observation": {
+      "checked_at": "2026-11-17T15:53:04.963Z",
+      "backend_ready_status": 200,
+      "test_database_tcp": "connected",
+      "demo_18081_tcp": "ECONNREFUSED",
+      "nginx_original_ownership_guard_passed_after_temporary_utf8_console_decode": true,
+      "ownership_guard_relaxed": false,
+      "nginx_config_test": "passed_user_executed",
+      "nginx_health_statuses": [
+        200,
+        200,
+        502,
+        200,
+        200,
+        200
+      ],
+      "gateway_failures_absent_from_go_request_log": true,
+      "gateway_root_cause": "not_confirmed",
+      "database_reset_or_migration_performed": false
+    },
+    "preserved_observation": "本机Nginx间歇502不改写既有AC12/AC16签收；不在本轮扩展为重复B3或T14-EVAL阻塞。"
+  },
+  "real_evaluation": {
+    "effective_complete_session_threshold": 3,
+    "decision": "ADR-029",
+    "source_record": "docs/acceptance/P3_REAL_MODEL_EXECUTION_2026-11-17.md",
+    "reported_complete_session_ids": [
+      "22",
+      "23",
+      "24"
+    ],
+    "source_database": "siyige_demo",
+    "raw_turns_and_summaries_available_for_B": false,
+    "qualitative_conclusions": "cannot_judge_without_original_turns_and_summary",
+    "data_style": "not_covered_session_25_summary_failed",
+    "failed_session_25_counted_as_complete": false,
+    "dimensions": [
+      "回应用户观点",
+      "保持相反立场",
+      "明显失实或无依据断言",
+      "总结建议具体且对应实际发言"
+    ],
+    "B_final_confirmation": "pending_one_confirmation_after_actual_reading",
+    "session_26_used_as_replacement": false
+  },
+  "source_logs": {
+    "frontend_typecheck": ".cache/p3-final-review-checks/frontend-typecheck.log",
+    "frontend_unit": ".cache/p3-final-review-checks/frontend-test.log",
+    "frontend_build": ".cache/p3-final-review-checks/frontend-build.log",
+    "ai_tests": ".cache/p3-final-review-checks/ai-demo-strategy-tests.log"
+  },
+  "closeout_updated": "2026-11-18",
+  "owner_confirmations": {
+    "source": "负责人2026-11-18本轮要求",
+    "T13_Lite": "formally_accepted_reuse_no_rerun",
+    "AC17": "formally_accepted_session_26_no_rerun",
+    "PR_29_PR_30": "reported_merged_to_main_with_green_CI_not_independently_refetched_here"
+  },
+  "current_local_git": {
+    "branch": "codex/p3-b-review",
+    "sha": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5",
+    "latest_main_sha": "not_acquired",
+    "reason": "Git read-only remote query failed with SEC_E_NO_CREDENTIALS; no TLS/credential changes or fetch performed"
+  }
+}

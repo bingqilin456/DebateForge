@@ -30,17 +30,34 @@ func NewGate(clock func() time.Time) *Gate {
 	}
 	return &Gate{clock: clock, users: make(map[uint64]*counter)}
 }
+
+// retry 构造 429 受控失败。三类原因必须用不同业务码区分，
+// 因为界面恢复动作不同：频率限制按秒重试、并发占用等待当前生成、
+// 日额度用尽当日无法恢复。曾统一返回 rate_limited，导致前端只能猜。
 func retry(code string, d time.Duration) error {
 	n := int((d + time.Second - 1) / time.Second)
 	if n < 1 {
 		n = 1
 	}
-	cause := ErrRateLimited
-	if code == "generation_busy" {
+	var cause error
+	switch code {
+	case codeGenerationBusy:
 		cause = ErrGenerationBusy
+	case codeDailyQuotaExhausted:
+		cause = ErrDailyQuotaExhausted
+	default:
+		cause = ErrRateLimited
 	}
 	return &Failure{Code: code, Status: 429, RetryAfter: n, Cause: cause}
 }
+
+// 429 的业务码常量集中在 model.go，与 Err* 一一对应。
+const (
+	codeRateLimited         = "rate_limited"
+	codeGenerationBusy      = "generation_busy"
+	codeDailyQuotaExhausted = "daily_quota_exhausted"
+)
+
 func (g *Gate) entry(id uint64, now time.Time) (*counter, error) {
 	day := now.UTC().Truncate(24 * time.Hour)
 	if c := g.users[id]; c != nil {
@@ -62,7 +79,7 @@ func (g *Gate) entry(id uint64, now time.Time) (*counter, error) {
 		}
 	}
 	if len(g.users) >= maxLimitKeys {
-		return nil, retry("rate_limited", time.Minute)
+		return nil, retry(codeRateLimited, time.Minute)
 	}
 	c := &counter{minute: now, day: day}
 	g.users[id] = c
@@ -79,7 +96,7 @@ func (g *Gate) Request(id uint64) error {
 		return e
 	}
 	if c.requests >= 6 {
-		return retry("rate_limited", c.minute.Add(time.Minute).Sub(now))
+		return retry(codeRateLimited, c.minute.Add(time.Minute).Sub(now))
 	}
 	c.requests++
 	return nil
@@ -100,10 +117,10 @@ func (g *Gate) Acquire(id uint64) (*Permit, error) {
 		return nil, e
 	}
 	if c.active || g.active >= 2 {
-		return nil, retry("generation_busy", time.Second)
+		return nil, retry(codeGenerationBusy, time.Second)
 	}
 	if c.attempts+c.pending >= 20 {
-		return nil, retry("rate_limited", c.day.Add(24*time.Hour).Sub(now))
+		return nil, retry(codeDailyQuotaExhausted, c.day.Add(24*time.Hour).Sub(now))
 	}
 	c.pending++
 	c.active = true

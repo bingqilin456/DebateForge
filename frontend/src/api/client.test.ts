@@ -108,6 +108,19 @@ describe('统一业务 client', () => {
     })
   })
 
+  // 429 三类原因各自有独立文案：分钟防刷可稍后重试，并发占用要等当前生成，
+  // 日额度用尽当日不再重试，不能都显示成“请求过于频繁”。
+  it.each([
+    ['rate_limited', '请求过于频繁'],
+    ['generation_busy', '生成服务繁忙'],
+    ['daily_quota_exhausted', '今日生成次数已用完'],
+  ])('429 按业务码给出可区分的提示：%s', async (code, expected) => {
+    fetchMock.mockResolvedValue(failure(429, code, { 'Retry-After': '30' }))
+    await expect(createApiClient().request('/api/v1/example', ok)).rejects.toMatchObject({
+      status: 429, code, message: expect.stringContaining(expected),
+    })
+  })
+
   it.each([
     [401, 'unauthenticated', true, 1],
     [401, 'invalid_credentials', false, 0],

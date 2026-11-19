@@ -116,6 +116,7 @@ const errorMessages: Record<string, string> = {
   request_too_large: '请求内容过大，请缩短后重试。',
   rate_limited: '请求过于频繁，请稍后手动重试。',
   generation_busy: '生成服务繁忙，请稍后手动重试。',
+  daily_quota_exhausted: '今日生成次数已用完，可查看历史或明天再试。',
   dependency_unavailable: '服务暂时不可用，请稍后手动重试。',
   internal_error: '服务发生错误，请稍后手动重试。',
   model_error: 'AI 回复生成失败，请查询会话状态。',

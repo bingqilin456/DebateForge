@@ -89,8 +89,11 @@ func TestAdmissionSlotsQuotaAndRollback(t *testing.T) {
 		p.Finish(true)
 		p.Finish(true)
 	}
-	if _, err = gate.Acquire(1); !errors.Is(err, ErrRateLimited) {
-		t.Fatal("daily quota not enforced")
+	// 日额度用尽与分钟防刷必须是不同业务码：前者当日不可恢复，后者按秒重试。
+	if _, err = gate.Acquire(1); !errors.Is(err, ErrDailyQuotaExhausted) {
+		t.Fatalf("daily quota not enforced or wrong code: %v", err)
+	} else if f := (*Failure)(nil); !errors.As(err, &f) || f.Code != "daily_quota_exhausted" || f.Status != 429 || f.RetryAfter < 1 {
+		t.Fatalf("daily quota failure shape: %+v", f)
 	}
 	now = now.Add(24 * time.Hour)
 	p, err = gate.Acquire(1)
@@ -105,6 +108,8 @@ func TestAdmissionSlotsQuotaAndRollback(t *testing.T) {
 	}
 	if err = gate.Request(1); !errors.Is(err, ErrRateLimited) {
 		t.Fatal("minute quota not enforced")
+	} else if f := (*Failure)(nil); !errors.As(err, &f) || f.Code != "rate_limited" || f.Status != 429 {
+		t.Fatalf("minute quota failure shape: %+v", f)
 	}
 	now = now.Add(time.Minute)
 	if err = gate.Request(1); err != nil {

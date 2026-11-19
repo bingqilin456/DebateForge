@@ -23,6 +23,7 @@ var (
 	ErrDependencyUnavailable  = errors.New("dependency_unavailable")
 	ErrRateLimited            = errors.New("rate_limited")
 	ErrGenerationBusy         = errors.New("generation_busy")
+	ErrDailyQuotaExhausted    = errors.New("daily_quota_exhausted")
 )
 
 const (

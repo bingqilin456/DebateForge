@@ -125,7 +125,8 @@ func TestT05DailyAttemptsAndReplayExemption(t *testing.T) {
 	}
 	id := f.create(t)
 	r = f.request(t, "POST", "/api/v1/debates/"+id+"/turns", submit("第21次", uuid.NewString(), 1))
-	if r.status != 429 || r.errorCode() != "rate_limited" || r.header.Get("Retry-After") == "" || calls.Load() != 20 {
+	// 日额度用尽使用独立业务码，界面据此给“今日次数已用完”而不是“请求过于频繁”。
+	if r.status != 429 || r.errorCode() != "daily_quota_exhausted" || r.header.Get("Retry-After") == "" || calls.Load() != 20 {
 		t.Fatal("daily attempt quota")
 	}
 	var count int64

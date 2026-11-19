@@ -2347,6 +2347,7 @@ components:
               - request_too_large
               - rate_limited
               - generation_busy
+              - daily_quota_exhausted
               - internal_error
               - model_error
               - dependency_unavailable
@@ -2876,7 +2877,7 @@ components:
       x-error-codes:
       - rate_limited
     GenerationLimited:
-      description: 请求频率/每日生成次数超限或用户/全局模型并发槽满；带 Retry-After 秒数。
+      description: 请求频率/每日生成次数超限或用户/全局模型并发槽满；带 Retry-After 秒数。三种原因用不同业务码区分：分钟防刷为 rate_limited，并发槽满为 generation_busy，每用户每日生成尝试用尽为 daily_quota_exhausted。
       headers:
         X-Request-ID:
           $ref: '#/components/headers/RequestId'
@@ -2896,9 +2897,11 @@ components:
                       enum:
                       - rate_limited
                       - generation_busy
+                      - daily_quota_exhausted
       x-error-codes:
       - rate_limited
       - generation_busy
+      - daily_quota_exhausted
     InternalError:
       description: 受控内部错误，不回传堆栈或内部细节。
       headers:

@@ -174,11 +174,11 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 | `GET /api/v1/topics` | 200 | 401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/debates` | 200 | 400 invalid_request；401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `POST /api/v1/debates` | 201 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；413 request_too_large；500 internal_error；503 dependency_unavailable |
-| `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
-| `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
-| `POST /api/v1/debates/{id}/summary` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/summary` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}/strategy` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
-| `POST /api/v1/debates/{id}/strategy` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/strategy` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}/summary` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/debates/{id}` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 
@@ -605,7 +605,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 | 405 | `method_not_allowed` | 路径不支持该方法。 |
 | 409 | `username_conflict`、`round_conflict`、`idempotency_conflict`、`turn_failed`、`attempt_version_conflict` | 分别为用户名占用、状态或轮序冲突、幂等内容冲突、已失败轮次重放、显式重试版本不匹配。 |
 | 413 | `request_too_large` | 请求体超过 32 KiB。 |
-| 429 | `rate_limited`、`generation_busy` | 请求频率或每日生成次数超限、模型并发槽满，带 `Retry-After` 秒数。 |
+| 429 | `rate_limited`、`generation_busy`、`daily_quota_exhausted` | 分钟防刷超限、模型并发槽满、每用户每日生成尝试用尽；均带 `Retry-After` 秒数。三类业务码不同，客户端可据此区分恢复动作（按秒重试、等待当前生成、当日不再重试）。 |
 | 500 | `internal_error` | 未分类内部错误。 |
 | 502 | `model_error` | 模型调用失败、输出无效或拒答。 |
 | 503 | `dependency_unavailable`、`model_unavailable` | 数据库不可用或提交结果不明、供应商容量或额度不可用。 |

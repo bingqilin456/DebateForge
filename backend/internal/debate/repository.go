@@ -731,4 +731,18 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 	return recovered + n, e
 }
 
+// RecoverExpiredReviewLeases 单独暴露复盘租约恢复。
+//
+// 刻意不从 RecoverExpiredLeases 内部调用：新表可能尚未部署，而复盘功能默认关闭。
+// 只有服务确认复盘能力已启用（显式开关 + 生成器支持）时才调用本方法，
+// 避免旧部署在功能关闭时被不存在的表拖慢或报错，也避免影响旧原文/旧总结的读取。
+func (r *Repository) RecoverExpiredReviewLeases(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return r.recoverReviewLeases(ctx, r.now())
+}
+
 var _ Store = (*Repository)(nil)

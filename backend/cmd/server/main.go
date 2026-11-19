@@ -89,6 +89,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if _, err := applyAnnotationCapability(debateService, generator); err != nil {
 		return err
 	}
+	// 复盘同样是默认关闭的独立切片：关闭时不会访问 debate_reviews，旧部署不受影响。
+	if _, err := applyReviewCapability(debateService, generator); err != nil {
+		return err
+	}
 	debateHandler := debate.NewHandler(debateService)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {

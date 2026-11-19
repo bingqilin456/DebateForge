@@ -222,3 +222,61 @@ export interface AnnotationList {
 export interface AnnotationRetryRequest {
   expected_attempt_version: number
 }
+
+// V2-13 赛后复盘 + V2-10 四维训练参考。
+// 与旧总结（schema_version=1 三栏 / 2 的 0–100）完全分离：独立接口、独立版本、独立取值。
+
+/** 复盘引用：resolved=false 只显示“原文待核对”，不按坐标高亮。 */
+export interface ReviewQuote {
+  message_id: string
+  quote: string
+  start_cp: number | null
+  end_cp: number | null
+  resolved: boolean
+}
+
+/** 四个固定维度键；顺序由服务端给定，前端不重排。 */
+export type ReviewDimensionKey = 'argument_structure' | 'responsiveness' | 'evidence_use' | 'concept_scope'
+
+/**
+ * 单维结果。level 为 null 表示“观察不足”——合法结果，不是 0 分、也不是 1 档，
+ * 此时必须带 insufficient_reason，且不得有档位标签与引用坐标。
+ */
+export interface ReviewDimension {
+  key: ReviewDimensionKey
+  label: string
+  level: 1 | 2 | 3 | 4 | null
+  level_label: string | null
+  basis: string
+  improvement: string
+  insufficient_reason: string | null
+  quote: ReviewQuote | null
+}
+
+/** 争点 / 优点 / 改进条目：文字始终可读，引用不可核对时不提供定位入口。 */
+export interface ReviewTextItem {
+  text: string
+  quote: ReviewQuote | null
+}
+
+export interface ReviewContent {
+  dimensions: ReviewDimension[]
+  key_issues: ReviewTextItem[]
+  strengths: ReviewTextItem[]
+  improvements: ReviewTextItem[]
+}
+
+/**
+ * 复盘状态与比赛完成状态是两个独立事实；not_started 只出现在读取投影里。
+ *
+ * available 仅在服务端关闭复盘切片时显式给出 false：此时 status 仍是 not_started，
+ * 但客户端必须隐藏复盘界面并禁止发起生成。启用时省略该字段，旧响应形状保持可用。
+ */
+export type ReviewStatus =
+  | { status: 'not_started'; attempt_version: null; available?: boolean }
+  | { status: 'generating'; attempt_version: number }
+  | { status: 'failed'; attempt_version: number; error_code: string }
+  | { status: 'completed'; attempt_version: number; schema_version: 1; prompt_version?: string; content: ReviewContent }
+
+/** 显式生成或重试的请求正文；首版没有任何自动触发。 */
+export type ReviewRequest = { retry?: false } | { retry: true; expected_attempt_version: number }

@@ -25,7 +25,10 @@ func TestHTTPBudgetsAndShorterParent(t *testing.T) {
 		path, method string
 		budget       time.Duration
 		parent       time.Duration
-	}{{"/api/v1/debates/1/strategy", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/strategy", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/strategy", "POST", 50 * time.Millisecond, 50 * time.Millisecond}, {"/plain", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 50 * time.Millisecond, 50 * time.Millisecond}} {
+	}{{"/api/v1/debates/1/strategy", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/strategy", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/strategy", "POST", 50 * time.Millisecond, 50 * time.Millisecond}, {"/plain", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/summary", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/turns", "POST", 50 * time.Millisecond, 50 * time.Millisecond},
+		// 复盘生成在请求内同步等待一次模型调用，必须与其它生成入口同预算；
+		// 读取复盘仍是普通短预算。
+		{"/api/v1/debates/1/review", "POST", 60 * time.Second, 0}, {"/api/v1/debates/1/review", "GET", 5 * time.Second, 0}, {"/api/v1/debates/1/review", "POST", 50 * time.Millisecond, 50 * time.Millisecond}} {
 		t.Run(tc.method+tc.path+tc.budget.String(), func(t *testing.T) {
 			router := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 			handler := func(c *gin.Context) {
@@ -42,6 +45,8 @@ func TestHTTPBudgetsAndShorterParent(t *testing.T) {
 			router.POST("/api/v1/debates/:id/turns", handler)
 			router.POST("/api/v1/debates/:id/summary", handler)
 			router.GET("/api/v1/debates/:id/summary", handler)
+			router.POST("/api/v1/debates/:id/review", handler)
+			router.GET("/api/v1/debates/:id/review", handler)
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			if tc.parent > 0 {
 				ctx, cancel := context.WithTimeout(req.Context(), tc.parent)

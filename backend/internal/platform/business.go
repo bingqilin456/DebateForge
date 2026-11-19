@@ -33,8 +33,9 @@ func NewBusinessRouter(logger *slog.Logger, db DatabasePinger, a *auth.Handler, 
 func requestBudget(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		budget := OrdinaryRequestBudget
-		// 批注手动补做会等待一次分析，因此与其它生成入口同预算；读取批注仍是普通短预算。
-		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/debates/:id/turns" || c.FullPath() == "/api/v1/debates/:id/turns/stream" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/retry" || c.FullPath() == "/api/v1/debates/:id/summary" || c.FullPath() == "/api/v1/debates/:id/strategy" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/annotations/retry") {
+		// 批注手动补做与复盘生成都会等待一次分析/生成，因此与其它生成入口同预算；读取仍是普通短预算。
+		// 只有 Gin 已精确匹配到 POST 路由才放宽，客户端无法用伪造后缀取得长预算。
+		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/debates/:id/turns" || c.FullPath() == "/api/v1/debates/:id/turns/stream" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/retry" || c.FullPath() == "/api/v1/debates/:id/summary" || c.FullPath() == "/api/v1/debates/:id/strategy" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/annotations/retry" || c.FullPath() == "/api/v1/debates/:id/review") {
 			budget = ai.DefaultRequestBudget
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), budget)

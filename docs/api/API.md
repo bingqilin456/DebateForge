@@ -5,9 +5,10 @@
 **本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
 
 - **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
-- **V2 增量只包含 V2-03**：截至 2026-11-18，产品 V2 中**只有 V2-03 私有自定义辩题**落地为本地代码切片，作为**加法式扩展**：`POST /api/v1/debates` 新增可选 `custom_topic`，会话快照的 `topic.id` 允许为 `null`。其余 V2 能力（训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等）**仍未设计接口契约**，本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
-- **不预先占用 V1 路由**：除 V2-03 已实现的上述两处扩展外，其它 V2 端点与 DTO 变更仍须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。V2-03 未修改既有预设请求、`GET /topics`、轮次、SSE、策略与总结的任何已实现语义。
+- **V2 已实现增量**：V2-03 私有自定义辩题扩展 `POST /api/v1/debates` 的 `custom_topic` 和会话快照的 `topic.id`。V2-04 批注契约见 §15，四轮练习的复盘和四维契约见 §16。
+- **V2 后续接口**：训练赛阶段、争点卡、局部重练和 PDF 等能力的接口在各自切片确定。
 - **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
+- **V2-13 复盘为本地可运行切片，未验收**：§16 的复盘接口是错误边界复用 V1、字段独立设计的新契约，默认关闭（`V2_REVIEW_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`）。关闭时不注册生成能力、不访问新表，既有 19 个操作的请求/响应语义保持不变；迁移 `00016` 仅新增正向 SQL 文件，未执行，编号需在整合时复核。
 - **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
 
 产品 V2 的整体开发与验收待安排。V2-03 已按本地隔离 MySQL、Fake 联调和前端 Mock 的证据范围签收。
@@ -22,7 +23,7 @@
 
 **2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。2026-11-15 A3 已交付 SSE 后端和本地代理；完整浏览器 AC12/AC16 待 B1/B2 交付后联调，真实体验未执行。
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 12 个辩论/历史/总结/策略/批注/流式接口，共 19 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 12 个辩论/历史/总结/策略/批注/流式接口，共 19 个；V2-13 复盘另新增 2 个独立接口（见 §16），默认关闭。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -47,6 +48,8 @@
 | POST | `/api/v1/debates/{id}/turns/{turn_id}/annotations/retry` | 手动补做未启动或已失败的批注 | 已实现（V2-04 切片，仅 Fake 与显式本地测试配置） | 201、200、202 |
 
 本文与 OpenAPI `paths` 记录 **19 个已实现操作**（其中 17 个为 V1 冻结契约，2 个为 V2-04 批注增量，后者仅在显式本地测试配置下启用）。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
+
+**V2-13 复盘另有 2 个已在代码中实现、默认关闭的接口**（见 §16）；本轮**未**把它们登记进 OpenAPI `paths`，登记属于整合事项，避免与并行分支争写同一份机器规范。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -708,6 +711,79 @@ generating 仅含 status/attempt_version；failed 增加受控 error_code（mode
 当前进程**只有 Fake 生成实现**，且由显式本地配置开启：`V2_ANNOTATION_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`，同时要求生成器实现批注能力。默认关闭时：`Complete` 不设置资格标志、不启动分析、不写批次，读取对旧会话返回空列表。`dev`/`demo`/`deploy` 一律拒绝开启。Fake 结果用于验证行为，**不验证输出质量**；真实供应商接入（模型、费用、总并发、前台优先与限额）属于另一项独立授权任务，现有 Demo 的真实模型额度不扩充。
 
 前端读取与展示：场中标记渲染在**正式消息流原文**上，侧栏（桌面右栏 / 移动底部面板）只放解释；“显示批注”开关同时控制正文标记和批注面板。关闭后仍生成并保存。坐标回读使用 `Array.from` 按码点切分，并用浏览器原生 `Intl.Segmenter` 排除切中字素簇的位置；缺少该 API 时只有整条原文这类安全端点可标，内部区间降级为待核对，避免切开 ZWJ 序列。
+
+## 16. GET /api/v1/debates/{id}/review 与 POST /api/v1/debates/{id}/review（V2-13 + V2-10 + V2-11）
+
+赛后复盘是 **V2 的独立生成能力**，与轮次、总结、策略、批注各自拥有独立的状态、版本与表。它不改变 `debates.status`、`debates.completed_rounds`、轮次状态机、SSE 事件契约、总结 `schema_version=1/2` 的既有语义或任何既有响应字段。
+
+- **与旧四维彻底分离**：`phase3-summary-v2`（`schema_version=2`，`argumentation/rebuttal/logic/presentation` 各 0–100）属 V1 基线的 P1 目标，本接口**不读取、不输出、不换算**这套字段；本契约的四维是 `argument_structure / responsiveness / evidence_use / concept_scope`，取值 1–4 或 `null`（观察不足），Schema 版本独立为 `review` 的 `schema_version=1`。
+- **比赛完成与复盘状态独立**：复盘失败只写受控错误码，不改会话完成状态，不要求重新辩论。
+
+### 16.1 读取
+
+`GET /api/v1/debates/{id}/review` 只要求 Session 与所有权；不存在与越权统一 `404 not_found`。**无模型调用、不写库。**
+
+- 状态：`not_started`（未开始，仅投影）、`generating`、`completed`、`failed`。
+- `attempt_version`：未开始时为 `null`，其余为 ≥1 的整数。
+- `available`：**可选**，仅当服务端未开启复盘切片时显式返回 `false`，且此时 `status` 恒为 `not_started`。客户端收到 `false` 必须隐藏复盘界面并禁止发起生成；省略该字段等价于“可用”，旧响应与旧 Mock 的 `not_started` 形状不变。功能启用时不输出该字段。
+- `failed` 才带 `error_code`（`model_error`/`model_timeout`/`model_unavailable`/`dependency_unavailable`/`generation_cancelled`/`content_invalid`）。
+- `completed` 才带 `schema_version`、`prompt_version` 与 `content`；已保存内容不可解析时读取投影为 `failed` + `content_invalid`，不在读取期改写数据库。
+
+功能关闭时的读取形状（仍做会话归属校验，不存在与越权为 `404`，且**不读取 `debate_reviews`**）：
+
+```json
+{"data":{"status":"not_started","attempt_version":null,"available":false},"request_id":"req-review-get"}
+```
+
+```json
+{"data":{"status":"completed","attempt_version":1,"schema_version":1,"prompt_version":"review-v1","content":{"dimensions":[{"key":"argument_structure","label":"论证结构","level":3,"level_label":"较稳","basis":"主要论证有理由支撑。","improvement":"补一句关键前提。","insufficient_reason":null,"quote":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true}},{"key":"responsiveness","label":"回应针对性","level":null,"level_label":null,"basis":"本场可观察机会有限。","improvement":"","insufficient_reason":"本场只有一轮完整交锋。","quote":null}],"key_issues":[{"text":"主要争点在于评价标准是否可检验。","quote":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true}}],"strengths":[{"text":"把主张落在可检验标准上。","quote":null}],"improvements":[{"text":"先回应标准质疑再收束主线。","quote":null}]}},"request_id":"req-review-get"}
+```
+
+维度契约：
+
+| 字段 | 约束 |
+| --- | --- |
+| `dimensions` | 恰好 4 项，顺序固定为 `argument_structure`、`responsiveness`、`evidence_use`、`concept_scope`；`label` 由服务端按固定映射派生，不采信模型文本 |
+| `level` | `1`/`2`/`3`/`4` 或 `null`（观察不足）；**0、5、字符串、浮点都非法**；`null` 不是 0 分、也不降到 1 档 |
+| `level_label` | 有档级时必须是 `起步`/`发展中`/`较稳`/`充分`；观察不足时必须为 `null` |
+| `insufficient_reason` | 观察不足必填（说明为什么观察不足）；有档级时必须为 `null` |
+| `quote` | 有档级必须有引用且可核对；观察不足必须为 `null` |
+| `basis` | 每维必须非空 |
+| `improvement` | 有档级必须非空；观察不足允许为空 |
+
+`quote.resolved`：`true` 表示在**唯一一条**本场正式消息中逐字定位成功，`start_cp`/`end_cp` 为 Unicode 码点半开区间；`false` 表示引用确实存在但跨消息歧义，此时坐标必须为 `null`，前端只显示“原文待核对”，**不按坐标高亮**。服务端只采信本场权威原文：外场引用、模型改写、无法逐字核对的引用**不得赋档**，该维降级为“观察不足”并写明原因（AC-V2-22“无依据不赋档”）。
+
+### 16.2 显式生成与重试
+
+`POST /api/v1/debates/{id}/review` 要求 Session、精确 Origin 与 CSRF，共用现有防刷前置。正文只有两种合法形状：
+
+```json
+{"retry":false}
+```
+```json
+{"retry":true,"expected_attempt_version":1}
+```
+
+- `{}` 等价于 `{"retry":false}`（与策略入口一致）；`retry` 与 `expected_attempt_version` 必须**同时出现或同时缺失**。
+- 未开始 → 首次生成，成功 `201`；生成中 → `202` 与当前状态；已成功 → **幂等 `200`** 与已保存内容，不重新生成、不覆盖结果（与总结/策略/批注的“成功批次重放”一致）。
+- 失败且带正确当前版本 → 重新生成，成功 `200`，尝试版本 +1；版本不符 → `409 attempt_version_conflict` + `details:{status,attempt_version,query_url}`；失败但未带重试形状 → `200` 与当前失败状态（只查询，不自动重试）。
+- 未完成结辩 → `409 round_conflict`，不生成完整复盘、不写复盘行（AC-V2-26）。
+- 本切片未启用时写入口受控 `400 invalid_request`，不写任何复盘行、不调用模型。
+- **没有任何自动触发**：不自动生成、不自动无限重试、不后台补跑；只有用户显式点击。
+
+### 16.3 失败、重试与持久化边界
+
+- 首版采用**整份复盘原子写入**：`completed` 时一次性保存 `content_json`；失败只保存受控错误码与 NULL 内容，不存半成品。因此失败重试是**重生成整份复盘**，不是“补失败段落”。若将来改为分段保存，必须显式记录已落库段落并只补失败部分，不得伪造局部恢复。
+- 复盘表 `debate_reviews` 与 `debate_summaries`、`turn_annotations`、`debate_turns` 分开：复盘失败/重试**从不写入或清空**已成功的总结、批注与人工编辑内容。
+- 租约 90 秒；过期 `generating` 复盘在**功能启用时**才扫描并标记为失败（`model_timeout`），使刷新后能恢复出可重试的独立失败状态。功能关闭时不访问新表，旧部署与旧原文/旧总结读取不受影响。
+- 与轮次/总结共用 Gate（分钟/日额度、单用户并发 1、单进程全局 2）；单次调用有 45 秒模型期限、60 秒请求预算、3 秒短事务。
+
+### 16.4 当前实现范围（待整合）
+
+- 只有 Fake 生成实现，并由显式本地配置开启：`V2_REVIEW_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`，且生成器实现复盘能力。`dev`/`demo`/`deploy` 一律拒绝开启。Fake 用于验证结构与恢复，**不验证输出质量**。
+- 关闭时写入口仍为受控 `400 invalid_request`；读入口返回 `not_started` + `available:false`，前端据此隐藏复盘界面且不暴露生成入口。
+- 迁移 `00016_create_debate_reviews.sql` 为**新增正向 SQL 文件**，本工作树**未执行**；并行迁移编号需在整合时重新核对（README 记录下一候选号）。
+- 前端：完赛后展示复盘面板；失败独立展示并可手动重试；四维卡片始终可读；雷达只用 1–4 档，观察不足轴留空。原文定位通过工作台消息 `data-message-id` 定位，图例按钮键盘可达。局部重练、争点卡与 PDF 入口按“待整合”并列显示，不接死链、不伪造能力。收到 `available:false` 时整个复盘区隐藏。
 
 ## T01 文档任务的历史验证记录
 

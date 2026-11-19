@@ -280,6 +280,12 @@ type Fake struct {
 	annotationRecords  []FakeAnnotationRecord
 	annotationErr      error
 	annotationFailLeft int
+	// 复盘同样是独立能力：记录、脚本化失败与失败次数与其它能力互不影响。
+	reviewRecords  []FakeReviewRecord
+	reviewErr      error
+	reviewFailLeft int
+	// reviewScripts 按顺序提供脚本化回复；耗尽后回落到确定性样例。
+	reviewScripts []string
 }
 
 // FakeStep 是一次预设的调用结果；Err 非 nil 时返回该错误。

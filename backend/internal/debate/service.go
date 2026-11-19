@@ -27,6 +27,10 @@ type Service struct {
 	annotationSlot    sync.Mutex
 	annotationBusy    bool
 	background        sync.WaitGroup
+	// 复盘同样是独立能力：自己的开关，与批注、Gate 和后台任务完全分离。
+	// 它只在用户显式请求时生成，没有自动触发或后台补跑。
+	reviewMu      sync.Mutex
+	reviewEnabled bool
 }
 
 // ServiceOption 是服务构造选项，用于在不改动既有调用点的前提下装配可选依赖。
@@ -85,7 +89,17 @@ func (s *Service) RecoverExpiredLeases(ctx context.Context) (int, error) {
 	if s == nil || s.store == nil {
 		return 0, nil
 	}
-	return s.store.RecoverExpiredLeases(ctx)
+	n, err := s.store.RecoverExpiredLeases(ctx)
+	if err != nil {
+		return n, err
+	}
+	// 复盘表可能尚未部署，复盘功能也默认关闭：只有功能启用时才扫描这张新表，
+	// 避免旧部署因缺表而在启动或定期回收中失败，也不影响旧原文与总结的读取。
+	if !s.reviewsEnabled() {
+		return n, nil
+	}
+	recovered, reviewErr := s.store.RecoverExpiredReviewLeases(ctx)
+	return n + recovered, reviewErr
 }
 
 // StartLeaseRecovery 在服务启动时立即执行一次过期租约扫描，并按固定间隔（默认 30 秒）循环回收。

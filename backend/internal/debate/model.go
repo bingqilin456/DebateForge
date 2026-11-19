@@ -459,9 +459,16 @@ type Store interface {
 	ClaimStrategy(context.Context, uint64, uint64, StrategyInput, func() error) (StrategyState, bool, error)
 	CompleteStrategy(context.Context, uint64, Debate, Strategy, ai.StrategyResult) (Strategy, error)
 	FailStrategy(context.Context, uint64, Debate, Strategy, string, ai.Usage, ai.Metadata) (Strategy, error)
+	// 复盘独立于轮次、总结、策略与批注：独立表、独立状态机、独立版本。
+	GetReview(context.Context, uint64, uint64) (*Review, error)
+	ClaimReview(context.Context, uint64, uint64, ReviewInput, func() error) (ReviewClaim, bool, error)
+	CompleteReview(context.Context, uint64, Debate, Review, string, ai.Usage, ai.Metadata) (Review, error)
+	FailReview(context.Context, uint64, Debate, Review, string, ai.Usage, ai.Metadata) (Review, error)
 	ListAnnotations(context.Context, uint64, uint64) ([]AnnotationBatch, error)
 	ClaimAnnotation(context.Context, uint64, uint64, uint64, uint64, func() error) (AnnotationClaim, bool, error)
 	CompleteAnnotation(context.Context, uint64, Debate, TurnAnnotation, ai.AnnotationResult) (TurnAnnotation, error)
 	FailAnnotation(context.Context, uint64, Debate, TurnAnnotation, string, ai.Usage, ai.Metadata) (TurnAnnotation, error)
 	RecoverExpiredLeases(context.Context) (int, error)
+	// RecoverExpiredReviewLeases 只在新复盘表已部署且功能启用时由服务调用。
+	RecoverExpiredReviewLeases(context.Context) (int, error)
 }

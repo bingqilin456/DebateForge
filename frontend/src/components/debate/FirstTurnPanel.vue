@@ -6,10 +6,13 @@ import { AI_STYLE_LABELS } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
 import { createDebateApi, hasNonWhitespace, isEntityId } from '../../api/debate'
 import { createAnnotationApi } from '../../api/annotations'
+import { createReviewApi } from '../../api/review'
 import { createFirstTurnState } from '../../debate/firstTurn'
+import { createReviewState } from '../../debate/review'
 import type { AnnotationItem } from '../../types/api'
 import AnnotationPanel from './AnnotationPanel.vue'
 import AnnotatedText from './AnnotatedText.vue'
+import ReviewPanel from './ReviewPanel.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import StrategyPanel from './StrategyPanel.vue'
 
@@ -21,11 +24,18 @@ const emit = defineEmits<{
 const api = createDebateApi(props.auth.client)
 // 批注与轮次共用同一认证客户端；它只在详情就绪后读取，不自动补做。
 const annotationApi = createAnnotationApi(props.auth.client)
+// 复盘同样是独立能力：读取已有状态，只有用户显式点击才生成或重试。
+const reviewApi = createReviewApi(props.auth.client)
 const panel = createFirstTurnState(api)
+const review = createReviewState(reviewApi)
 const {
   detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
 } = panel
+const {
+  status: reviewStatus, loading: reviewLoading, busy: reviewBusy, notice: reviewNotice,
+  unavailable: reviewUnavailable, canGenerate: canGenerateReview, canRetry: canRetryReview,
+} = review
 const input = ref('')
 // 场中批注开关只控展示，不控生成与保存。
 const showAnnotations = ref(true)
@@ -51,6 +61,24 @@ function locateAnnotation(key: string) {
   marker?.focus({ preventScroll: true })
 }
 
+/**
+ * 把复盘引用定位到正式消息原文：坐标是 Unicode 码点半开区间，
+ * 因此先按码点拆分再取子串；命中后滚入视口并短暂高亮，只做视觉定位，
+ * 不改动原文、不复制第二份文本。
+ */
+let lastLocated: HTMLElement | null = null
+function locateReviewQuote(messageId: string, startCp: number, endCp: number) {
+  const element = transcript.value?.querySelector<HTMLElement>(`[data-message-id="${messageId}"] [data-message-content]`)
+  if (!element) return
+  const codepoints = [...(element.textContent ?? '')]
+  if (startCp < 0 || endCp > codepoints.length || endCp <= startCp) return
+  if (lastLocated && lastLocated !== element) lastLocated.removeAttribute('data-located-quote')
+  lastLocated = element
+  element.setAttribute('data-located-quote', codepoints.slice(startCp, endCp).join(''))
+  element.scrollIntoView?.({ block: 'center' })
+  element.focus?.({ preventScroll: true })
+}
+
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
 const initialId = /^#debate=([1-9]\d{0,19})$/.exec(props.route)?.[1]
@@ -59,6 +87,12 @@ let active = true
 
 watch(id, value => {
   if (value && active) history.replaceState(null, '', `${location.pathname}${location.search}#debate=${value}`)
+})
+// 会话就绪后读取复盘状态；未完成会话也读取，但面板只在完赛后展示。
+// 生成入口完全由用户点击触发，这里绝不自动请求生成。
+watch(id, value => {
+  if (!value) return
+  void review.open(value)
 })
 watch(draft, value => {
   if (value) input.value = value
@@ -81,7 +115,7 @@ function localTime(value: string) {
 onMounted(() => {
   if (initialId && !invalidRoute) void panel.open(initialId)
 })
-onUnmounted(() => { active = false; panel.dispose() })
+onUnmounted(() => { active = false; panel.dispose(); review.dispose() })
 </script>
 
 <template>
@@ -126,10 +160,11 @@ onUnmounted(() => { active = false; panel.dispose() })
         <div ref="transcript" class="debate-transcript">
           <div v-for="turn in detail?.turns" :key="turn.id" class="turn-block" :data-round-no="turn.round_no">
             <div class="round-title">第 {{ turn.round_no }} 轮（尝试 v{{ turn.attempt_version }}）</div>
-            <article v-for="message in turn.messages" :key="message.id" :class="['message', message.role]">
+            <article v-for="message in turn.messages" :key="message.id" :class="['message', message.role]" :data-message-id="message.id">
               <div class="message-label">{{ message.role === 'user' ? '你的发言' : 'AI 回复 · 仅供练习参考' }}</div>
-              <!-- 批注标记渲染在正式消息原文上，侧栏只放解释，不复制第二份原文。 -->
-              <p>
+              <!-- 批注标记渲染在正式消息原文上，侧栏只放解释，不复制第二份原文。
+                   tabindex=-1 只允许程序化聚焦（复盘定位后把焦点交给该段原文），不进 Tab 顺序。 -->
+              <p data-message-content tabindex="-1">
                 <AnnotatedText
                   :content="message.content"
                   :items="messageAnnotations(message.id)"
@@ -197,6 +232,23 @@ onUnmounted(() => { active = false; panel.dispose() })
             @retry="panel.retrySummary"
             @start="panel.requestSummary"
           />
+
+          <!-- V2-13 复盘独立于总结：只在完赛后出现，失败不影响原文与总结。
+               服务端显式返回 available=false 表示本环境未开启切片：整个复盘区隐藏，
+               不留可点击生成入口，也不显示“无复盘”误导文案。 -->
+          <p v-if="reviewNotice && !reviewUnavailable" class="panel-notice" role="status" aria-live="polite" data-review-notice>{{ reviewNotice }}</p>
+          <ReviewPanel
+            v-if="detail && detail.debate.status === 'completed' && !reviewUnavailable"
+            :review="reviewStatus"
+            :busy="locked || reviewBusy"
+            :loading="reviewLoading"
+            :can-generate="canGenerateReview && !locked && !uncertain"
+            :can-retry="canRetryReview && !locked && !uncertain"
+            :locate="locateReviewQuote"
+            @generate="review.generate"
+            @retry="review.retry"
+            @refresh="review.refresh()"
+          />
         </div>
 
         <div class="panel-actions">
@@ -233,6 +285,8 @@ textarea { resize: vertical; line-height: 1.8; }
 .message.assistant { background: var(--app-info-bg); border-color: var(--app-info-border); }
 .message-label { font-weight: 600; font-size: 14px; }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 复盘引用定位后的可见落点：只描边，不改字色，保证原文仍按纯文本可读。 */
+.message p[data-located-quote] { outline: 2px solid var(--app-accent); outline-offset: 3px; border-radius: var(--app-radius-control); }
 time { color: var(--app-text-muted); font-size: 12px; }
 .turn-generating { color: var(--app-accent); font-size: 14px; }
 .turn-failed { margin: 12px 0; padding: 16px; border: 1px solid var(--app-error-border); border-radius: var(--app-radius-panel); background: var(--app-error-bg); color: var(--app-error-text); }

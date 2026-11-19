@@ -183,6 +183,8 @@ type memoryStore struct {
 	turns       map[uint64][]Turn
 	summaries   map[uint64]Summary
 	annotations map[uint64]TurnAnnotation
+	// reviews 与 summaries/annotations 分表存放，保证复盘测试能验证互不覆盖。
+	reviews map[uint64]Review
 }
 
 func newMemoryStore(now func() time.Time) *memoryStore {
@@ -196,6 +198,7 @@ func newMemoryStore(now func() time.Time) *memoryStore {
 		turns:       make(map[uint64][]Turn),
 		summaries:   make(map[uint64]Summary),
 		annotations: make(map[uint64]TurnAnnotation),
+		reviews:     make(map[uint64]Review),
 	}
 }
 

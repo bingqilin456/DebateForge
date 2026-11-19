@@ -605,7 +605,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 | 405 | `method_not_allowed` | 路径不支持该方法。 |
 | 409 | `username_conflict`、`round_conflict`、`idempotency_conflict`、`turn_failed`、`attempt_version_conflict` | 分别为用户名占用、状态或轮序冲突、幂等内容冲突、已失败轮次重放、显式重试版本不匹配。 |
 | 413 | `request_too_large` | 请求体超过 32 KiB。 |
-| 429 | `rate_limited`、`generation_busy`、`daily_quota_exhausted` | 分钟防刷超限、模型并发槽满、每用户每日生成尝试用尽；均带 `Retry-After` 秒数。三类业务码不同，客户端可据此区分恢复动作（按秒重试、等待当前生成、当日不再重试）。 |
+| 429 | `rate_limited`、`generation_busy`、`daily_quota_exhausted` | 分钟防刷超限、模型并发槽满、每用户每日生成尝试用尽；均带 `Retry-After` 秒数。三类业务码不同，客户端可据此区分恢复动作（按秒重试、等待当前生成、查看历史并等待服务端开启下一个 UTC 日窗口）。 |
 | 500 | `internal_error` | 未分类内部错误。 |
 | 502 | `model_error` | 模型调用失败、输出无效或拒答。 |
 | 503 | `dependency_unavailable`、`model_unavailable` | 数据库不可用或提交结果不明、供应商容量或额度不可用。 |

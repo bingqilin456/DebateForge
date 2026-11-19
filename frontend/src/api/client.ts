@@ -116,7 +116,9 @@ const errorMessages: Record<string, string> = {
   request_too_large: '请求内容过大，请缩短后重试。',
   rate_limited: '请求过于频繁，请稍后手动重试。',
   generation_busy: '生成服务繁忙，请稍后手动重试。',
-  daily_quota_exhausted: '今日生成次数已用完，可查看历史或明天再试。',
+  // 日额度按服务端 UTC 日重置，“明天再试”在中国时区 07:59 可能一分钟后即可用，
+  // 因此只保留受控提示；Retry-After 仍解析进 metadata，但不拼进文案（不自动重试）。
+  daily_quota_exhausted: '今日生成次数已用完，可查看历史。',
   dependency_unavailable: '服务暂时不可用，请稍后手动重试。',
   internal_error: '服务发生错误，请稍后手动重试。',
   model_error: 'AI 回复生成失败，请查询会话状态。',
@@ -137,7 +139,11 @@ function businessError(value: unknown, response: Response, id: string): ApiError
   const seconds = header !== null && /^\d+$/.test(header) ? Number(header) : NaN
   const retryAfterSeconds = Number.isSafeInteger(seconds) && seconds >= 0 ? seconds : undefined
   const message = Object.hasOwn(errorMessages, value.error.code) ? errorMessages[value.error.code]! : '请求失败，请稍后手动重试。'
-  return new ApiError('http', retryAfterSeconds === undefined ? message : `${message}请在 ${retryAfterSeconds} 秒后重试。`, {
+  // 日额度用尽不拼重试提示：该码的 Retry-After 是 UTC 日窗口重开的秒数，
+  // 按秒提示会让人误以为马上能重试；秒数仍作为 metadata 保留，供上层判断。
+  const waits = value.error.code !== 'daily_quota_exhausted'
+  const text = retryAfterSeconds === undefined || !waits ? message : `${message}请在 ${retryAfterSeconds} 秒后重试。`
+  return new ApiError('http', text, {
     status: response.status, code: value.error.code, requestId: id, retryAfterSeconds,
   })
 }

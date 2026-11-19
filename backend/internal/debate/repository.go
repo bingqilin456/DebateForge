@@ -336,7 +336,8 @@ func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expe
 	}
 	return
 }
-func currentTurn(tx *gorm.DB, d Debate, t Turn) (Turn, error) {	var current Turn
+func currentTurn(tx *gorm.DB, d Debate, t Turn) (Turn, error) {
+	var current Turn
 	e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND debate_id = ?", t.ID, d.ID).First(&current).Error
 	if e != nil {
 		return current, dependency(e, false)
@@ -365,6 +366,7 @@ func metadata(usage ai.Usage, m ai.Metadata) map[string]any {
 	}
 	return values
 }
+
 // Complete 提交正式轮次。eligible 决定本次完成 UPDATE 是否同时写入批注资格：
 // 资格标志只是“本次切片允许生成批注”的标记，不参与轮次状态、完成轮数或会话状态的任何计算。
 func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn, result ai.Result, eligible bool) (detail Detail, err error) {

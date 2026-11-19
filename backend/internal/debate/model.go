@@ -161,14 +161,14 @@ type Turn struct {
 	// 不属于正式轮次状态机：它不参与 generating/completed/failed 的判断，
 	// 也不改变完成的轮数或会话状态。默认 false，旧行保持原状。
 	// 该字段不进入 TurnDTO，读取批注统一走独立接口。
-	AnnotationEligible bool       `json:"-" gorm:"column:annotation_eligible"`
-	ModelName          *string    `json:"-"`
-	PromptVersion      *string    `json:"-"`
-	InputTokens        *uint64    `json:"-"`
-	OutputTokens       *uint64    `json:"-"`
-	LatencyMS          *uint64    `json:"-"`
-	CreatedAt          time.Time  `json:"-"`
-	Messages           []Message  `json:"-" gorm:"-"`
+	AnnotationEligible bool      `json:"-" gorm:"column:annotation_eligible"`
+	ModelName          *string   `json:"-"`
+	PromptVersion      *string   `json:"-"`
+	InputTokens        *uint64   `json:"-"`
+	OutputTokens       *uint64   `json:"-"`
+	LatencyMS          *uint64   `json:"-"`
+	CreatedAt          time.Time `json:"-"`
+	Messages           []Message `json:"-" gorm:"-"`
 }
 
 func (Turn) TableName() string { return "debate_turns" }

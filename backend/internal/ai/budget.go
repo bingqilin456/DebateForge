@@ -276,6 +276,10 @@ type Fake struct {
 	index          int
 	records        []FakeRecord
 	summaryRecords []FakeSummaryRecord
+	// 批注是独立能力：记录、脚本化失败与失败次数都与轮次/总结/策略互不影响。
+	annotationRecords  []FakeAnnotationRecord
+	annotationErr      error
+	annotationFailLeft int
 }
 
 // FakeStep 是一次预设的调用结果；Err 非 nil 时返回该错误。

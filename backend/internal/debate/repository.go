@@ -336,8 +336,7 @@ func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expe
 	}
 	return
 }
-func currentTurn(tx *gorm.DB, d Debate, t Turn) (Turn, error) {
-	var current Turn
+func currentTurn(tx *gorm.DB, d Debate, t Turn) (Turn, error) {	var current Turn
 	e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND debate_id = ?", t.ID, d.ID).First(&current).Error
 	if e != nil {
 		return current, dependency(e, false)
@@ -366,7 +365,9 @@ func metadata(usage ai.Usage, m ai.Metadata) map[string]any {
 	}
 	return values
 }
-func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn, result ai.Result) (detail Detail, err error) {
+// Complete 提交正式轮次。eligible 决定本次完成 UPDATE 是否同时写入批注资格：
+// 资格标志只是“本次切片允许生成批注”的标记，不参与轮次状态、完成轮数或会话状态的任何计算。
+func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn, result ai.Result, eligible bool) (detail Detail, err error) {
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
 		row, e := owned(tx, uid, d.ID, true)
 		if e != nil {
@@ -389,6 +390,12 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		values := metadata(result.Usage, result.Metadata)
 		values["status"] = "completed"
 		values["error_code"] = nil
+		// 只为本次允许生成批注的轮次在同一 UPDATE 中设置资格标志。
+		// 该列不属于轮次状态机，也不参与 completed_rounds/status 的计算；
+		// 关闭切片时不设置，旧行保持原状因而不会凭空获得批注。
+		if eligible {
+			values["annotation_eligible"] = true
+		}
 		update := tx.Model(&Turn{}).Where("id = ? AND status = ? AND attempt_version = ?", t.ID, "generating", t.AttemptVersion).Updates(values)
 		if update.Error != nil {
 			return dependency(update.Error, false)
@@ -714,6 +721,11 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 		recovered += int(update.RowsAffected)
 	}
 	n, e := r.recoverStrategyLeases(ctx, now)
+	recovered += n
+	if e != nil {
+		return recovered, e
+	}
+	n, e = r.recoverAnnotationLeases(ctx, now)
 	return recovered + n, e
 }
 

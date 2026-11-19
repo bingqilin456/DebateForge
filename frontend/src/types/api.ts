@@ -172,3 +172,53 @@ export interface StreamStart { turn_id: string; request_id: string }
 export interface StreamDone { turn: Turn; completed_rounds: number; status: DebateStatus }
 export type StreamUpdate = ({ type: 'start' } & StreamStart) | { type: 'delta'; text: string }
 export type TurnStreamResult = { kind: 'done'; data: StreamDone } | { kind: 'pending'; data: TurnResult }
+
+// V2-04 原文批注：与轮次、总结、策略各自独立的状态与版本，不能复用它们的 DTO。
+
+/** 批注类别固定四种；颜色与线型只是展示派生。 */
+export type AnnotationCategory = 'strength' | 'possible_logic_gap' | 'insufficient_support' | 'unclear_scope'
+
+/**
+ * 批注锚点：message_id 为服务端正式消息 ID；坐标是从 0 开始的 Unicode 码点半开区间。
+ * resolved=false 表示引用存在歧义或坐标失配，前端只显示“原文待核对”，不按坐标高亮。
+ */
+export interface AnnotationAnchor {
+  message_id: string
+  quote: string
+  start_cp: number | null
+  end_cp: number | null
+  resolved: boolean
+}
+
+export interface AnnotationItem {
+  category: AnnotationCategory
+  label: string
+  reason: string
+  improvement: string
+  anchor: AnnotationAnchor
+  /** 引用消息所在轮次（1 起）与角色，便于按轮展示；不参与坐标。 */
+  turn_no: number
+  role: MessageRole
+}
+
+/** 单轮批注批次状态；not_started 只出现在读取投影里，不落库。 */
+export type AnnotationBatchStatus = 'not_started' | 'generating' | 'completed' | 'failed'
+
+export interface AnnotationBatch {
+  turn_id: string
+  round_no: number
+  status: AnnotationBatchStatus
+  /** 未认领为 0。 */
+  attempt_version: number
+  items: AnnotationItem[]
+  error_code?: string
+}
+
+export interface AnnotationList {
+  items: AnnotationBatch[]
+}
+
+/** 手动补做是唯一允许的请求正文；0 表示未认领，其余为期望的当前版本。 */
+export interface AnnotationRetryRequest {
+  expected_attempt_version: number
+}

@@ -22,7 +22,7 @@
 
 **2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。2026-11-15 A3 已交付 SSE 后端和本地代理；完整浏览器 AC12/AC16 待 B1/B2 交付后联调，真实体验未执行。
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 10 个辩论/历史/总结/策略/流式接口，共 17 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 12 个辩论/历史/总结/策略/批注/流式接口，共 19 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -43,8 +43,10 @@
 | POST | `/api/v1/debates/{id}/summary` | 生成或显式重试结构化总结 | 已实现（T10） | 201、200、202 |
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
+| GET | `/api/v1/debates/{id}/annotations` | 只读本场原文批注批次 | 已实现（V2-04 切片，仅 Fake 与显式本地测试配置） | 200 |
+| POST | `/api/v1/debates/{id}/turns/{turn_id}/annotations/retry` | 手动补做未启动或已失败的批注 | 已实现（V2-04 切片，仅 Fake 与显式本地测试配置） | 201、200、202 |
 
-本文与 OpenAPI `paths` 记录 **17 个已实现操作**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
+本文与 OpenAPI `paths` 记录 **19 个已实现操作**（其中 17 个为 V1 冻结契约，2 个为 V2-04 批注增量，后者仅在显式本地测试配置下启用）。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -650,6 +652,62 @@ generating 仅含 status/attempt_version；failed 增加受控 error_code（mode
 内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 现为 `strategy-v2`（`strategy-v1` 为历史版本，仅出现在已保存记录中），输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
 
 与轮次/总结共用 Gate：6/分钟、20/UTC 日、单用户并发 1、单进程全局 2；失败消耗认领额度，重放不消耗每日额度但受分钟限制。60 秒请求、45 秒模型、3 秒短事务、90 秒租约及版本条件写回；过期恢复同现有扫描。GET 不消费模型额度。标准 400/401/403/404/413/429/500 及模型 502/503/504 信封沿用；已确认失败或版本冲突附 `details:{status,attempt_version,query_url}`，query_url 为本策略 GET，无 turn_id；提交不明省略 details。策略接口不改变现有 Turn 错误结构。`AI_MODE=fake` 支持完整策略链路；disabled 和现有真实试运行包装器都受控不可用，后者未暴露策略能力，不能绕过专用费用账本。OpenAI 策略适配器仅用合成 Transport 验证，本轮没有真实调用或新的收费装配。
+
+## 15. GET /api/v1/debates/{id}/annotations 与 POST .../turns/{turn_id}/annotations/retry（V2-04）
+
+原文批注是 V2-04 的独立分析能力：在正式轮次提交成功之后，对本次双方新增原文生成 **0–3 条**带原句锚点的训练反馈。它与轮次、总结、策略各自拥有独立的状态、版本与表，**不改变** `debates.completed_rounds`、`debates.status`、轮次状态机、SSE 事件契约或任何既有响应字段。设计与锚点契约见 [V2-04 设计](../planning/V2_04_ANNOTATION_ANCHOR_DESIGN.md)。
+
+### 15.1 锚点契约
+
+- `message_id`：服务端已知、属于当前会话的正式消息 ID，JSON 为字符串。
+- `start_cp` / `end_cp`：从 0 开始的 **Unicode 码点**半开区间，按原始消息文本计数。
+- `quote`：对应的连续原文，**逐字符精确相等**；禁止 trim、归一化、大小写折叠和标点替换。
+- `resolved`：为 `false` 时表示引用在该消息中出现多次且没有可逐字复核的偏移。唯一的精确引用可在读取时重算坐标，已保存的批注不改写。此时 `start_cp`/`end_cp` 必须为 `null`，前端只显示“原文待核对”，**不得**按坐标高亮。
+
+服务端在落库前按原文重新解析坐标，不采信生成器给出的位置；同一句在原文出现两处（含重叠，例如“哈哈哈”中的“哈哈”）视为歧义。跨消息、未来轮、空引用、全空白、非法 UTF-8 与越界偏移一律拒绝，且不回显引用。
+
+### 15.2 读取
+
+`GET /api/v1/debates/{id}/annotations` 要求 Session 与所有权；不存在与越权统一 `404 not_found`。**无模型调用、不写库。**
+
+- 只返回「已开启本切片时提交的合格轮次」，按 `round_no` 升序；旧会话没有合格轮次，返回 `{"items":[]}`。
+- 批次 `status` 为 `not_started` / `generating` / `completed` / `failed`；未认领时 `attempt_version` 为 `0`。
+- `failed` 才带 `error_code`；`completed` 的 `items` 可以是空数组——没有批注不等于没有问题。
+
+```json
+{"data":{"items":[{"turn_id":"31","round_no":1,"status":"completed","attempt_version":1,"items":[{"category":"strength","label":"论证有效","reason":"该句把主张落在可检验的判断标准上，使后续交锋有明确落点。","improvement":"可以再补一句该标准为何适用于本场辩题。","anchor":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true},"turn_no":1,"role":"user"}]}]},"request_id":"req-annotation-list"}
+```
+
+旧会话：`{"data":{"items":[]},"request_id":"req-annotation-empty"}`。
+
+### 15.3 手动补做
+
+`POST /api/v1/debates/{id}/turns/{turn_id}/annotations/retry` 要求 Session、精确 Origin 与 CSRF，共用现有防刷前置。正文**只有**一个字段：
+
+```json
+{"expected_attempt_version":0}
+```
+
+- `0` 表示未认领的首次补做；正数表示期望的当前版本。
+- 未启动 → 认领并生成，成功 `201`；生成中 → `202` 与当前状态，**不排队**；已成功 → `200` 与已存结果。
+- 版本不符 → `409 attempt_version_conflict`，附 `details:{turn_id,status,attempt_version,query_url}`；`query_url` 是本场批注 GET。
+- 非合格轮（未开启切片时的旧轮、失败轮）→ `409 round_conflict`，不启动生成、不写批次。
+- **手动补做最多一次**：首次分析为 v1，唯一一次补做为 v2；此后失败批次保持失败，只允许查询。
+- 本切片未启用时该入口受控 `400 invalid_request`，不写任何批次行。
+
+### 15.4 生成与边界
+
+- 分析在正式轮次事务**之外**执行，有固定 10 秒期限；不继承浏览器取消，进程退出与重启都**不补跑**。
+- 有**一个非阻塞分析槽**：忙时不排队、不重放，保留资格供手动补做；它**不占用**正式发言与总结的 Gate 配额。
+- 输入只取当前会话触发轮及以前已提交的正式消息。慢批注重试时后轮可能已提交，因此按 `round_no` 过滤，绝不把尚未发生的发言当作依据。
+- 成功结果整体原子保存（包括空数组）；失败只保存受控错误码，不写入供应商原始响应。
+- 租约 90 秒，过期扫描与轮次/总结共用同一恢复循环；过期批次标记为失败后可由下一次限定范围的手动认领恢复。
+
+### 15.5 当前实现范围
+
+当前进程**只有 Fake 生成实现**，且由显式本地配置开启：`V2_ANNOTATION_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`，同时要求生成器实现批注能力。默认关闭时：`Complete` 不设置资格标志、不启动分析、不写批次，读取对旧会话返回空列表。`dev`/`demo`/`deploy` 一律拒绝开启。Fake 结果用于验证行为，**不验证输出质量**；真实供应商接入（模型、费用、总并发、前台优先与限额）属于另一项独立授权任务，现有 Demo 的真实模型额度不扩充。
+
+前端读取与展示：场中标记渲染在**正式消息流原文**上，侧栏（桌面右栏 / 移动底部面板）只放解释；“显示批注”开关同时控制正文标记和批注面板。关闭后仍生成并保存。坐标回读使用 `Array.from` 按码点切分，并用浏览器原生 `Intl.Segmenter` 排除切中字素簇的位置；缺少该 API 时只有整条原文这类安全端点可标，内部区间降级为待核对，避免切开 ZWJ 序列。
 
 ## T01 文档任务的历史验证记录
 

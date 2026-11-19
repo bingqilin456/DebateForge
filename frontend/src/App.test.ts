@@ -182,6 +182,21 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
       }
       return response(summaryState, 200)
     }
+    if (u.endsWith('/debates/123/annotations')) {
+      // 批注读取返回一条引用首轮用户原文的完成批次：用于验证标记渲染在正式消息流上。
+      return response({
+        items: [{
+          turn_id: '10', round_no: 1, status: 'completed', attempt_version: 1,
+          items: [{
+            category: 'strength', label: '论证有效',
+            reason: '把主张落在可检验的标准上，因此论证有效。',
+            improvement: '补一句该标准的适用范围。',
+            anchor: { message_id: '101', quote: '第一轮论点', start_cp: 0, end_cp: 5, resolved: true },
+            turn_no: 1, role: 'user',
+          }],
+        }],
+      })
+    }
     return failure(404, 'not_found')
   })
 
@@ -190,12 +205,49 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
   host.querySelector<HTMLInputElement>('[data-topic-id="1"] input')!.click(); await nextTick()
   click('创建会话')
   await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
+  // 批注面板随工作台挂载并读取本场批注；读取失败不得影响辩论流程。
+  await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/debates/123/annotations'))).toBe(true))
+  expect(host.querySelector('[data-annotation-panel]')).not.toBeNull()
 
   // 第 1 轮成功
   let textarea = host.querySelector('textarea')!
   textarea.value = '第一轮论点'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
   host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
   await vi.waitFor(() => expect(host.textContent).toContain('第 2 轮发言'))
+
+  // 批注标记渲染在正式消息原文上（不复制到侧栏），点击可展开对应解释。
+  await vi.waitFor(() => expect(host.querySelector('[data-annotation-markers-entry]')).not.toBeNull())
+  const marker = host.querySelector('[data-annotation-markers-entry]') as HTMLButtonElement
+  expect(marker.closest('[data-round-no="1"]')).not.toBeNull()
+  expect(marker.getAttribute('aria-label')).toContain('论证有效')
+  expect(host.querySelector('[data-annotation-panel]')?.querySelector('[data-annotation-markers-entry]')).toBeFalsy()
+  marker.click()
+  await vi.waitFor(() => expect(host.querySelector('[data-annotation-detail]')).not.toBeNull())
+  expect(host.textContent).toContain('把主张落在可检验的标准上')
+  const side = host.querySelector<HTMLElement>('[data-annotation-panel]')!
+  const entry = side.querySelector<HTMLButtonElement>('[data-annotation-entry]')!
+  const controls = host.querySelector<HTMLElement>('[data-annotation-toggle]')!
+  expect(side.closest('[aria-label="首轮辩论面板"]')).toBeNull()
+  // 展开/收起只改卡片状态，绝不把焦点交回原文标记。
+  entry.click()
+  await nextTick()
+  expect(entry.getAttribute('aria-expanded')).toBe('false')
+  expect(document.activeElement).not.toBe(marker)
+  entry.click()
+  await nextTick()
+  expect(entry.getAttribute('aria-expanded')).toBe('true')
+  expect(document.activeElement).not.toBe(marker)
+  // 只有显式「定位原文」按钮才跳回原文并聚焦标记。
+  const locateButton = [...side.querySelectorAll('button')].find(el => el.textContent?.includes('定位原文'))!
+  locateButton.click()
+  await vi.waitFor(() => expect(document.activeElement).toBe(marker))
+  controls.click()
+  await vi.waitFor(() => expect(side.style.display).toBe('none'))
+  expect(host.querySelector('[data-annotation-markers-entry]')).toBeNull()
+  expect(host.querySelector('.message.user')?.textContent).toContain('第一轮论点')
+  controls.click()
+  await vi.waitFor(() => expect(side.style.display).not.toBe('none'))
+  expect(host.querySelector('[data-annotation-markers-entry]')).not.toBeNull()
 
   // 第 2 轮首次超时失败 -> 展示重试按钮
   textarea = host.querySelector('textarea')!

@@ -156,13 +156,18 @@ type Turn struct {
 	AttemptVersion  uint64     `json:"attempt_version"`
 	LeaseExpiresAt  *time.Time `json:"-"`
 	ErrorCode       *string    `json:"error_code"`
-	ModelName       *string    `json:"-"`
-	PromptVersion   *string    `json:"-"`
-	InputTokens     *uint64    `json:"-"`
-	OutputTokens    *uint64    `json:"-"`
-	LatencyMS       *uint64    `json:"-"`
-	CreatedAt       time.Time  `json:"-"`
-	Messages        []Message  `json:"-" gorm:"-"`
+	// AnnotationEligible 只表示“本轮在提交时被本次切片允许生成批注”，
+	// 不属于正式轮次状态机：它不参与 generating/completed/failed 的判断，
+	// 也不改变完成的轮数或会话状态。默认 false，旧行保持原状。
+	// 该字段不进入 TurnDTO，读取批注统一走独立接口。
+	AnnotationEligible bool       `json:"-" gorm:"column:annotation_eligible"`
+	ModelName          *string    `json:"-"`
+	PromptVersion      *string    `json:"-"`
+	InputTokens        *uint64    `json:"-"`
+	OutputTokens       *uint64    `json:"-"`
+	LatencyMS          *uint64    `json:"-"`
+	CreatedAt          time.Time  `json:"-"`
+	Messages           []Message  `json:"-" gorm:"-"`
 }
 
 func (Turn) TableName() string { return "debate_turns" }
@@ -434,13 +439,16 @@ func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
 }
 
 // Store 将短事务和提交不确定性留在 Repository；admit 必须非阻塞且不调用模型。
+//
+// 批注方法独立于轮次状态机：Complete 仍然只写轮次与会话的既有字段，
+// 另由 MarkAnnotationEligible 单独设置资格标志，两者互不成事务依赖。
 type Store interface {
 	Create(context.Context, uint64, CreateInput) (Debate, error)
 	List(context.Context, uint64, int, int) (DebateList, error)
 	Detail(context.Context, uint64, uint64) (Detail, error)
 	Claim(context.Context, uint64, uint64, SubmitInput, func() error) (Detail, bool, error)
 	ClaimRetry(context.Context, uint64, uint64, uint64, uint64, func() error) (Detail, bool, error)
-	Complete(context.Context, uint64, Debate, Turn, ai.Result) (Detail, error)
+	Complete(context.Context, uint64, Debate, Turn, ai.Result, bool) (Detail, error)
 	Fail(context.Context, uint64, Debate, Turn, string, ai.Usage, ai.Metadata) (Turn, error)
 	GetSummary(context.Context, uint64, uint64) (*Summary, error)
 	ClaimSummary(context.Context, uint64, uint64, SummaryInput, func() error) (Detail, bool, error)
@@ -450,5 +458,9 @@ type Store interface {
 	ClaimStrategy(context.Context, uint64, uint64, StrategyInput, func() error) (StrategyState, bool, error)
 	CompleteStrategy(context.Context, uint64, Debate, Strategy, ai.StrategyResult) (Strategy, error)
 	FailStrategy(context.Context, uint64, Debate, Strategy, string, ai.Usage, ai.Metadata) (Strategy, error)
+	ListAnnotations(context.Context, uint64, uint64) ([]AnnotationBatch, error)
+	ClaimAnnotation(context.Context, uint64, uint64, uint64, uint64, func() error) (AnnotationClaim, bool, error)
+	CompleteAnnotation(context.Context, uint64, Debate, TurnAnnotation, ai.AnnotationResult) (TurnAnnotation, error)
+	FailAnnotation(context.Context, uint64, Debate, TurnAnnotation, string, ai.Usage, ai.Metadata) (TurnAnnotation, error)
 	RecoverExpiredLeases(context.Context) (int, error)
 }

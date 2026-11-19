@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/bingqilin456/DebateForge/backend/internal/ai"
+	"sync"
 	"testing"
 	"time"
 )
@@ -62,7 +63,7 @@ func (s *testStore) CompleteSummary(context.Context, uint64, Debate, Summary, ai
 func (s *testStore) FailSummary(context.Context, uint64, Debate, Summary, string, ai.Usage, ai.Metadata) (Summary, error) {
 	return Summary{}, nil
 }
-func (s *testStore) Complete(_ context.Context, _ uint64, _ Debate, _ Turn, _ ai.Result) (Detail, error) {
+func (s *testStore) Complete(_ context.Context, _ uint64, _ Debate, _ Turn, _ ai.Result, _ bool) (Detail, error) {
 	s.completed = true
 	d := sample()
 	d.Debate.CompletedRounds = 1
@@ -173,11 +174,15 @@ func TestGenerationTimeoutPreservesLedgerFailure(t *testing.T) {
 // memoryStore 在无数据库单测中模拟真实短事务状态机，用于验证三轮推进、显式重试、版本保护、租约恢复与分页隔离。
 type memoryStore struct {
 	Store
-	now       func() time.Time
-	nextID    uint64
-	debates   map[uint64]Debate
-	turns     map[uint64][]Turn
-	summaries map[uint64]Summary
+	// mu 只是把内存替身的临界区串起来，等价于真实数据库的事务串行化；
+	// 生产 Repository 的并发安全由短事务与行锁保证，不依赖这把锁。
+	mu          sync.Mutex
+	now         func() time.Time
+	nextID      uint64
+	debates     map[uint64]Debate
+	turns       map[uint64][]Turn
+	summaries   map[uint64]Summary
+	annotations map[uint64]TurnAnnotation
 }
 
 func newMemoryStore(now func() time.Time) *memoryStore {
@@ -185,11 +190,12 @@ func newMemoryStore(now func() time.Time) *memoryStore {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &memoryStore{
-		now:       now,
-		nextID:    100,
-		debates:   make(map[uint64]Debate),
-		turns:     make(map[uint64][]Turn),
-		summaries: make(map[uint64]Summary),
+		now:         now,
+		nextID:      100,
+		debates:     make(map[uint64]Debate),
+		turns:       make(map[uint64][]Turn),
+		summaries:   make(map[uint64]Summary),
+		annotations: make(map[uint64]TurnAnnotation),
 	}
 }
 
@@ -369,7 +375,7 @@ func (m *memoryStore) ClaimRetry(_ context.Context, uid, debateID, turnID, expec
 	return Detail{Debate: d, Turns: append([]Turn(nil), turns...)}, true, nil
 }
 
-func (m *memoryStore) Complete(_ context.Context, uid uint64, d Debate, t Turn, result ai.Result) (Detail, error) {
+func (m *memoryStore) Complete(_ context.Context, uid uint64, d Debate, t Turn, result ai.Result, eligible bool) (Detail, error) {
 	curDebate, ok := m.debates[d.ID]
 	if !ok || curDebate.UserID != uid {
 		return Detail{}, ErrNotFound
@@ -392,6 +398,8 @@ func (m *memoryStore) Complete(_ context.Context, uid uint64, d Debate, t Turn, 
 	cur.Status = "completed"
 	cur.ErrorCode = nil
 	cur.LeaseExpiresAt = nil
+	// 资格标志只在本次允许批注时设置，且不参与轮次/会话状态计算。
+	cur.AnnotationEligible = eligible
 	cur.Messages = append(cur.Messages, Message{
 		ID:        m.allocID(),
 		TurnID:    cur.ID,
@@ -575,7 +583,160 @@ func (m *memoryStore) RecoverExpiredLeases(context.Context) (int, error) {
 			recovered++
 		}
 	}
+	for key, a := range m.annotations {
+		if a.Status == "generating" && a.LeaseExpiresAt != nil && !a.LeaseExpiresAt.After(now) {
+			a.Status = "failed"
+			a.ErrorCode = &code
+			a.LeaseExpiresAt = nil
+			a.UpdatedAt = now
+			m.annotations[key] = a
+			recovered++
+		}
+	}
 	return recovered, nil
+}
+
+// ---- 批注：内存替身与生产 Repository 行为对齐（合格轮、版本保护、只读投影） ----
+
+func (m *memoryStore) ListAnnotations(_ context.Context, uid, debateID uint64) ([]AnnotationBatch, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.debates[debateID]
+	if !ok || d.UserID != uid {
+		return nil, ErrNotFound
+	}
+	out := []AnnotationBatch{}
+	for _, turn := range m.turns[debateID] {
+		if !turn.AnnotationEligible {
+			continue
+		}
+		batch := AnnotationBatch{Turn: turn}
+		if a, exists := m.annotations[turn.ID]; exists {
+			copyA := a
+			batch.Annotation = &copyA
+		}
+		out = append(out, batch)
+	}
+	return out, nil
+}
+
+func (m *memoryStore) ClaimAnnotation(_ context.Context, uid, debateID, turnID, expectedVersion uint64, admit func() error) (AnnotationClaim, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.debates[debateID]
+	if !ok || d.UserID != uid {
+		return AnnotationClaim{}, false, ErrNotFound
+	}
+	var turn Turn
+	found := false
+	for _, t := range m.turns[debateID] {
+		if t.ID == turnID {
+			turn, found = t, true
+			break
+		}
+	}
+	if !found {
+		return AnnotationClaim{}, false, ErrNotFound
+	}
+	if !turn.AnnotationEligible || turn.Status != "completed" {
+		return AnnotationClaim{}, false, ErrRoundConflict
+	}
+	claim := AnnotationClaim{Debate: d, Turn: turn}
+	existing, hasExisting := m.annotations[turnID]
+	if hasExisting {
+		claim.Annotation = existing
+		switch existing.Status {
+		case "completed", "generating":
+			return claim, false, nil
+		case "failed":
+			if expectedVersion == 0 || expectedVersion != existing.AttemptVersion || existing.AttemptVersion >= 2 {
+				return claim, false, nil
+			}
+		default:
+			return AnnotationClaim{}, false, ErrRoundConflict
+		}
+	} else if expectedVersion != 0 {
+		return AnnotationClaim{}, false, ErrAttemptVersionConflict
+	}
+	if err := admit(); err != nil {
+		return AnnotationClaim{}, false, err
+	}
+	now := m.now().UTC()
+	lease := now.Add(LeaseDuration)
+	if !hasExisting {
+		existing = TurnAnnotation{
+			ID:             m.allocID(),
+			DebateID:       debateID,
+			TurnID:         turnID,
+			Status:         "generating",
+			AttemptVersion: 1,
+			LeaseExpiresAt: &lease,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+	} else {
+		existing.Status = "generating"
+		existing.AttemptVersion++
+		existing.LeaseExpiresAt = &lease
+		existing.ErrorCode = nil
+		existing.ContentJSON = nil
+		existing.UpdatedAt = now
+	}
+	m.annotations[turnID] = existing
+	claim.Annotation = existing
+	// 输入只取触发轮及以前已完成的正式消息。
+	for _, t := range m.turns[debateID] {
+		if t.RoundNo > turn.RoundNo || t.Status != "completed" {
+			continue
+		}
+		for _, message := range t.Messages {
+			claim.Sources = append(claim.Sources, AnnotationSource{
+				MessageID: message.ID, TurnID: t.ID, RoundNo: t.RoundNo, Role: message.Role, Content: message.Content,
+			})
+		}
+	}
+	return claim, true, nil
+}
+
+func (m *memoryStore) CompleteAnnotation(_ context.Context, uid uint64, d Debate, a TurnAnnotation, result ai.AnnotationResult) (TurnAnnotation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	curDebate, ok := m.debates[d.ID]
+	if !ok || curDebate.UserID != uid {
+		return TurnAnnotation{}, ErrNotFound
+	}
+	cur, exists := m.annotations[a.TurnID]
+	if !exists || cur.ID != a.ID || cur.Status != "generating" || cur.AttemptVersion != a.AttemptVersion {
+		return TurnAnnotation{}, ErrRoundConflict
+	}
+	content := result.ContentJSON
+	cur.Status = "completed"
+	cur.ContentJSON = &content
+	cur.ErrorCode = nil
+	cur.LeaseExpiresAt = nil
+	cur.UpdatedAt = m.now().UTC()
+	m.annotations[a.TurnID] = cur
+	return cur, nil
+}
+
+func (m *memoryStore) FailAnnotation(_ context.Context, uid uint64, d Debate, a TurnAnnotation, code string, _ ai.Usage, _ ai.Metadata) (TurnAnnotation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	curDebate, ok := m.debates[d.ID]
+	if !ok || curDebate.UserID != uid {
+		return TurnAnnotation{}, ErrNotFound
+	}
+	cur, exists := m.annotations[a.TurnID]
+	if !exists || cur.ID != a.ID || cur.Status != "generating" || cur.AttemptVersion != a.AttemptVersion {
+		return TurnAnnotation{}, ErrRoundConflict
+	}
+	cur.Status = "failed"
+	cur.ContentJSON = nil
+	cur.ErrorCode = &code
+	cur.LeaseExpiresAt = nil
+	cur.UpdatedAt = m.now().UTC()
+	m.annotations[a.TurnID] = cur
+	return cur, nil
 }
 
 func TestT09ThreeRoundsExplicitRetryLeaseAndT11Pagination(t *testing.T) {

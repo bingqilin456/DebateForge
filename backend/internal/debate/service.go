@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/bingqilin456/DebateForge/backend/internal/ai"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -14,17 +15,64 @@ type Service struct {
 	store         Store
 	generator     ai.Generator
 	gate          *Gate
+	logger        *slog.Logger
 	leaseInterval time.Duration
 	stopMu        sync.Mutex
 	stopLease     chan struct{}
 	startupDone   chan struct{}
+	// 批注是独立能力：自己的开关、单个非阻塞分析槽与后台任务等待组。
+	// 它与 Gate（正式发言/总结配额）完全分离，批注失败或繁忙绝不影响状态推进。
+	annotationMu      sync.Mutex
+	annotationEnabled bool
+	annotationSlot    sync.Mutex
+	annotationBusy    bool
+	background        sync.WaitGroup
 }
 
-func NewService(store Store, generator ai.Generator, gate *Gate) *Service {
+// ServiceOption 是服务构造选项，用于在不改动既有调用点的前提下装配可选依赖。
+type ServiceOption func(*Service)
+
+// WithLogger 注入服务启动配置的结构化日志器；nil 视为未配置，保持静默。
+func WithLogger(logger *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		if logger != nil {
+			s.logger = logger
+		}
+	}
+}
+
+func NewService(store Store, generator ai.Generator, gate *Gate, opts ...ServiceOption) *Service {
 	if gate == nil {
 		gate = NewGate(nil)
 	}
-	return &Service{store: store, generator: generator, gate: gate, leaseInterval: LeaseScanInterval}
+	service := &Service{store: store, generator: generator, gate: gate, leaseInterval: LeaseScanInterval}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(service)
+		}
+	}
+	return service
+}
+
+// logAnnotation 只记录固定原因码、固定计数与服务端自有标识，不写入原文、模型输出、
+// 模型给出的编号或理由、供应商字段或用户可控内容；未装配 logger 时静默。
+func (s *Service) logAnnotation(ctx context.Context, reason, code string, turnID uint64, latency time.Duration, fields annotationLogFields) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "模型批注调用",
+		slog.String("reason_code", reason),
+		slog.String("error_code", code),
+		slog.String("prompt_version", fields.promptVersion),
+		slog.Uint64("turn_id", turnID),
+		slog.Int("candidates", fields.candidates),
+		slog.Int("accepted", fields.accepted),
+		slog.Int("unknown_fragment", fields.unknownFragment),
+		slog.Int("invalid_fields", fields.invalidFields),
+		slog.Int("duplicate", fields.duplicate),
+		slog.Int("unselectable_fragments", fields.unselectableFragments),
+		slog.Int64("latency_ms", latency.Milliseconds()),
+	)
 }
 
 func (s *Service) SetLeaseScanInterval(d time.Duration) {
@@ -354,6 +402,10 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 		Turns:      completedTurns,
 		Custom:     d.Debate.Custom(),
 	})
+	if s.demoAnnotationsEnabled() {
+		// 等总结释放同一账号的调用槽。批注独立取证，能否调用仍由费用账本判定。
+		defer s.thenAnnotate(uid, d.Debate, d.Turns[rounds-1])
+	}
 	if genErr == nil {
 		var parsed ai.Summary
 		if result.ContentJSON != "" {
@@ -455,7 +507,7 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 		code, status, usage, meta := classifyFailure(ctx, genErr)
 		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, usage, meta, genErr)
 	}
-	completed, e := s.store.Complete(ctx, uid, d.Debate, turn, result)
+	completed, e := s.store.Complete(ctx, uid, d.Debate, turn, result, s.annotationsEnabled())
 	if e != nil {
 		var failure *Failure
 		if errors.As(e, &failure) && failure.CommitUnknown {
@@ -467,6 +519,10 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 			code, status, _, _ = classifyFailure(ctx, generationContextError(nil, result, ctx.Err()))
 		}
 		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, result.Usage, result.Metadata, e)
+	}
+	// 批注只在最终事务提交成功之后安排一次；不阻塞响应，也不改变返回结果。
+	if !s.demoAnnotationsEnabled() || completed.Debate.Status != "completed" {
+		s.thenAnnotate(uid, completed.Debate, completed.Turns[0])
 	}
 	return turnData(completed, completed.Turns[0]), successStatus, nil
 }

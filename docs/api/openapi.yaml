@@ -1337,6 +1337,212 @@ paths:
               schema:
                 $ref: '#/components/schemas/StrategyErrorResponse'
               examples: {}
+  /api/v1/debates/{id}/annotations:
+    get:
+      operationId: listAnnotations
+      summary: 只读本场原文批注批次
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: V2-04
+      description: 要求 Session 与所有权，不存在和非本人统一404。只返回已开启切片时提交的合格轮次，
+        按触发轮升序；旧会话返回空数组 items。无模型调用、不写库、不改变轮次或总结状态。
+        批次状态为 not_started/generating/completed/failed；未认领时 attempt_version 为 0。
+        条目含类别、标签、理由、改进方向与锚点；锚点坐标是从 0 开始的 Unicode 码点半开区间，
+        引用逐字相等，resolved=false 表示位置歧义或坐标失配，调用方不得按坐标高亮。
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      responses:
+        '200':
+          description: 按触发轮排序的批次列表；无合格轮次时为空数组。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationListResponse'
+              examples:
+                completed:
+                  value:
+                    data:
+                      items:
+                      - turn_id: '31'
+                        round_no: 1
+                        status: completed
+                        attempt_version: 1
+                        items:
+                        - category: strength
+                          label: 论证有效
+                          reason: 该句把主张落在可检验的判断标准上，使后续交锋有明确落点。
+                          improvement: 可以再补一句该标准为何适用于本场辩题。
+                          anchor:
+                            message_id: '21'
+                            quote: 标准应当可检验
+                            start_cp: 0
+                            end_cp: 7
+                            resolved: true
+                          turn_no: 1
+                          role: user
+                    request_id: req-annotation-list
+                legacy_empty:
+                  value:
+                    data:
+                      items: []
+                    request_id: req-annotation-empty
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /api/v1/debates/{id}/turns/{turn_id}/annotations/retry:
+    post:
+      operationId: retryAnnotation
+      summary: 手动补做未启动或已失败的批注批次
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: V2-04
+      description: 要求 Session、精确 Origin 与 CSRF，不存在和非本人统一404，非法或非本人轮次同为404。
+        正文只接受 expected_attempt_version：0 表示未认领的首次补做，正数表示按当前版本补做。
+        只允许补做未认领或已失败的批次；生成中返回 202 与当前状态、已成功返回 200 与已存结果，
+        版本不符返回 409 并附只读查询地址。手动补做最多一次（首次 v1、补做 v2），
+        此后失败批次不再补做。非合格轮返回 409 round_conflict，不启动生成、不写批次。
+        分析与正式轮次事务分离，失败只保存受控错误码，不改变轮次、会话完成或总结状态。
+        不启用本切片时该入口受控拒绝，且不写任何批次行。
+      security:
+      - SessionCookie: []
+      - CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/TurnId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationRetryRequest'
+            examples:
+              first_attempt:
+                value:
+                  expected_attempt_version: 0
+              retry_failed:
+                value:
+                  expected_attempt_version: 1
+      responses:
+        '200':
+          description: 已成功批次重放或版本不符后的只读状态。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+        '201':
+          description: 首次补做成功并保存结果（含空数组）。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+              examples:
+                completed:
+                  value:
+                    data:
+                      turn_id: '31'
+                      round_no: 1
+                      status: completed
+                      attempt_version: 2
+                      items: []
+                    request_id: req-annotation-retry
+        '202':
+          description: 生成中，返回当前状态而不排队。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 版本冲突或非合格轮；附只读查询地址。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                version_conflict:
+                  value:
+                    error:
+                      code: attempt_version_conflict
+                      message: 请求未完成，请查看会话状态后再操作
+                      details:
+                        turn_id: '31'
+                        status: failed
+                        attempt_version: 2
+                        query_url: /api/v1/debates/123/annotations
+                    request_id: req-annotation-conflict
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          description: 生成结果无效，已确认失败时附 details。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '504':
+          description: 分析超时，已确认失败时附 details。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   securitySchemes:
     SessionCookie:
@@ -2257,6 +2463,156 @@ components:
           $ref: '#/components/schemas/DebateListData'
         request_id:
           $ref: '#/components/schemas/RequestId'
+    AnnotationAnchor:
+      type: object
+      description: 原文锚点。message_id 是服务端正式消息 ID；坐标是从 0 开始的 Unicode 码点半开区间，
+        按服务端保存的原始消息文本计数。引用必须逐字相等，禁止 trim、归一化与大小写折叠。
+        resolved=false 表示引用在原文中不唯一或坐标失配，调用方只显示“原文待核对”，不得按坐标高亮。
+      required:
+      - message_id
+      - quote
+      - start_cp
+      - end_cp
+      - resolved
+      properties:
+        message_id:
+          type: string
+          pattern: '^[1-9][0-9]{0,19}$'
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 300
+        start_cp:
+          type: integer
+          minimum: 0
+          nullable: true
+        end_cp:
+          type: integer
+          minimum: 0
+          nullable: true
+        resolved:
+          type: boolean
+    AnnotationItem:
+      type: object
+      required:
+      - category
+      - label
+      - reason
+      - improvement
+      - anchor
+      - turn_no
+      - role
+      properties:
+        category:
+          type: string
+          enum:
+          - strength
+          - possible_logic_gap
+          - insufficient_support
+          - unclear_scope
+        label:
+          type: string
+          minLength: 1
+          maxLength: 40
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 300
+        improvement:
+          type: string
+          minLength: 1
+          maxLength: 300
+        anchor:
+          $ref: '#/components/schemas/AnnotationAnchor'
+        turn_no:
+          type: integer
+          minimum: 1
+          maximum: 6
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+    AnnotationBatch:
+      type: object
+      required:
+      - turn_id
+      - round_no
+      - status
+      - attempt_version
+      - items
+      properties:
+        turn_id:
+          type: string
+          pattern: '^[1-9][0-9]{0,19}$'
+        round_no:
+          type: integer
+          minimum: 1
+          maximum: 6
+        status:
+          type: string
+          enum:
+          - not_started
+          - generating
+          - completed
+          - failed
+        attempt_version:
+          type: integer
+          minimum: 0
+          description: 未认领为 0；首次分析为 1，唯一一次手动补做为 2。
+        items:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/AnnotationItem'
+        error_code:
+          type: string
+          enum:
+          - model_error
+          - model_timeout
+          - model_unavailable
+          - dependency_unavailable
+          - generation_cancelled
+          - content_invalid
+    AnnotationListData:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnnotationBatch'
+    AnnotationListResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/AnnotationListData'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    AnnotationBatchResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/AnnotationBatch'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    AnnotationRetryRequest:
+      type: object
+      description: 手动补做批注的唯一字段。0 表示未认领的首次补做；正数表示期望的当前版本。
+      required:
+      - expected_attempt_version
+      additionalProperties: false
+      properties:
+        expected_attempt_version:
+          type: integer
+          minimum: 0
     TurnResponse:
       type: object
       required:

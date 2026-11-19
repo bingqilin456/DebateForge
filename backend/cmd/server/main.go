@@ -84,7 +84,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	topicHandler := topic.NewHandler(topic.NewService(topic.NewRepository(database.ORM)))
-	debateHandler := debate.NewHandler(debate.NewService(debate.NewRepository(database.ORM), generator, debate.NewGate(nil)))
+	debateService := debate.NewService(debate.NewRepository(database.ORM), generator, debate.NewGate(nil), debate.WithLogger(logger))
+	// 批注默认关闭；只有显式本地 Fake 配置才打开能力，且从不改变既有 Gate 与状态机。
+	if _, err := applyAnnotationCapability(debateService, generator); err != nil {
+		return err
+	}
+	debateHandler := debate.NewHandler(debateService)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)

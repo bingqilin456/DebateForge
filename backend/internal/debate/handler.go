@@ -36,6 +36,9 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.GET("/debates/:id/strategy", a.RequireAuth(), h.getStrategy)
 	group.POST("/debates/:id/strategy", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.strategy)
 	group.GET("/debates/:id", a.RequireAuth(), h.detail)
+	// 批注读取与手动补做：读取只要 Session；补做额外要求 Origin/CSRF 与防刷前置。
+	// 路径与既有轮次/总结入口并列，不改动任何既有路由。
+	h.registerAnnotationRoutes(group, a)
 }
 
 // 有效身份与写保护通过后、路径/正文解析前计数；坏 JSON、超长和非法字段也受防刷限制。

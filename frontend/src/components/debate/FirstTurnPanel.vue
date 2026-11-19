@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Button } from '@arco-design/web-vue'
+import { Button, Switch } from '@arco-design/web-vue'
 import { AI_STYLE_LABELS } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
 import { createDebateApi, hasNonWhitespace, isEntityId } from '../../api/debate'
+import { createAnnotationApi } from '../../api/annotations'
 import { createFirstTurnState } from '../../debate/firstTurn'
+import type { AnnotationItem } from '../../types/api'
+import AnnotationPanel from './AnnotationPanel.vue'
+import AnnotatedText from './AnnotatedText.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import StrategyPanel from './StrategyPanel.vue'
 
@@ -15,12 +19,37 @@ const emit = defineEmits<{
   'open-history': []
 }>()
 const api = createDebateApi(props.auth.client)
+// 批注与轮次共用同一认证客户端；它只在详情就绪后读取，不自动补做。
+const annotationApi = createAnnotationApi(props.auth.client)
 const panel = createFirstTurnState(api)
 const {
   detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
 } = panel
 const input = ref('')
+// 场中批注开关只控展示，不控生成与保存。
+const showAnnotations = ref(true)
+// 侧栏暴露 messageItems/focusFromMarker：标记点击后由它展开并聚焦对应解释。
+const annotationPanel = ref<InstanceType<typeof AnnotationPanel> | null>(null)
+const transcript = ref<HTMLElement | null>(null)
+
+function messageAnnotations(messageId: string): AnnotationItem[] {
+  return annotationPanel.value?.messageItems(messageId) ?? []
+}
+
+/** 标记点击：把该段全部条目键交给侧栏，由侧栏展开并聚焦第一条解释。 */
+function onMarkerSelect(keys: string[]) {
+  void annotationPanel.value?.focusFromMarker(keys)
+}
+
+function locateAnnotation(key: string) {
+  const candidates = transcript.value?.querySelectorAll<HTMLButtonElement>('[data-annotation-keys]')
+  const marker = Array.from(candidates ?? []).find(element =>
+    element.dataset.annotationKeys?.split('\u0001').includes(key),
+  )
+  marker?.scrollIntoView?.({ block: 'center' })
+  marker?.focus({ preventScroll: true })
+}
 
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
@@ -71,93 +100,121 @@ onUnmounted(() => { active = false; panel.dispose() })
       </div>
     </section>
 
-    <section v-else class="card" :aria-busy="busy" aria-label="首轮辩论面板">
-      <div class="debate-heading">
-        <h2>{{ detail?.debate.topic.title ?? '正在读取会话' }}</h2>
-        <span class="muted">{{ detail?.debate.status === 'completed' ? '已完成' : '辩论练习' }}</span>
-      </div>
-      <p v-if="detail" class="muted">
-        你：{{ detail.debate.user_stance === 'pro' ? '正方' : '反方' }} ·
-        AI：{{ detail.debate.ai_stance === 'pro' ? '正方' : '反方' }} ·
-        <span :data-ai-style="detail.debate.ai_style">流派：{{ AI_STYLE_LABELS[detail.debate.ai_style] }}（{{ detail.debate.ai_style }}）</span> ·
-        赛制：{{ detail.debate.mode === 'standard_4' ? '四轮标准赛' : '三轮快速赛' }} ·
-        已完成 {{ detail.debate.completed_rounds }} / {{ detail.debate.total_rounds }} 轮
-      </p>
-      <p class="muted">会话 {{ id }} · 刷新可恢复当前会话</p>
-
-      <StrategyPanel v-if="detail" :auth="auth" :detail="detail" :disabled="locked || uncertain" />
-
-      <div v-for="turn in detail?.turns" :key="turn.id" class="turn-block" :data-round-no="turn.round_no">
-        <div class="round-title">第 {{ turn.round_no }} 轮（尝试 v{{ turn.attempt_version }}）</div>
-        <article v-for="message in turn.messages" :key="message.id" :class="['message', message.role]">
-          <div class="message-label">{{ message.role === 'user' ? '你的发言' : 'AI 回复 · 仅供练习参考' }}</div>
-          <p>{{ message.content }}</p>
-          <time :datetime="message.created_at">{{ localTime(message.created_at) }}</time>
-        </article>
-        <p v-if="turn.status === 'generating'" class="turn-generating" role="status">
-          第 {{ turn.round_no }} 轮正在生成 AI 回复（v{{ turn.attempt_version }}）…
-        </p>
-        <div v-else-if="turn.status === 'failed'" class="turn-failed" role="alert">
-          <p>
-            第 {{ turn.round_no }} 轮生成未完成（错误码：{{ turn.error_code }} · 当前版本 v{{ turn.attempt_version }}），你的发言原文已保存。
-          </p>
-          <Button
-            type="primary"
-            data-retry-turn
-            :disabled="locked || !canRetryTurn"
-            :loading="busy"
-            @click="panel.retryTurn"
-          >
-            重试第 {{ turn.round_no }} 轮（v{{ turn.attempt_version }}）
-          </Button>
+    <div v-else class="debate-workspace" :class="{ 'with-annotations': detail && showAnnotations }">
+      <section class="card debate-main" :aria-busy="busy" aria-label="首轮辩论面板">
+        <div class="debate-heading">
+          <h2>{{ detail?.debate.topic.title ?? '正在读取会话' }}</h2>
+          <span class="muted">{{ detail?.debate.status === 'completed' ? '已完成' : '辩论练习' }}</span>
         </div>
-      </div>
+        <p v-if="detail" class="muted">
+          你：{{ detail.debate.user_stance === 'pro' ? '正方' : '反方' }} ·
+          AI：{{ detail.debate.ai_stance === 'pro' ? '正方' : '反方' }} ·
+          <span :data-ai-style="detail.debate.ai_style">流派：{{ AI_STYLE_LABELS[detail.debate.ai_style] }}（{{ detail.debate.ai_style }}）</span> ·
+          赛制：{{ detail.debate.mode === 'standard_4' ? '四轮标准赛' : '三轮快速赛' }} ·
+          已完成 {{ detail.debate.completed_rounds }} / {{ detail.debate.total_rounds }} 轮
+        </p>
+        <p class="muted">会话 {{ id }} · 刷新可恢复当前会话</p>
 
-      <section v-if="streaming" class="stream-preview" data-stream-preview aria-label="实时回复预览" :aria-busy="streaming">
-        <h3>第 {{ streamRound }} 轮 · 正在接收回复</h3>
-        <p class="muted">以下为临时片段，尚未确认保存；提交确认后才计入正式消息和完成轮数。</p>
-        <p class="stream-text" data-stream-text aria-live="polite">{{ streamText || '正在等待首个回复片段…' }}</p>
-        <Button data-stop-stream :disabled="props.auth.state.pending" @click="panel.cancelStream">停止等待并查询</Button>
-        <p class="muted">断线或停止等待后先查询已保存状态，不自动重新生成。</p>
+        <StrategyPanel v-if="detail" :auth="auth" :detail="detail" :disabled="locked || uncertain" />
+
+        <div v-if="detail" class="annotation-controls">
+          <span id="annotation-toggle-label">显示批注</span>
+          <Switch v-model="showAnnotations" aria-labelledby="annotation-toggle-label" aria-describedby="annotation-toggle-hint" data-annotation-toggle size="small" />
+          <span id="annotation-toggle-hint" class="muted">关闭后隐藏标记和侧栏，批注仍会保存。</span>
+        </div>
+
+        <div ref="transcript" class="debate-transcript">
+          <div v-for="turn in detail?.turns" :key="turn.id" class="turn-block" :data-round-no="turn.round_no">
+            <div class="round-title">第 {{ turn.round_no }} 轮（尝试 v{{ turn.attempt_version }}）</div>
+            <article v-for="message in turn.messages" :key="message.id" :class="['message', message.role]">
+              <div class="message-label">{{ message.role === 'user' ? '你的发言' : 'AI 回复 · 仅供练习参考' }}</div>
+              <!-- 批注标记渲染在正式消息原文上，侧栏只放解释，不复制第二份原文。 -->
+              <p>
+                <AnnotatedText
+                  :content="message.content"
+                  :items="messageAnnotations(message.id)"
+                  :show-markers="showAnnotations"
+                  @select="onMarkerSelect"
+                />
+              </p>
+              <time :datetime="message.created_at">{{ localTime(message.created_at) }}</time>
+            </article>
+            <p v-if="turn.status === 'generating'" class="turn-generating" role="status">
+              第 {{ turn.round_no }} 轮正在生成 AI 回复（v{{ turn.attempt_version }}）…
+            </p>
+            <div v-else-if="turn.status === 'failed'" class="turn-failed" role="alert">
+              <p>
+                第 {{ turn.round_no }} 轮生成未完成（错误码：{{ turn.error_code }} · 当前版本 v{{ turn.attempt_version }}），你的发言原文已保存。
+              </p>
+              <Button
+                type="primary"
+                data-retry-turn
+                :disabled="locked || !canRetryTurn"
+                :loading="busy"
+                @click="panel.retryTurn"
+              >
+                重试第 {{ turn.round_no }} 轮（v{{ turn.attempt_version }}）
+              </Button>
+            </div>
+          </div>
+
+          <section v-if="streaming" class="stream-preview" data-stream-preview aria-label="实时回复预览" :aria-busy="streaming">
+            <h3>第 {{ streamRound }} 轮 · 正在接收回复</h3>
+            <p class="muted">以下为临时片段，尚未确认保存；提交确认后才计入正式消息和完成轮数。</p>
+            <p class="stream-text" data-stream-text aria-live="polite">{{ streamText || '正在等待首个回复片段…' }}</p>
+            <Button data-stop-stream :disabled="props.auth.state.pending" @click="panel.cancelStream">停止等待并查询</Button>
+            <p class="muted">断线或停止等待后先查询已保存状态，不自动重新生成。</p>
+          </section>
+
+          <form v-if="detail && nextRound !== null" data-first-turn @submit.prevent="submit">
+            <label for="first-content">{{ nextRound === 1 ? '第一轮发言' : `第 ${nextRound} 轮发言` }}</label>
+            <textarea
+              id="first-content"
+              v-model="input"
+              name="content"
+              rows="7"
+              :readonly="Boolean(draft)"
+              :disabled="locked || uncertain"
+              aria-describedby="content-help"
+            />
+            <p id="content-help" class="muted">{{ count }} / {{ USER_CONTENT_MAX_CHARS }} 个 Unicode 字符；请围绕辩题表达你的论点。</p>
+            <Button
+              type="primary"
+              html-type="submit"
+              :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > USER_CONTENT_MAX_CHARS"
+              :loading="busy"
+            >
+              {{ busy ? '正在处理…' : draft ? '重新发送原请求' : nextRound === 1 ? '发送首轮' : `发送第 ${nextRound} 轮` }}
+            </Button>
+          </form>
+
+          <SummaryPanel
+            v-if="detail && detail.debate.status === 'completed'"
+            :summary="detail.summary_status"
+            :busy="locked"
+            :can-retry="canRetrySummary"
+            :can-start="!locked && !uncertain && detail.summary_status.status === 'not_started'"
+            @retry="panel.retrySummary"
+            @start="panel.requestSummary"
+          />
+        </div>
+
+        <div class="panel-actions">
+          <Button :disabled="locked" @click="panel.refresh">查询状态</Button>
+          <Button :disabled="locked" @click="newPractice">开始新的练习</Button>
+        </div>
       </section>
-
-      <form v-if="detail && nextRound !== null" data-first-turn @submit.prevent="submit">
-        <label for="first-content">{{ nextRound === 1 ? '第一轮发言' : `第 ${nextRound} 轮发言` }}</label>
-        <textarea
-          id="first-content"
-          v-model="input"
-          name="content"
-          rows="7"
-          :readonly="Boolean(draft)"
-          :disabled="locked || uncertain"
-          aria-describedby="content-help"
-        />
-        <p id="content-help" class="muted">{{ count }} / {{ USER_CONTENT_MAX_CHARS }} 个 Unicode 字符；请围绕辩题表达你的论点。</p>
-        <Button
-          type="primary"
-          html-type="submit"
-          :disabled="!canSend || props.auth.state.pending || !hasNonWhitespace(input) || count > USER_CONTENT_MAX_CHARS"
-          :loading="busy"
-        >
-          {{ busy ? '正在处理…' : draft ? '重新发送原请求' : nextRound === 1 ? '发送首轮' : `发送第 ${nextRound} 轮` }}
-        </Button>
-      </form>
-
-      <SummaryPanel
-        v-if="detail && detail.debate.status === 'completed'"
-        :summary="detail.summary_status"
-        :busy="locked"
-        :can-retry="canRetrySummary"
-        :can-start="!locked && !uncertain && detail.summary_status.status === 'not_started'"
-        @retry="panel.retrySummary"
-        @start="panel.requestSummary"
+      <AnnotationPanel
+        v-if="detail"
+        v-show="showAnnotations"
+        ref="annotationPanel"
+        class="debate-annotations"
+        :detail="detail"
+        :api="annotationApi"
+        :disabled="locked || uncertain"
+        @locate="locateAnnotation"
       />
-
-      <div class="panel-actions">
-        <Button :disabled="locked" @click="panel.refresh">查询状态</Button>
-        <Button :disabled="locked" @click="newPractice">开始新的练习</Button>
-      </div>
-    </section>
+    </div>
   </template>
 </template>
 
@@ -185,4 +242,17 @@ time { color: var(--app-text-muted); font-size: 12px; }
 .stream-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 3em; }
 .heading-actions, .panel-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .panel-actions { margin-top: 24px; }
+.debate-workspace { display: grid; gap: 20px; }
+.debate-main, .debate-annotations, .debate-transcript { min-width: 0; }
+.debate-workspace.with-annotations .debate-main { margin-bottom: 0; }
+.annotation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+@media (min-width: 1000px) {
+  .debate-workspace.with-annotations {
+    --workspace-width: min(1120px, calc(100vw - 64px));
+    width: var(--workspace-width);
+    margin-inline-start: calc((100% - var(--workspace-width)) / 2);
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 30%);
+    align-items: start;
+  }
+}
 </style>

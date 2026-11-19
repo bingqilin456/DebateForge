@@ -1,6 +1,6 @@
 # T02 版本化数据库迁移
 
-当前共十四个版本：六张初始表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展、一张策略表及一份自定义辩题可空扩展。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十五个版本：六张初始表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展、一张策略表、一份自定义辩题可空扩展及一张原文批注表。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/planning/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
@@ -55,6 +55,7 @@ Pop-Location
 | 00011 debate_summaries | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
 | 00013 debate_strategies | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本、可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
 | 00014 debates.topic_id 可空 | 仅放宽 `topic_id` 为 NULL：非空表示预设题，NULL 表示私有自定义辩题。保留 `ix_debates_topic_id` 索引与 `fk_debates_topic` 外键，不改列类型、不回填数据。 |
+| 00015 原文批注 | `debate_turns` 增加 `annotation_eligible BOOLEAN NOT NULL DEFAULT false`（含 0/1 CHECK）；新建 `turn_annotations`（触发轮唯一、状态/版本/租约/受控错误与内容列、UTC 时间、两条 RESTRICT 外键）。 |
 
 生成元数据：`error_code/prompt_version VARCHAR(64)` ASCII，`model_name VARCHAR(255)` utf8mb4，token 用量和耗时为可空 `INT UNSIGNED`。未知用量为 NULL，不能记成 0。2000 码点、UUID 规范化、用户名规则、状态转换、所有权及密码哈希仍由后续业务任务实现；数据库检查不能替代这些规则。`updated_at` 由后续业务显式维护，无隐式 ON UPDATE。文本使用 TEXT，避免自行引入短标题上限；后续新增输入边界须同步契约。
 
@@ -148,3 +149,18 @@ Goose 根库运行时只引入其所需的少量通用包。`go mod tidy` 还会
 迁移集成测试已补充可空性与两条语义的断言（NULL 可写入、非 NULL 的非法 ID 仍被外键拒绝），空库预期版本计数同步为 `applied=14`、历史 0–14。
 
 2026-11-18，已获授权在固定隔离库执行 `00014`。首次 `up` 输出 `applied=1`，重跑 `applied=0`，专项用例验证列可空及外键约束。证据见 [V2-03 验证记录](../../docs/planning/V2_03_PRIVATE_TOPIC_DESIGN.md#隔离-mysql-验证记录2026-11-18)。下一候选编号为 00015，实施前再次核对远程分支。
+
+## V2-04 / 00015 原文批注
+
+2026-11-18 新增 `00015_create_turn_annotations.sql`，两条前向语句，不改既有行。
+
+- **资格标志独立于状态机。** `debate_turns.annotation_eligible` 默认 `false`，表示「本轮在提交时被本次切片允许生成批注」。它不参与 `generating/completed/failed` 的判断，也不改变 `completed_rounds` 或会话状态；旧行保持 `false`，因此旧会话不会凭空获得批注资格，读取接口对它们返回空列表。
+- **批次以触发轮唯一。** `turn_annotations` 一行代表一次限定范围的批注批次，`UNIQUE KEY uq_turn_annotations_turn` 保证每轮至多一个批次；状态、尝试版本、租约、受控错误码与内容列沿用总结/策略表的既有形状，便于复用过期恢复路径。
+- **两条 RESTRICT 外键。** `debate_id` 与 `turn_id` 均 `ON DELETE/UPDATE RESTRICT`，与既有外键策略一致；不级联删除，也不新增原文副本或全局锚点表。
+- **成功结果整体保存。** `content_json` 保存服务端复核并重新定位后的规范化 JSON，空数组也是合法内容；未完成时内容与错误码为 NULL。版本约束 `attempt_version >= 1`。
+
+迁移集成测试已补充断言：`annotation_eligible` 默认 `false`、可独立置为 `true`、拒绝非 0/1；`turn_annotations` 的触发轮唯一、两条外键、状态字节精确 CHECK、版本下界与「未完成字段为 NULL」。空库预期版本计数同步为 `applied=15`、历史 0–15、九张业务表、九条外键。
+
+**本轮未在隔离库执行 00015。** 该工作树缺少固定隔离库的迁移与应用账户秘密文件（`.cache/t02-mysql/secrets/` 不在工作树内，且本任务不读取秘密内容），因此只完成改动、无库检查与上述预期更新；实际 `up/status` 与集成取证留待具备固定目标凭证的授权环境执行。
+
+下一候选编号为 00016，实施前再次核对远程分支。

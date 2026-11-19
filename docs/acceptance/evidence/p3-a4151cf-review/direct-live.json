@@ -1,0 +1,54 @@
+{
+  "tested_sha": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5",
+  "backend_revision": "a4151cf289f87589b0fc5a76299eb81c4cde5eb5",
+  "started_at": "2026-11-17T15:58:11.393Z",
+  "duration_ms": 89951.31499999999,
+  "chain": "Edge -> Vite:5173 -> Go:8080 -> siyige_test -> Fake",
+  "database": "127.0.0.1:13307/siyige_test",
+  "nginx_in_chain": false,
+  "new_real_model_calls": 0,
+  "passed": 5,
+  "failed": 0,
+  "skipped": 0,
+  "flaky": 0,
+  "retries": 0,
+  "cases": [
+    {
+      "file": "strategy-fault-live.spec.ts",
+      "title": "B1 真实失败：持久 failed、刷新重登、查询版本后显式 retry 成功",
+      "status": "passed",
+      "duration_ms": 2648,
+      "retries": 0
+    },
+    {
+      "file": "strategy-fault-live.spec.ts",
+      "title": "B1 真实延迟：另一页查询 generating、重复 POST 202、最终 completed 版本不变",
+      "status": "passed",
+      "duration_ms": 9859,
+      "retries": 0
+    },
+    {
+      "file": "stream-live.spec.ts",
+      "title": "B2 真实 202 JSON：同键另一请求先认领，前端只 GET 恢复",
+      "status": "passed",
+      "duration_ms": 8190,
+      "retries": 0
+    },
+    {
+      "file": "stream-live.spec.ts",
+      "title": "B2 真实提交后客户端丢 done：查询恢复完成，不重复发送",
+      "status": "passed",
+      "duration_ms": 4403,
+      "retries": 0
+    },
+    {
+      "file": "style-live.spec.ts",
+      "title": "T14 真实 Fake：四流派持久化、默认/非法值、防重复、跳过与 409 恢复",
+      "status": "passed",
+      "duration_ms": 62708,
+      "retries": 0
+    }
+  ],
+  "original_local_report": ".cache/p3-final-review-direct-live-2026-11-17T15-56-56-054Z/results.json",
+  "not_a_real_model_quality_evaluation": true
+}

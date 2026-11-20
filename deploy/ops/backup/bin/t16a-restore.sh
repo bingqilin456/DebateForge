@@ -54,7 +54,6 @@ assert_project "$project" "$T16A_RESTORE_PROJECT"
 [[ -n "$identity_file" ]] || die_usage "必须提供 --identity-file"
 require_abs_path "$artifact"
 require_abs_path "$identity_file"
-require_cmd docker
 [[ -f "$artifact" ]] || die "密文不存在：$artifact"
 [[ "$artifact" == *.sql.gz.age ]] || die "拒绝：--artifact 必须是 .sql.gz.age 密文"
 [[ -f "$identity_file" ]] || die "私钥文件不存在：$identity_file"
@@ -63,7 +62,9 @@ artifact_dir="$(cd -- "$(dirname -- "$artifact")" && pwd)"
 identity_dir="$(cd -- "$(dirname -- "$identity_file")" && pwd)"
 [[ "$artifact_dir" != "$identity_dir" ]] || die "拒绝：私钥与密文位于同一目录，要求密钥与密文分离"
 
-key_content="$(tr -d '\r\n' < "$identity_file")"
+# age-keygen 默认在私钥前写 "# created:" 与 "# public key:" 注释行；
+# 只取第一条 AGE-SECRET-KEY-1 行，避免把注释拼进私钥而导致误判。
+key_content="$(grep -m1 '^AGE-SECRET-KEY-1' "$identity_file" | tr -d '\r\n' || true)"
 case "$key_content" in
     AGE-SECRET-KEY-1*) : ;;
     *) die "拒绝：--identity-file 不是 age 私钥（应以 AGE-SECRET-KEY-1 开头）" ;;
@@ -76,7 +77,8 @@ if command -v stat >/dev/null 2>&1; then
     esac
 fi
 
-sha_file="${artifact%.age}.sha256"
+# 摘要文件与备份脚本的发布名一致：<label>.sha256（而不是 <label>.sql.gz.sha256）。
+sha_file="${artifact%.sql.gz.age}.sha256"
 manifest_file="${artifact%.sql.gz.age}.manifest.json"
 [[ -f "$sha_file" ]] || die "缺少摘要文件：$sha_file"
 [[ -f "$manifest_file" ]] || die "缺少清单文件：$manifest_file"
@@ -100,6 +102,7 @@ manifest_source_db="$(manifest_field source_db)"
 [[ "$(manifest_field artifact)" == "$(basename -- "$artifact")" ]] || die "拒绝：清单记录的文件名与密文不一致"
 
 # 2) 目标环境：固定项目、固定库、无宿主端口、库必须为空。
+require_cmd docker
 T16A_COMPOSE_FILE="${T16A_COMPOSE_FILE:-$script_dir/../compose.yaml}"
 [[ -f "$T16A_COMPOSE_FILE" ]] || die "找不到 compose 文件：$T16A_COMPOSE_FILE"
 assert_service_running "$project" mysql
@@ -107,7 +110,7 @@ assert_container_project "$project" mysql
 assert_no_published_ports "$project"
 target_db="$(sql_exec "$project" migrator 'SELECT DATABASE()' | head -n1)"
 [[ "$target_db" == "$T16A_RESTORE_DB" ]] || die "拒绝：目标库为 $target_db，期望 $T16A_RESTORE_DB"
-[[ "$(manifest_source_db)" != "$target_db" ]] || die "拒绝：源库与目标库相同"
+[[ "$(manifest_field source_db)" != "$target_db" ]] || die "拒绝：源库与目标库相同"
 
 existing_tables="$(table_count "$project" | head -n1)"
 [[ "$existing_tables" =~ ^[0-9]+$ ]] || die "无法读取目标库表数，停止"

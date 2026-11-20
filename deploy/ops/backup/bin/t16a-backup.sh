@@ -80,7 +80,7 @@ assert_no_published_ports "$T16A_SOURCE_PROJECT"
 
 mkdir -p -- "$artifacts_dir"
 chmod 700 "$artifacts_dir" 2>/dev/null || warn "无法把 $artifacts_dir 权限收紧到 0700（非 POSIX 文件系统）"
-staging="$artifacts_dir/.staging.$label.$"
+staging="$(staging_dir "$artifacts_dir" "$label")"
 [[ ! -e "$staging" ]] || die "拒绝：暂存目录已存在，不清理或覆盖：$staging"
 mkdir -- "$staging"
 chmod 700 "$staging" 2>/dev/null || true

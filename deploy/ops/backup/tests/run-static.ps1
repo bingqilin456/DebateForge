@@ -91,7 +91,8 @@ try {
     New-Item -ItemType Directory -Path $artifactsDir, $keysDir | Out-Null
     $artifact = Join-Path $artifactsDir 't16a-test.sql.gz.age'
     Set-Content -LiteralPath $artifact -Value 'age-encryption.org/v1 dummy payload' -NoNewline
-    Set-Content -LiteralPath (Join-Path $artifactsDir 't16a-test.sql.gz.sha256') -Value (('0' * 64) + '  t16a-test.sql.gz.age') -NoNewline
+    # 摘要文件名必须与备份脚本的发布名一致（<label>.sha256）；这里刻意造出摘要不匹配。
+    Set-Content -LiteralPath (Join-Path $artifactsDir 't16a-test.sha256') -Value (('0' * 64) + '  t16a-test.sql.gz.age') -NoNewline
     Set-Content -LiteralPath (Join-Path $artifactsDir 't16a-test.manifest.json') -Value '{"schema":"t16a-backup/v1","artifact":"t16a-test.sql.gz.age","source_project":"t16a-backup-source","source_db":"siyige_t16a_source"}' -NoNewline
     Set-Content -LiteralPath (Join-Path $keysDir 'identity.txt') -Value ($fakeSecretPrefix + 'FAKE') -NoNewline
 
@@ -117,6 +118,18 @@ try {
         $collisionResult.code -eq 1 -and $collisionResult.text -match '产物已存在' -and $collisionKept
     ) '旧产物内容保持不变'
 
+    # age-keygen 默认输出 3 行（# created、# public key、AGE-SECRET-KEY-1）。
+    # 私钥校验必须只取私钥行；若把注释行也拼进来，真实生成的密钥文件会被误拒。
+    $multilineKeysDir = Join-Path $tmp 'keys-multiline'
+    New-Item -ItemType Directory -Path $multilineKeysDir | Out-Null
+    $multilineIdentity = Join-Path $multilineKeysDir 'identity.txt'
+    Set-Content -LiteralPath $multilineIdentity -Value @(
+        '# created: 2026-01-01T00:00:00Z',
+        ('# public key: age1' + ('q' * 58)),
+        ($fakeSecretPrefix + 'FAKE')
+    )
+    $multilineIdentityPosix = ConvertTo-PosixPath $multilineIdentity
+
     $cases = @(
         @{ name = 'backup 缺参数'; script = 'bin/t16a-backup.sh'; args = @(); expect = 2 },
         @{ name = 'backup 未知参数'; script = 'bin/t16a-backup.sh'; args = @('--bogus'); expect = 2 },
@@ -127,7 +140,9 @@ try {
         @{ name = 'restore 拒绝源项目当目标'; script = 'bin/t16a-restore.sh'; args = @('--artifact', $artifact, '--identity-file', $recipientPriv, '--project', 't16a-backup-source'); expect = 1; pattern = '项目名被拒绝' },
         @{ name = 'restore 拒绝不存在的密文'; script = 'bin/t16a-restore.sh'; args = @('--artifact', ($artifactDirPosix + '/missing.sql.gz.age'), '--identity-file', $recipientPriv); expect = 1; pattern = '密文不存在' },
         @{ name = 'restore 拒绝私钥与密文同目录'; script = 'bin/t16a-restore.sh'; args = @('--artifact', $sameDirArtifact, '--identity-file', $recipientPriv); expect = 1; pattern = '密钥与密文分离' },
-        @{ name = 'restore 拒绝摘要不匹配（副本损坏）'; script = 'bin/t16a-restore.sh'; args = @('--artifact', $artifact, '--identity-file', $keysIdentityPosix); expect = 1; pattern = '摘要不匹配' }
+        @{ name = 'restore 拒绝摘要不匹配（副本损坏）'; script = 'bin/t16a-restore.sh'; args = @('--artifact', $artifact, '--identity-file', $keysIdentityPosix); expect = 1; pattern = '摘要不匹配' },
+        # 多行私钥文件（含 age-keygen 注释行）必须通过私钥形态校验，只允许在后面的摘要校验处失败。
+        @{ name = 'restore 接受 age-keygen 多行私钥文件'; script = 'bin/t16a-restore.sh'; args = @('--artifact', $artifact, '--identity-file', $multilineIdentityPosix); expect = 1; pattern = '摘要不匹配' }
     )
     foreach ($case in $cases) {
         $result = Invoke-BashScript -Script (Join-Path $backupDir $case.script) -Arguments $case.args
@@ -142,13 +157,110 @@ finally {
 
 # 4. age 往返/截断/错误密钥：在一次性 golang 容器内构建 age v1.2.1 后运行本目录脚本。
 $mount = "$($backupDir):/src:ro"
-$ageTest = & docker run --rm -v $mount --entrypoint bash golang:1.27.1 -c @'
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Add-Check 'age 加解密往返与拒绝用例' $false '未找到 Docker CLI，未运行容器内 age 测试'
+} else {
+    $ageTest = & docker run --rm -v $mount --entrypoint bash golang:1.27.1 -c @'
 set -e
 export CGO_ENABLED=0 GOTOOLCHAIN=local GOBIN=/usr/local/bin
 go install filippo.io/age/cmd/age@v1.2.1 filippo.io/age/cmd/age-keygen@v1.2.1 >/dev/null 2>&1
 bash /src/tests/age-roundtrip.sh
 '@ 2>&1
-Add-Check 'age 加解密往返与拒绝用例' ($LASTEXITCODE -eq 0) ($ageTest -join ' ')
+    Add-Check 'age 加解密往返与拒绝用例' ($LASTEXITCODE -eq 0) ($ageTest -join ' ')
+}
+
+# 5. 暂存目录必须带进程号（$$）：同一 label 的并发备份不能共用暂存目录，
+#    否则两者会互相删除明文载荷或错发产物。断言源码形态 + 实际展开值。
+$libText = [IO.File]::ReadAllText((Join-Path $backupDir 'bin/t16a-lib.sh'))
+$backupText = [IO.File]::ReadAllText((Join-Path $backupDir 'bin/t16a-backup.sh'))
+Add-Check 'lib 声明 staging_dir 且用 $$ 取进程号' (
+    $libText -match '(?m)^staging_dir\(\) \{' -and $libText.Contains('"$$"')
+) '缺少 staging_dir 或 $$'
+Add-Check 'backup 用 staging_dir 生成暂存目录' (
+    $backupText.Contains('staging="$(staging_dir "$artifacts_dir" "$label")"')
+) '未改用 staging_dir'
+Add-Check 'backup 不再使用单 $ 暂存目录' (
+    -not $backupText.Contains('.staging.$label.$"')
+) '仍存在 .staging.$label.$ 形态'
+$libPosix = ConvertTo-PosixPath (Join-Path $backupDir 'bin/t16a-lib.sh')
+$probeA = (& $bash -c '. "$1"; staging_dir /abs t16a-probe' _ $libPosix 2>&1) -join ''
+$probeB = (& $bash -c '. "$1"; staging_dir /abs t16a-probe' _ $libPosix 2>&1) -join ''
+Add-Check '暂存目录含数字进程号' ($probeA -match '^/abs/\.staging\.t16a-probe\.\d+$') $probeA
+Add-Check '两个备份进程暂存目录不同' ($probeA -ne $probeB) "$probeA / $probeB"
+
+# 6. “未发布宿主端口”判定必须看 HostConfig.PortBindings。docker ps 的 {{.Ports}} 对仅
+#    EXPOSE 的端口（标准 mysql 镜像的 3306/33060）也会打印 "3306/tcp"，据此判空会让真实
+#    备份在未发布任何端口的容器上被误拒，因此这里断言源码口径 + 归一化函数的行为。
+Add-Check 'lib 声明 normalize_published_ports' (
+    $libText -match '(?m)^normalize_published_ports\(\) \{'
+) '缺少归一化函数'
+Add-Check '端口断言使用 HostConfig.PortBindings' (
+    $libText.Contains('HostConfig.PortBindings') -and -not $libText.Contains("--format '{{.Ports}}'")
+) '仍按 docker ps {{.Ports}} 判定'
+$normEmpty = (& $bash -c '. "$1"; printf "  \n\n" | normalize_published_ports' _ $libPosix 2>&1) -join ''
+$normList = (& $bash -c '. "$1"; printf "3306/tcp\n 33060/tcp " | normalize_published_ports' _ $libPosix 2>&1) -join ''
+Add-Check '端口归一化折叠空白为空' ($normEmpty -eq '') "得到 [$normEmpty]"
+Add-Check '端口归一化保留端口列表' ($normList -eq '3306/tcp 33060/tcp') "得到 [$normList]"
+
+# 7. 恢复端查找的摘要/清单文件名必须与备份端发布的名字一致，否则真实恢复必然在
+#    “缺少摘要文件”处被拒（备份发布 <label>.sha256，恢复曾按 <label>.sql.gz.sha256 查找）。
+$restoreText = [IO.File]::ReadAllText((Join-Path $backupDir 'bin/t16a-restore.sh'))
+Add-Check '恢复端摘要文件名与备份发布名一致' (
+    $restoreText.Contains('sha_file="${artifact%.sql.gz.age}.sha256"') -and
+    $backupText.Contains('"$artifacts_dir/$label.sha256"')
+) '摘要文件名口径不一致'
+
+# 8. 端口断言必须 fail-closed：docker ps / docker inspect 查询失败时，不能把失败当成
+#    “没有已发布端口”而放行，否则 Docker 不可用时备份会照跑，隔离保证建立在错误状态上。
+#    这里用 shell 函数覆盖 docker 命令，四种模式都不需要真实 Docker。
+$failClosedProbe = @'
+set -u
+lib="$1"; mode="$2"
+. "$lib"
+docker() {
+    case "$mode:$1" in
+        psfail:ps)           return 3 ;;
+        inspectfail:ps)      printf 'probe-container\n'; return 0 ;;
+        inspectfail:inspect) return 4 ;;
+        ok:ps)               printf 'probe-container\n'; return 0 ;;
+        ok:inspect)          return 0 ;;
+        bound:ps)            printf 'probe-container\n'; return 0 ;;
+        bound:inspect)       printf '3306/tcp\n'; return 0 ;;
+        *)                   return 1 ;;
+    esac
+}
+assert_no_published_ports t16a-backup-source
+printf 'ALLOWED\n'
+'@
+$probeFile = Join-Path ([IO.Path]::GetTempPath()) ("t16a-failclosed-" + [guid]::NewGuid().ToString('N') + '.sh')
+try {
+    [IO.File]::WriteAllText($probeFile, (($failClosedProbe -replace "`r`n", "`n") + "`n"))
+    $probeFilePosix = ConvertTo-PosixPath $probeFile
+    function Invoke-PortProbe {
+        param([string]$Mode)
+        $text = (& $bash $probeFilePosix $libPosix $Mode 2>&1) -join "`n"
+        return @{ code = $LASTEXITCODE; text = $text }
+    }
+    $psFail = Invoke-PortProbe 'psfail'
+    Add-Check '端口断言在 docker ps 失败时拒绝' (
+        $psFail.code -eq 1 -and $psFail.text -match 'docker ps 失败' -and $psFail.text -notmatch 'ALLOWED'
+    ) "exit=$($psFail.code) 期望=1"
+    $inspectFail = Invoke-PortProbe 'inspectfail'
+    Add-Check '端口断言在 docker inspect 失败时拒绝' (
+        $inspectFail.code -eq 1 -and $inspectFail.text -match 'docker inspect 失败' -and $inspectFail.text -notmatch 'ALLOWED'
+    ) "exit=$($inspectFail.code) 期望=1"
+    $okProbe = Invoke-PortProbe 'ok'
+    Add-Check '端口断言在无绑定端口时放行' (
+        $okProbe.code -eq 0 -and $okProbe.text -match 'ALLOWED'
+    ) "exit=$($okProbe.code) 期望=0"
+    $boundProbe = Invoke-PortProbe 'bound'
+    Add-Check '端口断言在存在绑定端口时拒绝' (
+        $boundProbe.code -eq 1 -and $boundProbe.text -match '已发布宿主端口' -and $boundProbe.text -notmatch 'ALLOWED'
+    ) "exit=$($boundProbe.code) 期望=1"
+}
+finally {
+    Remove-Item -LiteralPath $probeFile -Force -ErrorAction SilentlyContinue
+}
 
 $failed = @($script:results | Where-Object { -not $_.passed })
 Write-Host ''

@@ -40,11 +40,13 @@ const dimensions = computed<ReviewDimension[]>(() => content.value?.dimensions ?
 const hasGaps = computed(() => dimensions.value.some(dimension => dimension.level === null))
 
 // 雷达几何：四轴按服务端固定顺序。观察不足的轴不画点、不连边，更不当作 0。
-const CENTER = 90
-const RADIUS = 62
+// viewBox 比图形本身宽，左右各留出一行文字的空间，供轴端的“轴号 + 维度名”使用。
+const CENTER_X = 150
+const CENTER_Y = 100
+const RADIUS = 52
 function pointAt(index: number, distance: number): { x: number; y: number } {
   const angle = (Math.PI * 2 * index) / 4 - Math.PI / 2
-  return { x: CENTER + Math.cos(angle) * distance, y: CENTER + Math.sin(angle) * distance }
+  return { x: CENTER_X + Math.cos(angle) * distance, y: CENTER_Y + Math.sin(angle) * distance }
 }
 function levelPoint(index: number, level: 1 | 2 | 3 | 4): { x: number; y: number } {
   return pointAt(index, (RADIUS * level) / 4)
@@ -53,6 +55,31 @@ const rings = [1, 2, 3, 4].map(level =>
   [0, 1, 2, 3].map(index => levelPoint(index, level as 1 | 2 | 3 | 4)).map(point => `${point.x},${point.y}`).join(' '),
 )
 const axisLines = [0, 1, 2, 3].map(index => ({ end: levelPoint(index, 4) }))
+/**
+ * 轴端文字：沿用服务端维度顺序与名称，只写“轴号 + 维度名”。
+ * 上/下轴居中对齐，右轴从轴端向右展开，左轴从轴端向左展开，都放在 viewBox 之内。
+ * 这里不加档位文字：档级与“观察不足”仍由原图例和文字卡片承担。
+ */
+const axisLabels = computed(() => {
+  const offsets = [
+    { dx: 0, dy: -10, anchor: 'middle' }, // 上
+    { dx: 8, dy: 4, anchor: 'start' }, // 右
+    { dx: 0, dy: 18, anchor: 'middle' }, // 下
+    { dx: -8, dy: 4, anchor: 'end' }, // 左
+  ] as const
+  return dimensions.value.map((dimension, index) => {
+    const end = levelPoint(index, 4)
+    const offset = offsets[index] ?? offsets[0]
+    return {
+      key: dimension.key,
+      index,
+      text: `轴${index + 1} ${dimension.label}`,
+      x: end.x + offset.dx,
+      y: end.y + offset.dy,
+      anchor: offset.anchor,
+    }
+  })
+})
 // 只在相邻两个“已观察”维度之间连边；缺口处断开。
 const edges = computed(() => {
   const segments: Array<{ key: string; from: { x: number; y: number }; to: { x: number; y: number } }> = []
@@ -144,15 +171,19 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
       <div class="review-body" data-review-completed>
         <section class="radar-block" aria-label="四维雷达图">
           <h4>四维训练参考</h4>
-          <svg class="radar" viewBox="0 0 180 180" role="img" data-review-radar
+          <svg class="radar" viewBox="0 0 300 200" role="img" data-review-radar
             :aria-label="`四维雷达图：${dimensions.map(dimension => `${dimension.label}${dimension.level === null ? '观察不足' : `第${dimension.level}档`}`).join('，')}`">
             <polygon v-for="(ring, index) in rings" :key="`ring-${index}`" :points="ring" class="radar-ring" />
             <line v-for="(line, index) in axisLines" :key="`axis-${index}`"
-              :x1="CENTER" :y1="CENTER" :x2="line.end.x" :y2="line.end.y" class="radar-axis" />
+              :x1="CENTER_X" :y1="CENTER_Y" :x2="line.end.x" :y2="line.end.y" class="radar-axis" />
             <line v-for="edge in edges" :key="edge.key"
               :x1="edge.from.x" :y1="edge.from.y" :x2="edge.to.x" :y2="edge.to.y" class="radar-edge" />
             <circle v-for="dot in dots" :key="`dot-${dot.key}`" :cx="dot.point.x" :cy="dot.point.y" r="3.5" class="radar-dot" />
             <circle v-for="gap in gaps" :key="`gap-${gap.key}`" :cx="gap.point.x" :cy="gap.point.y" r="3" class="radar-gap" />
+            <!-- 轴端文字与图例同源同序；纯装饰性定位文字，图形语义仍由 aria-label 承担。 -->
+            <text v-for="label in axisLabels" :key="`label-${label.key}`"
+              :x="label.x" :y="label.y" :text-anchor="label.anchor" class="radar-axis-label"
+              :data-radar-axis-label="label.index" aria-hidden="true">{{ label.text }}</text>
           </svg>
           <ul class="radar-legend" data-review-legend>
             <li v-for="(dimension, index) in dimensions" :key="dimension.key">
@@ -265,7 +296,8 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
 .state-hint { width: 100%; margin: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .review-body { display: grid; gap: 20px; margin-top: 18px; }
 .radar-block h4, .review-issues h4 { margin: 0 0 10px; font-size: 15px; color: var(--app-accent); }
-.radar { width: 100%; max-width: 260px; display: block; margin: 0 auto; }
+.radar { width: 100%; max-width: 320px; display: block; margin: 0 auto; }
+.radar-axis-label { font-size: 11px; fill: var(--app-text-muted); }
 .radar-ring { fill: none; stroke: var(--app-border); stroke-width: 1; }
 .radar-axis { stroke: var(--app-border); stroke-width: 1; }
 .radar-edge { stroke: var(--app-accent); stroke-width: 2; }

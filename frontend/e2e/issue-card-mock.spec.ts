@@ -30,19 +30,37 @@ test('点击双方引用精确定位发言流中的原句', async ({ page }) => 
   await expect(markers).toHaveCount(2)
   const userKey = await markers.first().getAttribute('data-issue-card-citation')
   const aiKey = await markers.nth(1).getAttribute('data-issue-card-citation')
-  // 引用本身的码点数＝应高亮的 span 数：定位只覆盖已复核区间，不整条发言。
-  const userQuoteLength = Array.from((await markers.first().textContent()) ?? '').length
-  const aiQuoteLength = Array.from((await markers.nth(1).textContent()) ?? '').length
+  // 已核验区间在预览里只有一个精确片段外框：片段文本＝引用原文，不包整条发言。
+  const userQuote = (await markers.first().textContent()) ?? ''
+  const aiQuote = (await markers.nth(1).textContent()) ?? ''
+  const userQuoteLength = Array.from(userQuote).length
+  const aiQuoteLength = Array.from(aiQuote).length
   expect(userQuoteLength).toBeGreaterThan(0)
   expect(aiQuoteLength).toBeGreaterThan(0)
 
   await markers.first().click()
-  await expect(page.locator('.message.user').first().locator('.is-located')).toHaveCount(userQuoteLength)
-  await expect(page.locator('.message.assistant').first().locator('.is-located')).toHaveCount(0)
+  // 定位语义仍复用正式工作台的 attribute（滚动/聚焦），可见外框只在精确片段上。
+  const userParagraph = page.locator('[data-message-id="101"] [data-message-content]')
+  await expect(userParagraph).toHaveAttribute('data-located-quote', userQuote)
+  const userRun = page.locator('.message.user').first().locator('[data-located-run]')
+  await expect(userRun).toHaveCount(1)
+  await expect(userRun).toHaveText(userQuote)
+  await expect(userRun).toHaveClass(/located-fragment/)
+  await expect(page.locator('.message.assistant').first().locator('[data-located-quote]')).toHaveCount(0)
+  // 内部逐字节点仍在（保留码点坐标），但不再逐个描边，也不带片段外框 class。
+  await expect(userRun.locator('[data-preview-index]')).toHaveCount(userQuoteLength)
+  await expect(userRun.locator('.located-fragment')).toHaveCount(0)
+  await expect(page.locator('.message.user').first().locator('.located-fragment')).toHaveCount(1)
 
   await markers.nth(1).click()
-  await expect(page.locator('.message.assistant').first().locator('.is-located')).toHaveCount(aiQuoteLength)
-  await expect(page.locator('.message.user').first().locator('.is-located')).toHaveCount(0)
+  const aiParagraph = page.locator('[data-message-id="102"] [data-message-content]')
+  await expect(aiParagraph).toHaveAttribute('data-located-quote', aiQuote)
+  await expect(userParagraph).not.toHaveAttribute('data-located-quote')
+  const aiRun = page.locator('.message.assistant').first().locator('[data-located-run]')
+  await expect(aiRun).toHaveCount(1)
+  await expect(aiRun).toHaveText(aiQuote)
+  await expect(page.locator('.message.user').first().locator('[data-located-run]')).toHaveCount(0)
+  await expect(page.locator('.message.assistant').first().locator('.located-fragment')).toHaveCount(1)
 
   // 定位键来自已复核坐标，双方互不相同。
   expect(userKey).not.toBe(aiKey)
@@ -136,6 +154,86 @@ test('窄屏下争点卡在主内容下方单列堆叠，不覆盖正文', async
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
+test('预览只在精确片段外层画一个框，整段原文不显示内置描边', async ({ page }) => {
+  const marker = page.locator('[data-issue-card]').first().locator('[data-issue-card-citation]').first()
+  const quote = (await marker.textContent()) ?? ''
+  await marker.click()
+  const paragraph = page.locator('[data-message-id="101"] [data-message-content]')
+  // 语义保留：共享定位仍把引用文本写到整段原文上，用于滚动/聚焦。
+  await expect(paragraph).toHaveAttribute('data-located-quote', quote)
+  const run = page.locator('.message.user').first().locator('[data-located-run]')
+  await expect(run).toHaveCount(1)
+  await expect(run).toHaveText(quote)
+  await expect(run).toHaveClass(/located-fragment/)
+
+  const frames = await page.evaluate(() => {
+    const paragraph = document.querySelector<HTMLElement>('[data-located-quote]')!
+    const run = document.querySelector<HTMLElement>('[data-located-run]')!
+    const chars = Array.from(run.querySelectorAll<HTMLElement>('[data-preview-index]'))
+    const boxOf = (element: Element) => {
+      const style = getComputedStyle(element)
+      return {
+        outlineStyle: style.outlineStyle,
+        borderTopStyle: style.borderTopStyle,
+        borderTopWidth: style.borderTopWidth,
+        borderRightWidth: style.borderRightWidth,
+        backgroundColor: style.backgroundColor,
+      }
+    }
+    const runStyle = getComputedStyle(run) as CSSStyleDeclaration & { boxDecorationBreak?: string }
+    return {
+      locatedCount: document.querySelectorAll('[data-located-quote]').length,
+      fragmentCount: document.querySelectorAll('.located-fragment').length,
+      paragraph: boxOf(paragraph),
+      run: boxOf(run),
+      runDisplay: runStyle.display,
+      runDecorationBreak: runStyle.boxDecorationBreak
+        || runStyle.getPropertyValue('-webkit-box-decoration-break')
+        || runStyle.getPropertyValue('box-decoration-break'),
+      charStyles: chars.map(boxOf),
+      // 一个 inline 片段跨几行就有几个 client rect：同一行一个框。
+      lineRects: Array.from(run.getClientRects()).map(rect => ({ top: Math.round(rect.top), height: Math.round(rect.height), width: Math.round(rect.width) })),
+      text: run.textContent ?? '',
+    }
+  })
+  // 整段原文只留语义，预览不给它画可见外框（正式工作台仍由 theme.css 描边）。
+  expect(frames.locatedCount).toBe(1)
+  expect(frames.paragraph.outlineStyle).toBe('none')
+  // 精确片段是唯一的外框，且是连续的 inline 外框；跨行时按行分段。
+  expect(frames.fragmentCount).toBe(1)
+  expect(frames.runDisplay).toBe('inline')
+  expect(frames.run.borderTopStyle).toBe('solid')
+  expect(frames.run.borderTopWidth).not.toBe('0px')
+  expect(frames.runDecorationBreak).toBe('clone')
+  // 逐字节点不描边、不画框、不加背景。
+  expect(frames.charStyles.every(style => style.outlineStyle === 'none')).toBe(true)
+  expect(frames.charStyles.every(style => style.borderTopStyle === 'none' && style.borderTopWidth === '0px')).toBe(true)
+  expect(frames.charStyles.every(style => style.backgroundColor === 'rgba(0, 0, 0, 0)')).toBe(true)
+  expect(frames.text).toBe(quote)
+  // 片段不新增空格，行数由自然换行决定。
+  const tops = new Set(frames.lineRects.map(rect => rect.top))
+  expect(tops.size).toBe(frames.lineRects.length)
+  expect(frames.lineRects.every(rect => rect.height > 0 && rect.width > 0)).toBe(true)
+
+  // 窄屏富余不足时自然换行：强制收窄容器后片段分成多行，每行一个框，文本不插空格。
+  await page.setViewportSize({ width: 360, height: 800 })
+  await page.locator('[data-message-id="101"] [data-message-content]').evaluate(element => {
+    (element as HTMLElement).style.maxWidth = '7ch'
+  })
+  const narrow = await page.evaluate(() => {
+    const run = document.querySelector<HTMLElement>('[data-located-run]')!
+    return {
+      rects: Array.from(run.getClientRects()).map(rect => Math.round(rect.top)),
+      text: run.textContent ?? '',
+      scrollWidth: document.documentElement.scrollWidth,
+    }
+  })
+  expect(narrow.rects.length).toBeGreaterThan(1)
+  expect(new Set(narrow.rects).size).toBe(narrow.rects.length)
+  expect(narrow.text).toBe(quote)
+  expect(narrow.scrollWidth).toBeLessThanOrEqual(360)
+})
+
 test('四轮赛后：选本人原句、失败保留、原版本重试，复盘与雷达独立恢复', async ({ page }) => {
   const requests: string[] = []
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) requests.push(request.url()) })
@@ -171,7 +269,23 @@ test('四轮赛后：选本人原句、失败保留、原版本重试，复盘�
   await page.getByRole('button', { name: /重试生成复盘/ }).click()
   await expect(page.locator('[data-review-radar]')).toBeVisible()
   await page.locator('[data-locate-quote="argument_structure"]').click()
-  await expect(first.locator('.is-located').first()).toBeVisible()
+  await expect(first.locator('[data-located-run]')).toBeVisible()
+  await expect(first.locator('[data-located-run]')).toHaveClass(/located-fragment/)
+  // 雷达轴端文字：四轴按固定顺序标注轴号与维度名，不放档位文字。
+  await expect(page.locator('[data-radar-axis-label]')).toHaveText([
+    '轴1 论证结构', '轴2 回应针对性', '轴3 证据使用', '轴4 概念与范围',
+  ])
+  const radarBox = await page.locator('[data-review-radar]').boundingBox()
+  const labelBoxes = await page.locator('[data-radar-axis-label]').evaluateAll(nodes =>
+    nodes.map(node => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height } }))
+  // 轴端文字都落在 SVG 图形盒内，且各占一块互不重叠的区域。
+  for (const box of labelBoxes) {
+    expect(box.x).toBeGreaterThanOrEqual(radarBox!.x - 1)
+    expect(box.x + box.width).toBeLessThanOrEqual(radarBox!.x + radarBox!.width + 1)
+    expect(box.y).toBeGreaterThanOrEqual(radarBox!.y - 1)
+    expect(box.y + box.height).toBeLessThanOrEqual(radarBox!.y + radarBox!.height + 1)
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width)
   await page.reload()
   await expect(page.locator('[data-review-radar]')).toBeVisible()
   await page.locator('[data-repractice="argument_structure"]').click()

@@ -2,6 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { Button } from '@arco-design/web-vue'
 import IssueCardPanel from '../../components/debate/IssueCardPanel.vue'
+import { locateQuoteText } from '../../shared/locateQuote'
 import type { IssueCardPreviewMock } from './mockIssueCard'
 import type { IssueCardContents } from '../../debate/issueCard'
 
@@ -56,25 +57,44 @@ async function applyScenario(label: string, apply: () => void) {
 }
 
 /**
- * 引用点击 → 在发言流中按 dataset 精确查找并聚焦。
- * 与正式工作台相同：不拼接 CSS 选择器，找不到时只提示待核对。
- * 定位键形如 `message_id|start_cp|end_cp`，片段端点由后端已复核的投影给出。
+ * 引用点击 → 在发言流中定位已复核的码点区间。
+ *
+ * 定位/滚动/聚焦复用正式工作台的共享实现（shared/locateQuote）：整段原文承载
+ * `data-located-quote`，语义与正式页一致；预览页只在 scoped CSS 里取消整段的可见外框，
+ * 改由精确片段 `.located-fragment` 自己画一个 inline 外框——不框整条发言，也不逐字描边。
+ * 定位失败时保持上一次成功的落点，只提示待核对；不猜位置，也不留一半亮一半灭的状态。
  */
-async function locate(key: string) {
-  const [messageId, startRaw, endRaw] = key.split('|')
+const LOCATE_PENDING = '该引用在当前视图无法唯一定位，已按“原文待核对”处理。'
+
+/**
+ * 解析共用定位键 `message_id|start_cp|end_cp`。
+ *
+ * 只接受完整三段与规范十进制非负整数：`Number('')` 会得到 0，
+ * 空段、缺段、带符号或前导零都不是后端/面板的规范写法，一律按“无法定位”处理。
+ */
+function parseLocateKey(key: string): { messageId: string; start: number; end: number } | null {
+  const parts = key.split('|')
+  if (parts.length !== 3) return null
+  const [messageId, startRaw, endRaw] = parts
+  if (!messageId) return null
+  if (!/^(0|[1-9]\d*)$/.test(startRaw) || !/^(0|[1-9]\d*)$/.test(endRaw)) return null
   const start = Number(startRaw)
   const end = Number(endRaw)
-  const target = Array.from(transcript.value?.querySelectorAll<HTMLElement>('[data-preview-message]') ?? [])
-    .find(element => element.dataset.previewMessage === messageId && element.dataset.previewIndex === String(start))
-  if (!target || !Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > Array.from(props.mock.contents[messageId ?? ''] ?? '').length) {
-    notice.value = '该引用在当前视图无法唯一定位，已按“原文待核对”处理。'
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null
+  return { messageId, start, end }
+}
+
+async function locate(key: string) {
+  notice.value = ''
+  const target = parseLocateKey(key)
+  const hit = target ? locateQuoteText(transcript.value, target.messageId, target.start, target.end) : null
+  if (!target || !hit) {
+    // 共享定位失败时不会清除旧落点；这里只更新提示，避免“淡底没了、旧框还在”的半截状态。
+    notice.value = LOCATE_PENDING
     return
   }
-  notice.value = ''
-  located.value = { messageId: messageId!, start, end }
+  located.value = target
   await nextTick()
-  target.scrollIntoView?.({ block: 'center' })
-  target.focus?.({ preventScroll: true })
 }
 
 function selectText(event: MouseEvent, message: typeof messages.value[number]) {
@@ -102,10 +122,39 @@ function selectText(event: MouseEvent, message: typeof messages.value[number]) {
 
 defineExpose({ locate })
 
-/** 只有已复核区间内的码点才高亮，避免把整条发言当作定位结果。 */
-function isLocated(messageId: string, index: number): boolean {
+type CharNode = { index: number; char: string }
+type MessageRun = { key: string; located: boolean; chars: CharNode[] }
+
+/**
+ * 把一条发言拆成“普通片段 / 已核验片段”。
+ *
+ * 只有已核验的码点区间才组成一个独立的外层片段，整条发言不会被包进定位框；
+ * 片段内部仍保留逐字节点，坐标、选段与回读校验都沿用原来的码点口径。
+ */
+function runsOf(message: { id: string; content: string }): MessageRun[] {
+  const points = Array.from(message.content)
   const current = located.value
-  return current !== null && current.messageId === messageId && index >= current.start && index < current.end
+  if (!current || current.messageId !== message.id) {
+    return [{ key: `${message.id}-all`, located: false, chars: points.map((char, index) => ({ index, char })) }]
+  }
+  const runs: MessageRun[] = []
+  if (current.start > 0) {
+    runs.push({
+      key: `${message.id}-before`, located: false,
+      chars: points.slice(0, current.start).map((char, offset) => ({ index: offset, char })),
+    })
+  }
+  runs.push({
+    key: `${message.id}-located`, located: true,
+    chars: points.slice(current.start, current.end).map((char, offset) => ({ index: current.start + offset, char })),
+  })
+  if (current.end < points.length) {
+    runs.push({
+      key: `${message.id}-after`, located: false,
+      chars: points.slice(current.end).map((char, offset) => ({ index: current.end + offset, char })),
+    })
+  }
+  return runs
 }
 </script>
 
@@ -136,17 +185,35 @@ function isLocated(messageId: string, index: number): boolean {
       <section ref="transcript" class="card transcript" aria-label="已完赛四轮发言（夹具）">
         <h2>已保存的双方发言</h2>
         <p class="muted">{{ integrated ? '可以选中自己的发言，改写其中一句。争点卡和复盘都能带你回到相应的原文。' : '本场为已完赛的四轮基础练习（standard_4）夹具；争点卡只读取这些已保存原文。' }}</p>
-        <article v-for="message in messages" :key="message.id" :class="['message', message.role]">
+        <article v-for="message in messages" :key="message.id" :class="['message', message.role]" :data-message-id="message.id">
           <h3>第 {{ message.turn }} 轮 · {{ message.role === 'user' ? '你' : 'AI' }}</h3>
-          <p class="message-text">
-            <span
-              v-for="(point, index) in Array.from(message.content)"
-              :key="`${message.id}-${index}`"
-              :class="{ 'is-located': isLocated(message.id, index) }"
-              :tabindex="isLocated(message.id, index) && located?.start === index ? -1 : undefined"
-              :data-preview-message="message.id"
-              :data-preview-index="index"
-            >{{ point }}</span>
+          <p class="message-text" data-message-content tabindex="-1">
+            <!-- 整段原文保留 data-located-quote 语义（共享定位据此滚动/聚焦），
+                 但预览页会取消它的可见外框；只有下面的精确片段画一个 inline 外框。
+                 内部逐字节点仅用于码点坐标，不描边、不加定位 class。 -->
+            <template v-for="run in runsOf(message)" :key="run.key">
+              <span
+                v-if="run.located"
+                class="message-run located-fragment"
+                :data-located-run="run.chars[0]?.index"
+                :data-located-message="message.id"
+              >
+                <span
+                  v-for="point in run.chars"
+                  :key="`${message.id}-${point.index}`"
+                  :data-preview-message="message.id"
+                  :data-preview-index="point.index"
+                >{{ point.char }}</span>
+              </span>
+              <template v-else>
+                <span
+                  v-for="point in run.chars"
+                  :key="`${message.id}-${point.index}`"
+                  :data-preview-message="message.id"
+                  :data-preview-index="point.index"
+                >{{ point.char }}</span>
+              </template>
+            </template>
           </p>
           <div v-if="integrated && message.role === 'user'" class="practice-actions">
             <Button size="small" @mousedown.prevent @click="selectText($event, message)">选句重练</Button>
@@ -196,7 +263,19 @@ function isLocated(messageId: string, index: number): boolean {
 .message h3 { margin: 0 0 6px; font-size: 13px; }
 .message-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
 .practice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.is-located { background: #fff3bf; outline: 2px solid var(--app-accent); outline-offset: 1px; }
+/* 预览页取消整段原文的可见定位外框：`data-located-quote` 只保留语义，
+   用于共享定位的滚动/聚焦与“当前落点”判定；视觉只落在精确片段上。
+   选择器带 `.message-text` 与 scoped 属性，稳定压过 styles/theme.css 的全局外框定义。 */
+.message-text[data-located-quote] { outline: none; }
+/* 已核验引用片段：只在这段外层画一个 inline 外框。跨行时浏览器按行分段，
+   每行各自成框（box-decoration-break: clone），不会框住整条发言，也不给单个字描边。 */
+.located-fragment {
+  background: #fff3bf;
+  border: 2px solid var(--app-accent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
 .confirm-backdrop {
   position: fixed; inset: 0; display: grid; place-items: center;
   background: rgba(20, 24, 32, 0.45); z-index: 10;

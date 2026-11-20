@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
+import { locateQuoteText } from '../../shared/locateQuote'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button, Switch } from '@arco-design/web-vue'
 import { AI_STYLE_LABELS } from '../../debate/styles'
@@ -62,21 +63,13 @@ function locateAnnotation(key: string) {
 }
 
 /**
- * 把复盘引用定位到正式消息原文：坐标是 Unicode 码点半开区间，
- * 因此先按码点拆分再取子串；命中后滚入视口并短暂高亮，只做视觉定位，
- * 不改动原文、不复制第二份文本。
+ * 把复盘引用定位到正式消息原文。
+ *
+ * 落点语义与视觉已收敛到 shared/locateQuote + styles/theme.css，和争点卡预览共用同一套：
+ * 坐标是 Unicode 码点半开区间，命中后只给整段原文加外框，不改动原文、不复制第二份文本。
  */
-let lastLocated: HTMLElement | null = null
 function locateReviewQuote(messageId: string, startCp: number, endCp: number) {
-  const element = transcript.value?.querySelector<HTMLElement>(`[data-message-id="${messageId}"] [data-message-content]`)
-  if (!element) return
-  const codepoints = [...(element.textContent ?? '')]
-  if (startCp < 0 || endCp > codepoints.length || endCp <= startCp) return
-  if (lastLocated && lastLocated !== element) lastLocated.removeAttribute('data-located-quote')
-  lastLocated = element
-  element.setAttribute('data-located-quote', codepoints.slice(startCp, endCp).join(''))
-  element.scrollIntoView?.({ block: 'center' })
-  element.focus?.({ preventScroll: true })
+  locateQuoteText(transcript.value, messageId, startCp, endCp)
 }
 
 const locked = computed(() => busy.value || props.auth.state.pending)
@@ -285,8 +278,7 @@ textarea { resize: vertical; line-height: 1.8; }
 .message.assistant { background: var(--app-info-bg); border-color: var(--app-info-border); }
 .message-label { font-weight: 600; font-size: 14px; }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; }
-/* 复盘引用定位后的可见落点：只描边，不改字色，保证原文仍按纯文本可读。 */
-.message p[data-located-quote] { outline: 2px solid var(--app-accent); outline-offset: 3px; border-radius: var(--app-radius-control); }
+/* 复盘引用定位的落点外框已收敛到 styles/theme.css 的 [data-located-quote]，全站共用一处定义。 */
 time { color: var(--app-text-muted); font-size: 12px; }
 .turn-generating { color: var(--app-accent); font-size: 14px; }
 .turn-failed { margin: 12px 0; padding: 16px; border: 1px solid var(--app-error-border); border-radius: var(--app-radius-panel); background: var(--app-error-bg); color: var(--app-error-text); }

@@ -21,3 +21,14 @@ body {
   --app-radius-panel: 12px;
   --app-radius-card: 16px;
 }
+
+/*
+ * 复盘引用定位的落点视觉：正式工作台与两个预览页共用同一处定义。
+ * 定位命中时由 shared/locateQuote.ts 把引用文本写到整段原文节点的 data-located-quote 上，
+ * 这里只描这一段的外框，不逐字拆节点、不改字色，保证原文仍按纯文本可读。
+ */
+[data-located-quote] {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 3px;
+  border-radius: var(--app-radius-control);
+}

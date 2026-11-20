@@ -144,12 +144,34 @@ test('四维观察不足不按 0 画，雷达缺项留空，原文定位可点�
   await expect(page.locator('[data-review-radar] .radar-gap')).toHaveCount(2)
   await expect(page.locator('[data-review-gap-note]')).toContainText('不是 0 分')
 
+  // 轴端文字沿用四维顺序与名称，只写轴号与维度名，不写档位。
+  await expect(page.locator('[data-radar-axis-label]')).toHaveText([
+    '轴1 论证结构', '轴2 回应针对性', '轴3 证据使用', '轴4 概念与范围',
+  ])
+  const labelBounds = await page.locator('[data-review-radar] [data-radar-axis-label]').evaluateAll(nodes =>
+    nodes.map(node => {
+      const rect = node.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, text: node.textContent ?? '' }
+    }))
+  const radarBounds = await page.locator('[data-review-radar]').boundingBox()
+  for (const label of labelBounds) {
+    expect(label.text).not.toMatch(/档|观察不足/)
+    expect(label.width).toBeGreaterThan(0)
+    expect(label.x).toBeGreaterThanOrEqual(radarBounds!.x - 1)
+    expect(label.x + label.width).toBeLessThanOrEqual(radarBounds!.x + radarBounds!.width + 1)
+    expect(label.y).toBeGreaterThanOrEqual(radarBounds!.y - 1)
+    expect(label.y + label.height).toBeLessThanOrEqual(radarBounds!.y + radarBounds!.height + 1)
+  }
+
   // 图例按钮键盘可达；点击后把原文片段定位到正式消息。
   const legendLocate = page.locator('[data-legend-locate="argument_structure"]')
   await legendLocate.focus()
   await expect(legendLocate).toBeFocused()
   await legendLocate.click()
-  await expect(page.locator('[data-message-id="202"] [data-message-content]')).toHaveAttribute('data-located-quote', '我方认为开放式考核更能检验真实能力')
+  const locatedParagraph = page.locator('[data-message-id="202"] [data-message-content]')
+  await expect(locatedParagraph).toHaveAttribute('data-located-quote', '我方认为开放式考核更能检验真实能力')
+  // 正式工作台仍保留整段外框（预览页才取消可见外框、改描精确片段）。
+  await expect(locatedParagraph).toHaveCSS('outline-style', 'solid')
 
   // 观察不足轴没有定位入口；PDF 与重练明确标为待整合而非死链。
   await expect(page.locator('[data-legend-locate="responsiveness"]')).toHaveCount(0)

@@ -136,6 +136,66 @@ describe('ReviewPanel', () => {
     expect(host.querySelectorAll('[data-review-radar] .radar-gap').length).toBe(2)
   })
 
+  it('雷达四个轴端标注轴号与维度名，不写档位文字', async () => {
+    const { host } = await mount()
+    const labels = [...host.querySelectorAll<SVGTextElement>('[data-review-radar] [data-radar-axis-label]')]
+    expect(labels.map(label => label.textContent)).toEqual([
+      '轴1 论证结构', '轴2 回应针对性', '轴3 证据使用', '轴4 概念与范围',
+    ])
+    // 轴端只写轴号与维度名：档位与“观察不足”仍只出现在图例与文字卡片里。
+    for (const label of labels) expect(label.textContent ?? '').not.toMatch(/档|观察不足|第/)
+    // 原有图例与观察不足说明保持不变。
+    expect(host.querySelectorAll('[data-review-legend] li').length).toBe(4)
+    expect(host.querySelector('[data-review-legend]')?.textContent).toContain('观察不足')
+    expect(host.querySelector('.radar-note')?.textContent).toContain('观察不足的维度留空')
+  })
+
+  it('轴端文字按上下左右布置、落在 viewBox 内并留出横向空间', async () => {
+    const { host } = await mount()
+    const radar = host.querySelector<SVGSVGElement>('[data-review-radar]')!
+    const viewBox = (radar.getAttribute('viewBox') ?? '').split(/\s+/).filter(Boolean).map(Number)
+    expect(viewBox).toHaveLength(4)
+    const [minX, minY, width, height] = viewBox as [number, number, number, number]
+    const labelOf = (index: number) => host.querySelector<SVGTextElement>(`[data-radar-axis-label="${index}"]`)!
+    const x = (element: Element) => Number(element.getAttribute('x'))
+    const y = (element: Element) => Number(element.getAttribute('y'))
+    const top = labelOf(0)
+    const right = labelOf(1)
+    const bottom = labelOf(2)
+    const left = labelOf(3)
+    // 上/下在垂直方向两端，左/右在水平方向两端，与四轴顺序一一对应。
+    expect(y(top)).toBeLessThan(y(right))
+    expect(y(bottom)).toBeGreaterThan(y(right))
+    expect(x(left)).toBeLessThan(x(right))
+    expect(top.getAttribute('text-anchor')).toBe('middle')
+    expect(bottom.getAttribute('text-anchor')).toBe('middle')
+    expect(right.getAttribute('text-anchor')).toBe('start')
+    expect(left.getAttribute('text-anchor')).toBe('end')
+    // 所有锚点都在 viewBox 内，左右各预留足够放下一行维度名的横向空间。
+    for (const label of [top, right, bottom, left]) {
+      expect(x(label)).toBeGreaterThanOrEqual(minX)
+      expect(x(label)).toBeLessThanOrEqual(minX + width)
+      expect(y(label)).toBeGreaterThanOrEqual(minY)
+      expect(y(label)).toBeLessThanOrEqual(minY + height)
+    }
+    expect(x(left) - minX).toBeGreaterThanOrEqual(60)
+    expect(minX + width - x(right)).toBeGreaterThanOrEqual(60)
+    expect(y(top) - minY).toBeGreaterThanOrEqual(10)
+    expect(minY + height - y(bottom)).toBeGreaterThanOrEqual(10)
+  })
+
+  it('雷达的可访问名称保留四维与观察不足，图形语义不变', async () => {
+    const { host } = await mount()
+    const radar = host.querySelector('[data-review-radar]')!
+    expect(radar.getAttribute('role')).toBe('img')
+    const name = radar.getAttribute('aria-label') ?? ''
+    expect(name).toContain('四维雷达图')
+    for (const label of ['论证结构', '回应针对性', '证据使用', '概念与范围']) expect(name).toContain(label)
+    expect(name).toContain('观察不足')
+    // 轴端文字属于同一张图，不额外增加第二个同名可访问图形。
+    expect(host.querySelectorAll('[role="img"]').length).toBe(1)
+  })
+
   it('全部观察不足时仍给出四张可读卡片，不补档', async () => {
     const allGaps = content({
       dimensions: [

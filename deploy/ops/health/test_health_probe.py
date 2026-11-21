@@ -246,9 +246,22 @@ class BackupCheckTest(unittest.TestCase):
         self.archive = self.dir / "synthetic-backup.tar.gz"
         self.archive.write_bytes(b"synthetic")
         self.now = datetime(2026, 11, 20, 9, 30, 0, tzinfo=timezone.utc)
+        # 必须显式设定 mtime：新建文件的真实 mtime 是运行时的墙钟时间。
+        # 若墙钟晚于固定的 self.now，「新鲜」夹具会被判成「晚于当前时间」，
+        # 让测试结果随执行日期翻转（本机 2026-11-20T17:19Z 实测即因此失败）。
+        self._set_mtime(self.archive, hours_before_now=1)
+        self.assertLess(
+            datetime.fromtimestamp(self.archive.stat().st_mtime, tz=timezone.utc),
+            self.now,
+            "夹具 mtime 必须早于固定 now，否则新鲜度判定不可复现",
+        )
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def _set_mtime(self, path: Path, hours_before_now: float) -> None:
+        stamp = (self.now - timedelta(hours=hours_before_now)).timestamp()
+        os.utime(path, (stamp, stamp))
 
     def _status(self, payload) -> Path:
         path = self.dir / "backup.status.json"
@@ -316,6 +329,7 @@ class BackupCheckTest(unittest.TestCase):
         # 调用方路径可能含主机目录或业务信息，detail 只描述检查结论。
         named = self.dir / f"{ECHO_MARKER}.tar.gz"
         named.write_bytes(b"synthetic")
+        self._set_mtime(named, hours_before_now=1)
         missing = self.dir / f"{ECHO_MARKER}-absent.tar.gz"
         for path, expected in ((named, "备份未过期"), (missing, "备份文件不存在")):
             with self.subTest(path=path.name):
@@ -405,12 +419,14 @@ class BackupCheckTest(unittest.TestCase):
         self.assertIn("晚于当前时间", results[-1].detail)
 
     def test_main_backup_exit_codes(self):
-        self.assertEqual(
-            health_probe.main(
-                ["backup", "--path", str(self.archive), "--max-age-hours", "24"]
-            ),
-            0,
-        )
+        with mock.patch.object(health_probe, "datetime", wraps=datetime) as probe_clock:
+            probe_clock.now.return_value = self.now
+            self.assertEqual(
+                health_probe.main(
+                    ["backup", "--path", str(self.archive), "--max-age-hours", "24"]
+                ),
+                0,
+            )
         self.assertEqual(
             health_probe.main(
                 ["backup", "--path", str(self.dir / "absent"), "--max-age-hours", "24"]
@@ -423,6 +439,107 @@ class BackupCheckTest(unittest.TestCase):
             ),
             2,
         )
+
+    def test_failed_backup_then_recovery_is_observable(self):
+        """备份失败 → 恢复成功：同一目标必须由失败翻转为通过，才可作为恢复信号。"""
+
+        failed = self._status({"ok": False, "last_success_utc": "2026-11-20T09:00:00Z"})
+        down = health_probe.judge_backup(self.archive, 24, failed, now=self.now)
+        self.assertFalse(down[-1].ok, [result.detail for result in down])
+        self.assertIn("未成功", down[-1].detail)
+
+        recovered = self._status({"ok": True, "last_success_utc": "2026-11-20T09:00:00Z"})
+        up = health_probe.judge_backup(self.archive, 24, recovered, now=self.now)
+        self.assertTrue(all(result.ok for result in up), [result.detail for result in up])
+
+    def test_stale_archive_then_recovery_is_observable(self):
+        """备份过期 → 新备份落盘：新鲜度判定必须随之翻转。"""
+
+        old = (self.now - timedelta(hours=50)).timestamp()
+        os.utime(self.archive, (old, old))
+        stale = health_probe.judge_backup(self.archive, 24, now=self.now)
+        self.assertFalse(stale[-1].ok)
+        self.assertIn("备份过期", stale[-1].detail)
+
+        self._set_mtime(self.archive, hours_before_now=1)
+        fresh = health_probe.judge_backup(self.archive, 24, now=self.now)
+        self.assertTrue(all(result.ok for result in fresh), [result.detail for result in fresh])
+
+
+class FaultAndRecoveryTest(unittest.TestCase):
+    """应用/数据库故障与恢复的可观察路径：同一目标前后判定必须翻转。
+
+    只证明探针能把「故障」与「恢复」区分成两个稳定信号；不证明目标环境
+    的监控、告警或恢复流程已就绪。
+    """
+
+    def setUp(self):
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self.server.routes = dict(HealthProbeHttpTest.available_routes())
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+
+    def test_app_down_then_recovery_is_observable(self):
+        # 应用/代理不可用：HTML 502 必须判失败，且不得被当作健康。
+        self.server.routes["/api/health/live"] = (
+            502,
+            "text/html; charset=utf-8",
+            "<html>bad gateway</html>",
+        )
+        down = health_probe.probe_health(self.base_url, "live", timeout=5)
+        self.assertFalse(down.ok)
+        self.assertIn("应用或代理不可用", down.detail)
+
+        self.server.routes["/api/health/live"] = _configured_status(200, "alive")
+        up = health_probe.probe_health(self.base_url, "live", timeout=5)
+        self.assertTrue(up.ok, up.detail)
+
+    def test_db_down_then_recovery_is_observable(self):
+        # 数据库不可用：ready 503 not_ready；恢复后同一路径返回 200 ready。
+        self.server.routes["/api/health/ready"] = _configured_status(503, "not_ready")
+        down = health_probe.probe_health(self.base_url, "ready", timeout=5)
+        self.assertFalse(down.ok)
+        contract = health_probe.probe_health(
+            self.base_url, "ready", timeout=5, expect="not_ready"
+        )
+        self.assertTrue(contract.ok, contract.detail)
+
+        self.server.routes["/api/health/ready"] = _configured_status(200, "ready")
+        up = health_probe.probe_health(self.base_url, "ready", timeout=5)
+        self.assertTrue(up.ok, up.detail)
+
+
+class TransportRecoveryTest(unittest.TestCase):
+    """应用进程未监听 → 恢复监听：探针必须由连接失败翻转为通过。"""
+
+    def test_transport_down_then_recovery_is_observable(self):
+        # 先绑定端口，再开始监听，避免关闭再绑定时被其他进程占用。
+        with ThreadingHTTPServer(("127.0.0.1", 0), _Handler, bind_and_activate=False) as server:
+            server.server_bind()
+            base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            down = health_probe.probe_health(base_url, "live", timeout=1)
+            self.assertFalse(down.ok)
+            self.assertTrue(
+                any(token in down.detail for token in ("连接失败", "请求超时", "请求失败")),
+                down.detail,
+            )
+
+            server.routes = dict(HealthProbeHttpTest.available_routes())
+            server.server_activate()
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                up = health_probe.probe_health(base_url, "live", timeout=5)
+                self.assertTrue(up.ok, up.detail)
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
 
 
 if __name__ == "__main__":

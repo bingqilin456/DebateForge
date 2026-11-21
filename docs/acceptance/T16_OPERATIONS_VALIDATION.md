@@ -5,13 +5,14 @@
 ## 已验证
 
 - B1 健康与备份新鲜度探针：在整合工作区执行 `python -B -m unittest discover -s deploy/ops/health -p 'test_*.py'`，27 项通过。覆盖 live/ready HTTP 状态、JSON 和 status 契约、非回环拒绝、错误/缺失/过期/空归档、有限数值参数及不回显输入内容。CLI 冒烟仅对本地合成回环服务和临时文件执行。
+- B2 本地合成故障/恢复可观察路径（2026-11-21，本机，无 Docker）：同一套件现为 **32 项通过**（B1 的 27 项 + B2 新增 5 项），并在改动前基线复现出 2 项**夹具时间依赖缺陷**后修正。另有一次真实 CLI 子进程冒烟，10 项检查全部符合预期（详见「B2 线」）。此项只证明探针能把故障态与恢复态判成两个稳定、可区分的信号，**不证明告警已投递、证书已续期或目标环境恢复流程就绪**。
 - A1 备份脚本隔离静态/拒绝路径测试：`pwsh -NoProfile -File ./deploy/ops/backup/tests/run-static.ps1`，本轮最终 **76 项通过、0 项失败**（A2 演练开始时基线实测 61 项；演练中为 D1–D7 补断言至 72 项，代码复核发现 D8 后再补 4 项 fail-closed 断言至 76 项）；`tests/age-roundtrip.sh` 的 age 加解密、截断密文拒绝、错误私钥拒绝均通过。仅测试脚本与 age，不是数据库备份/恢复实测。
 - 上述证据只证明工具逻辑与静态边界；不证明 T16 目标环境控制通过，也不证明 A08 的 RPO 24 小时/RTO 2 小时已达到。
 
 ## 尚未验证
 
 - A1 工具已交付；演练开始时本机没有 age 可执行文件且工具镜像未构建。该状态已改变：本轮已在工作区外私有目录安装 age v1.2.1 并构建工具镜像，随后完成 MySQL 快照、完整加密备份、独立库恢复、合成辩论历史读取与 RPO/RTO 实测（见「A2 线」），并补做旧镜像同卷回退验证（见「A2-R 线」）。**这些仍是本机隔离证据，异机取回、目标环境与生产范围未验证。**
-- B2 未执行：无 Docker 故障注入（A2 只做了服务停止级的故障模拟，非引擎/节点故障）、告警投递/恢复通知、正式证书续期与 TLS 握手。应用镜像回退的**本地同卷**部分已由「A2-R 线」覆盖，但目标环境的回退流程未验证。
+- B2 已按「本机隔离范围」完成探针侧证据：应用/数据库不可用、备份失败/过期与各自恢复信号的可观察路径已用合成 HTTP 服务与合成归档验证，并修正测试夹具的时间依赖缺陷（见「B2 线」）。**仍未执行**：真实容器/Compose 故障注入、任何告警投递与恢复通知（仓库无发送器，不可验证）、正式证书续期与 TLS 握手（仓库无续期钩子，工具无 TLS 能力）、目标环境 Nginx 透传与超时。应用镜像回退的**本地同卷**部分已由「A2-R 线」覆盖，但目标环境的回退流程未验证。
 - 未连接 T07-COST-01 生产账户或费用证据；本地无收费探针不能证明生产预算、持久账本、熔断、停用或在途调用边界。
 - 无 ECS/异机目标及现场收件人证据；无公网、生产数据库、生产证书或真实模型操作。
 
@@ -224,6 +225,95 @@ docker run -d --name t16a-rollback-app --network container:t16a-backup-restore-m
 - 旧镜像在本轮只以 `APP_ENV=test` 启动；`deploy`/`demo` 固定库名与 HTTPS Origin 等生产配置路径未验证。
 - 回退镜像与当前 HEAD 的 Schema 已由当前版本迁移创建，属「新 Schema + 旧应用」方向；反向（旧 Schema + 新应用）未验证。
 - 生成能力为 `AI_MODE=disabled`，只验证读路径与写请求的失败处理，未验证回退后模型调用链。
+
+## B2 线：健康探针的故障/恢复可观察路径（2026-11-21，本机合成验证）
+
+本节记录 B 线在本机隔离范围内**实际执行**的验证。范围被明确收窄为：**探针是否能把故障态与恢复态判成两个稳定、可区分的信号**。所有判定证据来自本地回环合成 HTTP 服务与合成归档文件；**未启动 Compose 项目、未停止任何真实服务、未发送任何通知**。
+
+### 范围与授权边界
+
+- 代码基线：`codex/t16-operations` HEAD `09da1660`，工作区开始时干净（`git status` 无改动）。
+- 只改 `deploy/ops/health/` 与本文；未改 T07/ECS/业务配置，未引第三方依赖，未在仓库外新增交付文件。
+- 未触碰任何既有容器/卷/网络；未创建常驻（非 `--rm`）的 `t16b-local-*` 容器、卷或网络；未访问公网、未注册真实收件人、未调用真实模型。
+- **Docker 实际使用情况（如实登记）**：本轮只用 `docker run --rm --network none` 做过几次**一次性只读能力探测**——确认 `mysql:8.4.13`、`golang:1.27.1` 镜像自带 `openssl`（用于判断能否做证书实验）、确认 `nginx:1.30.6-alpine-slim` 不带 `openssl`、以及用 `alpine:3.24.4` 验证私有目录挂载后的文件可见性。这些容器全部随 `--rm` 立即销毁，`docker ps -a` / `docker volume ls` / `docker network ls` 中 `t16b` 相关条目为 **0**；未构建镜像、未启动任何 Compose 项目、未停止或修改任何既有容器。既有 `siyige-*` 容器数量在操作前后均为 **22**，未变化。
+- CLI 冒烟驱动脚本位于 `%TEMP%\t16b-cli-smoke\smoke.py`（CLI 冒烟驱动脚本，不属于仓库交付物）；临时目录 `C:\Users\ZhuanZ1\.codex\t16b-local-run`（仅两个占位的假证书文本文件，用于挂载路径探测）已按绝对路径校验后删除。
+
+### 发现并修复的缺陷：测试夹具的时间依赖（D9）
+
+B2 开始时按本文原记录执行同一命令复现出 **2 项失败**：
+
+```
+python -B -m unittest discover -s deploy/ops/health -p 'test_*.py'
+Ran 27 tests ... FAILED (failures=2)
+```
+
+| 编号 | 位置 | 缺陷 | 修复 |
+| --- | --- | --- | --- |
+| D9 | `test_health_probe.py` `BackupCheckTest` | 夹具把 `now` 固定为 `2026-11-20T09:30Z`，但新建归档文件的 mtime 是执行时墙钟。执行时间一旦晚于该固定值，`judge_backup` 判「最后成功时间晚于当前时间，数据可疑」，`test_fresh_archive_by_mtime_passes` 与 `test_archive_and_status_file_names_are_not_echoed` 失败 | `setUp` 用 `os.utime` 把夹具 mtime 固定到 `now` 之前 1 小时，并断言夹具 mtime 早于 `now`；涉及 mtime 的两个测试同样显式设定 |
+
+**基线复现方式（可重放）**：用 `git show HEAD:...` 把未改动的 `health_probe.py` 与 `test_health_probe.py` 导出到临时目录后在原地执行，得到同样的 `Ran 27 tests ... FAILED (failures=2)`。因此这两项失败**不是本步引入**，而是 B1 交付时未被发现的既有缺陷；其根源是夹具依赖真实墙钟而断言用了固定时间。
+
+整合复验时，CLI 成功用例仍用实际时间比较固定 mtime，超过 24 小时就会失败。已让该用例使用与归档夹具相同的固定时钟。连接恢复用例在同一套接字上先绑定端口，再开始监听，避免释放端口后重新绑定的竞争。
+
+### 环境与执行结果
+
+| 项 | 值 |
+| --- | --- |
+| Python | 3.14.3（主机 `python`） |
+| 依赖 | 仅标准库；未安装任何第三方包 |
+| Docker | 仅 `--rm --network none` 一次性能力探测，已全部销毁；**未用于本次故障/恢复验证** |
+| 单测命令 | `python -B -m unittest discover -s deploy/ops/health -p 'test_*.py'` |
+| 单测结果 | `Ran 32 tests in 6.1s` → **OK**，退出码 0（27 项 B1 + 5 项 B2 新增） |
+
+> 故障/恢复的判定证据全部来自 Python 进程内的回环 HTTP 服务与临时文件，不来自任何容器。Docker 只用于确认「本机有哪些镜像可用」这类环境事实，不参与结论。
+
+新增的 5 项故障/恢复测试：
+
+| 测试 | 故障态断言 | 恢复态断言 |
+| --- | --- | --- |
+| `test_app_down_then_recovery_is_observable` | live 返回代理 HTML 502 → 判失败，detail 含「应用或代理不可用」 | 同一路径改回 JSON 200 → 通过 |
+| `test_db_down_then_recovery_is_observable` | ready 503 `not_ready` → 默认预期判失败；`--expect-ready not_ready` 合同核对通过 | 改回 200 `ready` → 通过 |
+| `test_transport_down_then_recovery_is_observable` | 预留端口未监听 → 连接失败/超时，且不抛栈 | 同端口起服务 → 通过 |
+| `test_failed_backup_then_recovery_is_observable` | 状态文件 `ok=false` → 「上次备份未成功」 | 状态文件翻转 `ok=true` → 通过 |
+| `test_stale_archive_then_recovery_is_observable` | 归档 mtime 50 小时前 + 上限 24 小时 → 「备份过期」 | 新归档落盘（1 小时前）→ 通过 |
+
+### 真实 CLI 冒烟（子进程调用工具本体，服务端为回环合成 HTTP 服务）
+
+用 `%TEMP%\t16b-cli-smoke\smoke.py` 驱动 `python -B deploy/ops/health/health_probe.py`；共 **10 项检查全部符合预期**，脚本输出 `RESULT OK`（下表把「备份恢复」与「备份缺失」并入第 9 行，故为 9 类场景）。
+
+| # | 场景 | 断言要点 | 退出码 | 结果 |
+| --- | --- | --- | --- | --- |
+| 1 | 正常 | live/ready 均 200 JSON，`summary ok` | 0 | PASS |
+| 2 | 应用不可用 | live/ready 均为代理 HTML 502，detail 含「应用或代理不可用」 | 1 | PASS |
+| 3 | 数据库不可用 | live 200 alive、ready 503 not_ready，判 ready 失败 | 1 | PASS |
+| 4 | 数据库不可用（合同核对） | `--expect-ready not_ready` 正向核对 503 合同 | 0 | PASS |
+| 5 | 恢复 | live/ready 恢复 200，`summary ok` | 0 | PASS |
+| 6 | HTML 200 伪装 | live 返回 `text/html` 200，detail 含「HTML」并判失败 | 1 | PASS |
+| 7 | 备份失败 | 状态文件 `ok=false`，detail 含「未成功」 | 1 | PASS |
+| 8 | 备份过期 | 最后成功 473.37 小时前 > 24 小时上限，detail 含「备份过期」 | 1 | PASS |
+| 9 | 备份恢复 + 缺失 | 状态翻转后通过；缺失归档判「备份文件不存在」 | 0 / 1 | PASS |
+
+（表中 detail 为去转义后的中文；实测控制台按 GBK 代码页显示为乱码，这是 Windows 控制台渲染问题，不是工具输出编码问题——工具自身把 `stdout` 重配为 UTF-8，单测与重定向读取均正常。）
+
+### 本轮明确不能验证的项目（目标环境必须补）
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| 故障告警与恢复通知投递 | **未实现、不能验证** | 仓库内没有告警发送器：`deploy/ops/health/`、`deploy/` 检索不到 SMTP/webhook/通知代码。`backend/internal/ai/trial_ledger.go` 的 `alert io.Writer` 只把试运行账本事件写到日志/终端，是**费用试运行**的账本通道，不是运维监控投递。工具只输出退出码与 JSON 结论，需外部采集器决定是否告警。**未伪造任何投递或到达记录。** |
+| 正式证书续期与 TLS 握手 | **未实现、不能验证** | 工具无 `--cacert`、无证书链/SAN/到期检查、无 `tls` 子命令；仓库无 ACME 客户端或续期钩子，`deploy/README.md` 第 4 节的钩子流程（原子替换 + `nginx -t` + `nginx -s reload`）未实现为脚本。**即使后续用自签测试 CA 做回环握手，也只能算探针能力验证，不能称正式续期通过。** 本轮未做任何 TLS 握手。 |
+| 真实容器/Compose 故障注入 | **未执行** | 未启动 Compose 项目、未停止任何真实服务。A2 只做过服务停止级验证，非引擎/节点故障；Nginx 透传、超时、`internal` 网络行为均未验。 |
+| 应用镜像回退 | **本地同卷已由 A2-R 覆盖；目标环境未验证** | 本工具没有回退路径；回退镜像标识、卷保持、Schema 兼容硬停止属另一工作线。 |
+| 目标环境监控接线与值班到达 | **未执行** | 无 ECS、无现场收件人、无真实域名与证书。 |
+
+### 变更范围与残留
+
+- 修改文件：`deploy/ops/health/test_health_probe.py`（D9 修复与 5 项新测试）、`deploy/ops/health/README.md`、本文件。
+- `deploy/ops/health/health_probe.py` **未改动**（曾为 B2 起草 `--cacert`/`tls` 扩展，按「不扩展新环境探查」的收束要求已用 `git checkout` 还原至 HEAD，未留下半成品）。
+- 未新增任何常驻 Docker 容器、卷、网络或镜像（`--rm` 能力探测容器已全部销毁）；无固定端口监听；临时冒烟脚本在系统临时目录，不在仓库。
+
+### 结论
+
+在本机隔离范围内，健康探针已能把「应用不可用、数据库不可用、备份失败、备份过期」与对应的「恢复」判成稳定且可区分的信号，并发现并修正了一处会使测试随执行日期翻转的夹具缺陷（D9）。**该结果不支持「T16 的告警、证书续期、现场故障响应已验收」**：告警发送器与续期钩子在仓库中不存在，真实容器故障注入与目标环境证据仍需在获得相应环境与授权后补做。
 
 ## 清理结果（本轮授权范围内，2026-11-20T16:03Z）
 

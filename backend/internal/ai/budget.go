@@ -286,6 +286,11 @@ type Fake struct {
 	reviewFailLeft int
 	// reviewScripts 按顺序提供脚本化回复；耗尽后回落到确定性样例。
 	reviewScripts []string
+	// 局部重练同样独立：记录、脚本化失败与失败次数与其它能力互不影响。
+	repracticeRecords  []FakeRepracticeRecord
+	repracticeErr      error
+	repracticeFailLeft int
+	repracticeScripts  []string
 }
 
 // FakeStep 是一次预设的调用结果；Err 非 nil 时返回该错误。

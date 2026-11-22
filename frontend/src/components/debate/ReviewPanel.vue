@@ -25,6 +25,7 @@ const props = defineProps<{
   locate?: (messageId: string, startCp: number, endCp: number) => void
   /** 局部重练入口：未接入时显示“待整合”而不是死链。 */
   repractice?: (improvement: string, quote: ReviewQuote | null) => void
+  canRepracticeQuote?: (quote: ReviewQuote) => boolean
 }>()
 
 const emit = defineEmits<{
@@ -252,6 +253,9 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
               <span>{{ item.text }}</span>
               <span v-if="item.quote" class="quote-ref">原文：“{{ item.quote.quote }}”</span>
               <span v-else class="pending-entry">原文定位待整合</span>
+              <Button v-if="locate && item.quote?.resolved" size="mini" type="text" @click="onLocate(item.quote)">定位原文</Button>
+              <Button v-if="repractice && item.quote?.resolved && canRepracticeQuote?.(item.quote)"
+                size="mini" type="text" data-repractice-issue @click="onRepractice('', item.quote)">重练原句</Button>
             </li>
           </ul>
         </div>
@@ -277,7 +281,7 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
 
       <footer class="review-footer">
         <Button disabled data-pdf-pending>下载单场 PDF 战报（V2-14 待整合）</Button>
-        <span class="muted">PDF 将复用已保存复盘、不新增模型调用；争点卡与重练接入后再替换对应入口。</span>
+        <span class="muted">PDF 将复用已保存复盘。</span>
       </footer>
     </template>
   </section>

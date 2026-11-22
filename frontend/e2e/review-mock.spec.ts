@@ -173,10 +173,11 @@ test('四维观察不足不按 0 画，雷达缺项留空，原文定位可点�
   // 正式工作台仍保留整段外框（预览页才取消可见外框、改描精确片段）。
   await expect(locatedParagraph).toHaveCSS('outline-style', 'solid')
 
-  // 观察不足轴没有定位入口；PDF 与重练明确标为待整合而非死链。
+  // 观察不足轴没有定位入口；PDF 仍标为待整合，重练已接入正式入口。
   await expect(page.locator('[data-legend-locate="responsiveness"]')).toHaveCount(0)
   await expect(page.locator('[data-pdf-pending]')).toBeDisabled()
-  await expect(page.locator('[data-pending-entry="repractice-argument_structure"]')).toContainText('待整合')
+  await expect(page.locator('[data-pending-entry="repractice-argument_structure"]')).toHaveCount(0)
+  await expect(page.locator('[data-repractice="argument_structure"]')).toBeVisible()
 })
 
 test('未开始复盘：只显示手动入口，不自动生成', async ({ page }) => {

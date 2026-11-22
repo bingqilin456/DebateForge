@@ -280,3 +280,58 @@ export type ReviewStatus =
 
 /** 显式生成或重试的请求正文；首版没有任何自动触发。 */
 export type ReviewRequest = { retry?: false } | { retry: true; expected_attempt_version: number }
+
+// V2-08 局部重练：只改写本人已保存发言的一段原文，每次改写都是独立版本。
+// 与复盘/争点/正式消息完全分离：重练不写正式消息、不改比赛状态、不改复盘。
+
+/** 选段回显：坐标是从 0 开始的 Unicode 码点半开区间，与服务端锚点一致。 */
+export interface RepracticeSource {
+  message_id: string
+  start_cp: number
+  end_cp: number
+  quote: string
+}
+
+/** 对照反馈：是否改善 + 理由 + 可能的新问题；不评分、不给整段范文。 */
+export interface RepracticeFeedback {
+  improved: boolean
+  change: string
+  reason: string
+  new_problem: string
+}
+
+/**
+ * 单条重练版本。
+ *
+ * status 三态：
+ * - generating：已保存版本、正在生成反馈（页面刷新后仍可读到）；
+ * - completed：已保存反馈；
+ * - failed：保留改写与选段，可按 attempt_version 显式重试。
+ */
+export type RepracticeVersion =
+  | { id: string; status: 'generating'; attempt_version: number; source: RepracticeSource; goal: string; rewrite: string; feedback: null; error_code: null; restored_from: string | null }
+  | { id: string; status: 'completed'; attempt_version: number; source: RepracticeSource; goal: string; rewrite: string; feedback: RepracticeFeedback; error_code: null; restored_from: string | null }
+  | { id: string; status: 'failed'; attempt_version: number; source: RepracticeSource; goal: string; rewrite: string; feedback: null; error_code: string; restored_from: string | null }
+
+/** 历史版本列表；available=false 表示本环境未开启重练切片，界面应整体隐藏。 */
+export interface RepracticeList {
+  available: boolean
+  items: RepracticeVersion[]
+}
+
+/** 提交一次改写；restored_from 表示这一版由历史版本恢复到编辑区后继续改写。 */
+export interface RepracticeSubmitRequest {
+  client_request_id: string
+  message_id: string
+  start_cp: number
+  end_cp: number
+  quote: string
+  goal: string
+  rewrite: string
+  restored_from?: string
+}
+
+/** 显式重试失败版本，必须带服务端当前版本。 */
+export interface RepracticeRetryRequest {
+  expected_attempt_version: number
+}

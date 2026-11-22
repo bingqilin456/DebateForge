@@ -174,6 +174,16 @@ describe('争点卡原文定位复用共享定位语义', () => {
     }
   })
 
+  it('点击已核对的用户争点原文时定位并把同一片段带入重练', async () => {
+    const { host, selected } = await mount({ integrated: true })
+    const marker = citationMarkers(host)[0]!
+    const quote = marker.textContent ?? ''
+    marker.click()
+    await vi.waitFor(() => expect(selected).toHaveLength(1))
+    await vi.waitFor(() => expect(host.querySelector('[data-located-quote]')).not.toBeNull())
+    expect(selected[0]).toEqual({ messageId: '101', start: 8, end: 17, quote })
+  })
+
   it('逐字节点与外层片段不影响选句重练的码点换算', async () => {
     const { host, mock, selected } = await mount({ integrated: true })
     const article = host.querySelector<HTMLElement>('article.user')!

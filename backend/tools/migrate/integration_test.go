@@ -71,8 +71,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 17 { // Goose 初始版本 0 + 六张初始表 + 三份约束修复 + 一份种子 + 总结表 + 轮次与赛制 + 策略表 + 自定义辩题可空 + 原文批注 + 赛后复盘。
-		t.Fatalf("版本历史条数 = %d，期望 17", len(before))
+	if len(before) != 18 { // Goose 初始版本 0，历史迁移 1–16，以及局部重练 18。
+		t.Fatalf("版本历史条数 = %d，期望 18", len(before))
 	}
 	var tables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 10 {
@@ -89,6 +89,12 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 16").Scan(&historyIDs); err != nil || historyIDs != 16 {
 		t.Fatal("十六个版本未逐一记录成功", err)
 	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM goose_db_version WHERE is_applied=1 AND version_id=18").Scan(&historyIDs); err != nil || historyIDs != 1 {
+		t.Fatal("局部重练迁移未记录成功", err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='debate_repractice_versions' AND column_name='restored_from' AND column_type='bigint unsigned' AND is_nullable='YES'").Scan(&tables); err != nil || tables != 1 {
+		t.Fatal("局部重练版本缺少可空的恢复来源列", err)
+	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
 	provider, err = newProvider(db, cfg, os.DirFS("../../migrations"), "goose_db_version")
@@ -103,8 +109,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 16 {
-		t.Fatal("状态未显示十六个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 17 {
+		t.Fatal("状态未显示十七个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }

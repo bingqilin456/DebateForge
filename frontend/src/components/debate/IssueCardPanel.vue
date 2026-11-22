@@ -13,6 +13,7 @@ import {
   issueCardStateMessage,
   issueCardTitleAccessibleName,
   type IssueCardContents,
+  type IssueCardCitationView,
 } from '../../debate/issueCard'
 import IssueCardCitationText from './IssueCardCitationText.vue'
 
@@ -41,7 +42,11 @@ const props = defineProps<{
   confirm?: (content: string, title: string) => Promise<boolean>
 }>()
 
-const emit = defineEmits<{ locate: [key: string]; refreshRequested: [] }>()
+const emit = defineEmits<{
+  locate: [key: string]
+  'select-source': [source: { messageId: string; start: number; end: number; quote: string }]
+  refreshRequested: []
+}>()
 
 const list = ref<IssueCardList | null>(null)
 const loading = ref(false)
@@ -237,8 +242,15 @@ function confirmDialog(content: string, title: string): Promise<boolean> {
 }
 
 /** 点击引用标记：把定位键交给父组件，由它滚动并聚焦发言流中的对应原句。 */
-function locate(key: string) {
+function locate(key: string, view: IssueCardCitationView) {
   emit('locate', key)
+  if (view.status !== 'verified' || view.start === null || view.end === null || view.citation.speaker !== 'user') return
+  emit('select-source', {
+    messageId: view.citation.anchor.message_id,
+    start: view.start,
+    end: view.end,
+    quote: view.citation.anchor.quote,
+  })
 }
 
 watch(() => [props.debateId, props.contents] as const, () => {
@@ -314,7 +326,7 @@ defineExpose({ load, views })
               :view="view.origin"
               label="提出原文"
               :disabled="busy"
-              @locate="locate"
+              @locate="locate($event, view.origin)"
             />
             <div v-if="view.responses.length" class="responses">
               <IssueCardCitationText
@@ -323,7 +335,7 @@ defineExpose({ load, views })
                 :view="response"
                 label="相关回应"
                 :disabled="busy"
-                @locate="locate"
+                @locate="locate($event, response)"
               />
             </div>
             <p v-else class="muted">尚无相关回应记录。</p>

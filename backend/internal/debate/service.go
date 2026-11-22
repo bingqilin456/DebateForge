@@ -31,6 +31,10 @@ type Service struct {
 	// 它只在用户显式请求时生成，没有自动触发或后台补跑。
 	reviewMu      sync.Mutex
 	reviewEnabled bool
+	// 局部重练是独立能力：默认关闭，只有显式装配后才创建子服务。
+	// 它只读写独立版本表，不触碰正式消息、会话状态或复盘，关闭时连表都不访问。
+	repracticeMu sync.Mutex
+	repractice   *RepracticeService
 }
 
 // ServiceOption 是服务构造选项，用于在不改动既有调用点的前提下装配可选依赖。

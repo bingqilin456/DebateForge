@@ -1,18 +1,22 @@
 <script setup lang="ts">
 import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
 import { locateQuoteText } from '../../shared/locateQuote'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { readQuoteSelection, verifyQuoteInContent } from '../../shared/selectQuote'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button, Switch } from '@arco-design/web-vue'
 import { AI_STYLE_LABELS } from '../../debate/styles'
 import type { AuthState } from '../../auth/state'
 import { createDebateApi, hasNonWhitespace, isEntityId } from '../../api/debate'
 import { createAnnotationApi } from '../../api/annotations'
 import { createReviewApi } from '../../api/review'
+import { createRepracticeApi } from '../../api/repractice'
 import { createFirstTurnState } from '../../debate/firstTurn'
 import { createReviewState } from '../../debate/review'
-import type { AnnotationItem } from '../../types/api'
+import { createRepracticeState } from '../../debate/repractice'
+import type { AnnotationItem, RepracticeSource, RepracticeVersion, ReviewQuote } from '../../types/api'
 import AnnotationPanel from './AnnotationPanel.vue'
 import AnnotatedText from './AnnotatedText.vue'
+import RepracticePanel from './RepracticePanel.vue'
 import ReviewPanel from './ReviewPanel.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import StrategyPanel from './StrategyPanel.vue'
@@ -27,8 +31,11 @@ const api = createDebateApi(props.auth.client)
 const annotationApi = createAnnotationApi(props.auth.client)
 // 复盘同样是独立能力：读取已有状态，只有用户显式点击才生成或重试。
 const reviewApi = createReviewApi(props.auth.client)
+// 局部重练与复盘/批注互相独立：只读写自己的版本表，不改正式消息与比赛状态。
+const repracticeApi = createRepracticeApi(props.auth.client)
 const panel = createFirstTurnState(api)
 const review = createReviewState(reviewApi)
+const repractice = createRepracticeState(repracticeApi)
 const {
   detail, busy, uncertain, draft, notice, id, streamText, streaming, streamRound,
   nextRound, canSend, canRetryTurn, canRetrySummary,
@@ -37,12 +44,23 @@ const {
   status: reviewStatus, loading: reviewLoading, busy: reviewBusy, notice: reviewNotice,
   unavailable: reviewUnavailable, canGenerate: canGenerateReview, canRetry: canRetryReview,
 } = review
+const {
+  available: repracticeAvailable, list: repracticeVersions, selection: repracticeSelection,
+  goal: repracticeGoal, rewrite: repracticeRewrite, restoredFrom: repracticeRestoredFrom,
+  rewriteCount: repracticeRewriteCount, goalCount: repracticeGoalCount, canSubmit: canSubmitRepractice,
+  busy: repracticeBusy, loading: repracticeLoading, notice: repracticeNotice,
+  failure: repracticeFailure, hasSelection: hasRepracticeSelection,
+} = repractice
 const input = ref('')
 // 场中批注开关只控展示，不控生成与保存。
 const showAnnotations = ref(true)
 // 侧栏暴露 messageItems/focusFromMarker：标记点击后由它展开并聚焦对应解释。
 const annotationPanel = ref<InstanceType<typeof AnnotationPanel> | null>(null)
 const transcript = ref<HTMLElement | null>(null)
+const repracticeSection = ref<HTMLElement | null>(null)
+const repracticeEditor = ref<InstanceType<typeof RepracticePanel> | null>(null)
+// 主动选段的即时提示：未选中任何原文时给出可操作说明，而不是静默失败。
+const selectionNotice = ref('')
 
 function messageAnnotations(messageId: string): AnnotationItem[] {
   return annotationPanel.value?.messageItems(messageId) ?? []
@@ -72,6 +90,71 @@ function locateReviewQuote(messageId: string, startCp: number, endCp: number) {
   locateQuoteText(transcript.value, messageId, startCp, endCp)
 }
 
+/**
+ * 主动选中本人发言的一段原文进入重练。
+ *
+ * 这是 V2-08 的主入口：不依赖批注或争点是否已生成。选段只在本地换算成
+ * 码点区间并核对原文；服务端仍会再验证归属、完赛状态与逐字匹配。
+ */
+function selectRepracticeFromSelection() {
+  selectionNotice.value = ''
+  const picked = readQuoteSelection(transcript.value)
+  if (!picked) {
+    selectionNotice.value = '请先在本人发言中选中一段原文，再点“选句重练”。'
+    return
+  }
+  // 只接受本人（user）消息：AI 原文不改写。
+  const source = locateUserQuote(picked.messageId, picked.startCp, picked.endCp, picked.quote)
+  if (!source) {
+    selectionNotice.value = '只能选本人发言的原文；AI 回复不能作为重练对象。'
+    return
+  }
+  repractice.selectSource(source)
+  void nextTick(() => {
+    repracticeSection.value?.scrollIntoView?.({ block: 'center' })
+    repracticeEditor.value?.$el.querySelector('textarea')?.focus()
+  })
+}
+
+/**
+ * 复盘与争点的原文入口复用同一重练入口。
+ *
+ * 改进提示带入目标；引用若已由服务端核对且仍能在当前消息里逐字复核，
+ * 就直接带入原句，否则只聚焦重练区并提示重新选段（不猜坐标）。
+ */
+function prepareRepractice(improvement: string, quote: ReviewQuote | null) {
+  selectionNotice.value = ''
+  if (quote && quote.resolved && quote.start_cp !== null && quote.end_cp !== null) {
+    const source = locateUserQuote(quote.message_id, quote.start_cp, quote.end_cp, quote.quote)
+    if (source) {
+      repractice.selectSource(source, improvement)
+      void nextTick(() => {
+        repracticeSection.value?.scrollIntoView?.({ block: 'center' })
+        repracticeEditor.value?.$el.querySelector('textarea')?.focus()
+      })
+      return
+    }
+    selectionNotice.value = '该引用与当前原文无法逐字核对，请在本人发言中重新选中要重练的原句。'
+  } else if (improvement) {
+    // 没有可核对的坐标时仍把改进提示带入目标，不伪造原句。
+    repractice.applyGoalOnly(improvement)
+    selectionNotice.value = '已带入改进提示；请先在本人发言中选中要重练的原句。'
+  }
+  void nextTick(() => { repracticeSection.value?.scrollIntoView?.({ block: 'center' }) })
+}
+
+/** 用消息号与码点区间在当前会话里复核引用，命中则返回选段。 */
+function locateUserQuote(messageId: string, startCp: number, endCp: number, quote: string): RepracticeSource | null {
+  for (const turn of detail.value?.turns ?? []) {
+    for (const message of turn.messages) {
+      if (message.id !== messageId || message.role !== 'user') continue
+      if (!verifyQuoteInContent(message.content, startCp, endCp, quote)) return null
+      return { message_id: messageId, start_cp: startCp, end_cp: endCp, quote }
+    }
+  }
+  return null
+}
+
 const locked = computed(() => busy.value || props.auth.state.pending)
 const count = computed(() => [...input.value].length)
 const initialId = /^#debate=([1-9]\d{0,19})$/.exec(props.route)?.[1]
@@ -81,11 +164,12 @@ let active = true
 watch(id, value => {
   if (value && active) history.replaceState(null, '', `${location.pathname}${location.search}#debate=${value}`)
 })
-// 会话就绪后读取复盘状态；未完成会话也读取，但面板只在完赛后展示。
+// 会话就绪后读取复盘与重练状态；未完成会话也读取，但面板只在完赛后展示。
 // 生成入口完全由用户点击触发，这里绝不自动请求生成。
 watch(id, value => {
   if (!value) return
   void review.open(value)
+  void repractice.open(value)
 })
 watch(draft, value => {
   if (value) input.value = value
@@ -105,10 +189,14 @@ function localTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
+function retryRepractice(version: RepracticeVersion) {
+  void repractice.retry(version)
+}
+
 onMounted(() => {
   if (initialId && !invalidRoute) void panel.open(initialId)
 })
-onUnmounted(() => { active = false; panel.dispose(); review.dispose() })
+onUnmounted(() => { active = false; panel.dispose(); review.dispose(); repractice.dispose() })
 </script>
 
 <template>
@@ -166,8 +254,7 @@ onUnmounted(() => { active = false; panel.dispose(); review.dispose() })
                 />
               </p>
               <time :datetime="message.created_at">{{ localTime(message.created_at) }}</time>
-            </article>
-            <p v-if="turn.status === 'generating'" class="turn-generating" role="status">
+            </article>            <p v-if="turn.status === 'generating'" class="turn-generating" role="status">
               第 {{ turn.round_no }} 轮正在生成 AI 回复（v{{ turn.attempt_version }}）…
             </p>
             <div v-else-if="turn.status === 'failed'" class="turn-failed" role="alert">
@@ -226,6 +313,19 @@ onUnmounted(() => { active = false; panel.dispose(); review.dispose() })
             @start="panel.requestSummary"
           />
 
+          <!-- V2-08 局部重练的主入口：完赛后主动选中本人发言的一段原文即可进入，
+               不依赖批注或争点是否已生成；打开面板与选段都不触发生成。 -->
+          <section v-if="detail && detail.debate.status === 'completed' && repracticeAvailable" ref="repracticeSection" class="repractice-entry" data-repractice-entry aria-label="进入局部重练">
+            <div class="heading-actions">
+              <!-- 选段是纯本地读取动作：轮次提交的 transient uncertain 不影响它，
+                   服务端仍会在提交时独立复核归属、完赛状态与原文匹配。 -->
+              <Button data-select-quote :disabled="props.auth.state.pending || repracticeBusy" @mousedown.prevent @click="selectRepracticeFromSelection">选句重练</Button>
+              <Button v-if="hasRepracticeSelection" data-clear-quote :disabled="repracticeBusy" @click="repractice.clearSelection()">清除选段</Button>
+            </div>
+            <p class="muted">先在本场上方本人发言中选中一段原文，再点“选句重练”。AI 原文不能作为重练对象。</p>
+            <p v-if="selectionNotice" class="panel-notice" role="status" aria-live="polite" data-selection-notice>{{ selectionNotice }}</p>
+          </section>
+
           <!-- V2-13 复盘独立于总结：只在完赛后出现，失败不影响原文与总结。
                服务端显式返回 available=false 表示本环境未开启切片：整个复盘区隐藏，
                不留可点击生成入口，也不显示“无复盘”误导文案。 -->
@@ -238,9 +338,37 @@ onUnmounted(() => { active = false; panel.dispose(); review.dispose() })
             :can-generate="canGenerateReview && !locked && !uncertain"
             :can-retry="canRetryReview && !locked && !uncertain"
             :locate="locateReviewQuote"
+            :repractice="repracticeAvailable && !repracticeBusy ? prepareRepractice : undefined"
+            :can-repractice-quote="quote => quote.start_cp !== null && quote.end_cp !== null && !!locateUserQuote(quote.message_id, quote.start_cp, quote.end_cp, quote.quote)"
             @generate="review.generate"
             @retry="review.retry"
             @refresh="review.refresh()"
+          />
+
+          <!-- 重练面板：与复盘并列、互不依赖；能力关闭时整块隐藏。 -->
+          <RepracticePanel
+            v-if="detail && detail.debate.status === 'completed' && repracticeAvailable"
+            ref="repracticeEditor"
+            :available="repracticeAvailable"
+            :versions="repracticeVersions"
+            :selection="repracticeSelection"
+            :goal="repracticeGoal"
+            :rewrite="repracticeRewrite"
+            :rewrite-count="repracticeRewriteCount"
+            :goal-count="repracticeGoalCount"
+            :can-submit="canSubmitRepractice && !props.auth.state.pending"
+            :busy="repracticeBusy"
+            :loading="repracticeLoading"
+            :notice="repracticeNotice"
+            :failure="repracticeFailure"
+            :restored-from="repracticeRestoredFrom"
+            @submit="repractice.submit"
+            @retry="retryRepractice"
+            @restore="repractice.restore"
+            @clear-selection="repractice.clearSelection()"
+            @locate="locateReviewQuote"
+            @update:goal="repractice.setGoal"
+            @update:rewrite="repractice.setRewrite"
           />
         </div>
 

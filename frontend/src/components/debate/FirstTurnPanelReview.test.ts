@@ -54,6 +54,8 @@ async function mount(review: unknown) {
   fetcher.mockImplementation(async input => {
     const url = String(input)
     if (url.endsWith('/review')) return json(review)
+    // 局部重练是独立切片：本文件只验证复盘降级，重练按关闭态返回。
+    if (url.endsWith('/repractice')) return json({ available: false, items: [] })
     if (url.endsWith('/strategy')) return json({ status: 'not_started', attempt_version: null })
     if (url.endsWith('/annotations')) return json({ items: [] })
     if (url.endsWith('/debates/123')) return json(detail())

@@ -26,6 +26,12 @@ export const REVIEW_CONTENT_MAX_BYTES = 24 * 1024
 export const HISTORY_PAGE_SIZE = 20
 export const HISTORY_MAX_PAGE_SIZE = 50
 
+// V2-08 局部重练：改写与改进目标各自按 Unicode 码点计，与个人发言同规则。
+export const REPRACTICE_REWRITE_MAX_CHARS = 2000
+export const REPRACTICE_GOAL_MAX_CHARS = 2000
+/** 请求编号上限，与服务端契约一致。 */
+export const REPRACTICE_REQUEST_ID_MAX_CHARS = 128
+
 // 生成状态的只读轮询共用等待策略；与单次 HTTP 请求超时分别维护。
 export const GENERATION_POLL_INTERVAL_MS = 2_000
 export const GENERATION_POLL_BUDGET_MS = 120_000

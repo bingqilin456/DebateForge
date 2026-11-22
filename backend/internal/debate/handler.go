@@ -41,6 +41,9 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	h.registerAnnotationRoutes(group, a)
 	// V2-13 复盘：读取只要 Session；显式生成/重试额外要求 Origin/CSRF 与防刷前置。
 	h.registerReviewRoutes(group, a)
+	// V2-08 局部重练：读取只要 Session；提交与失败重试额外要求 Origin/CSRF 与防刷前置。
+	// 能力未启用时读接口返回 available=false、写接口 400，不访问新表。
+	h.registerRepracticeRoutes(group, a)
 }
 
 // 有效身份与写保护通过后、路径/正文解析前计数；坏 JSON、超长和非法字段也受防刷限制。
@@ -397,6 +400,10 @@ func serviceError(c *gin.Context, e error) {
 	status, code := 500, "internal_error"
 	switch {
 	case errors.Is(e, ErrInvalidRequest):
+		status, code = 400, "invalid_request"
+	// 局部重练的选段/输入/版本错误都属于请求方问题：语义是 400，
+	// 不映射成 404 以免泄露会话是否存在，也不映射成 500 掩盖真实原因。
+	case errors.Is(e, ErrRepracticeSource), errors.Is(e, ErrRepracticeInput), errors.Is(e, ErrRepracticeVersion):
 		status, code = 400, "invalid_request"
 	case errors.Is(e, ErrNotFound):
 		status, code = 404, "not_found"

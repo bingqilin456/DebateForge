@@ -241,6 +241,9 @@ test('四轮赛后：选本人原句、失败保留、原版本重试，复盘�
   await expect(page.getByRole('heading', { name: '四轮练习 · 赛后回看' })).toBeVisible()
   await expect(page.getByRole('button', { name: '选句重练' })).toHaveCount(4)
   const first = page.locator('article.user').first()
+  await page.locator('[data-issue-card-citation^="101|"]').first().click()
+  await expect(page.locator('[data-practice-quote]')).toHaveText('评价标准应当可检验')
+  await expect(first.locator('[data-located-run]')).toHaveText('评价标准应当可检验')
   await first.getByRole('button', { name: '选句重练' }).click()
   await expect(page.getByRole('status').filter({ hasText: '请先在这条发言中选一段原文' })).toBeVisible()
   await first.locator('.message-text').evaluate(element => {

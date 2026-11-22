@@ -231,6 +231,7 @@ function runsOf(message: { id: string; content: string }): MessageRun[] {
         :completed="true"
         :confirm="confirmDialog"
         @locate="locate"
+        @select-source="emit('selectSource', $event)"
       />
     </div>
 

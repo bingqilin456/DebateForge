@@ -1,0 +1,63 @@
+# T16A 隔离演练：源库与独立恢复目标两个固定 Compose 项目共用本文件。
+# 项目名由调用方显式传入（-p）：
+#   t16a-backup-source   源库（只被读取）
+#   t16a-backup-restore  恢复目标（只接受空库恢复）
+# 本文件不写死 name:，避免覆盖 -p；不发布宿主端口、不挂 Docker socket、
+# 不引用 siyige-t02 / siyige-t07 等既有项目。数据卷按项目名自动独立。
+x-mysql: &mysql
+  image: mysql:8.4.13
+  command:
+    - --character-set-server=utf8mb4
+    - --collation-server=utf8mb4_0900_ai_ci
+    - --default-time-zone=+00:00
+    - --mysqlx=0
+    - --skip-name-resolve
+  restart: "no"
+  environment:
+    TZ: UTC
+    MYSQL_DATABASE: ${T16A_DB:?set T16A_DB}
+    MYSQL_APP_USER: ${T16A_APP_USER:?set T16A_APP_USER}
+    MYSQL_MIGRATION_USER: ${T16A_MIGRATOR_USER:?set T16A_MIGRATOR_USER}
+    MYSQL_ROOT_PASSWORD_FILE: /run/secrets/root_password
+    MYSQL_ROOT_HOST: localhost
+  volumes:
+    - mysql-data:/var/lib/mysql
+    - ./sql/init-accounts.sh:/docker-entrypoint-initdb.d/10-t16a-accounts.sh:ro
+    - ./sql/client.sh:/opt/t16a/sql/client.sh:ro
+    - ./sql/dump.sh:/opt/t16a/sql/dump.sh:ro
+    - ./sql/import.sh:/opt/t16a/sql/import.sh:ro
+  secrets:
+    - root_password
+    - app_password
+    - migrator_password
+  networks: [db]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  mysql:
+    <<: *mysql
+    healthcheck:
+      test: ["CMD", "bash", "/opt/t16a/sql/client.sh", "migrator", "--execute=SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 40s
+      retries: 30
+
+networks:
+  db:
+    internal: true
+
+volumes:
+  mysql-data:
+
+secrets:
+  root_password:
+    file: ${T16A_SECRETS_DIR:?set T16A_SECRETS_DIR}/root.txt
+  app_password:
+    file: ${T16A_SECRETS_DIR:?set T16A_SECRETS_DIR}/app.txt
+  migrator_password:
+    file: ${T16A_SECRETS_DIR:?set T16A_SECRETS_DIR}/migrator.txt

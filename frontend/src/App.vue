@@ -4,11 +4,16 @@ import { Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from './auth/state'
 import LoginForm from './components/auth/LoginForm.vue'
 import RegisterForm from './components/auth/RegisterForm.vue'
+import TrainingPanel from './components/debate/TrainingPanel.vue'
 import FirstTurnPanel from './components/debate/FirstTurnPanel.vue'
 import { feedback } from './debate/firstTurn'
 import type { Debate, TopLevelView } from './types/api'
 import HistoryView from './views/HistoryView.vue'
 import TopicsView from './views/TopicsView.vue'
+
+function isDebateRoute(hash: string) {
+  return /^#(?:debate|training)=/.test(hash)
+}
 
 function viewFromHash(hash: string): TopLevelView {
   if (hash === '#topics') return 'topics'
@@ -23,7 +28,7 @@ const restoring = ref(false)
 const message = ref('')
 const route = ref(location.hash)
 const currentView = ref<TopLevelView>(viewFromHash(location.hash))
-const lastDebateRoute = ref(location.hash.startsWith('#debate=') ? location.hash : '')
+const lastDebateRoute = ref(isDebateRoute(location.hash) ? location.hash : '')
 const panelVersion = ref(0)
 const creating = ref(false)
 const creationUncertain = ref(false)
@@ -35,7 +40,7 @@ function routeChanged() {
     return
   }
   const hash = location.hash
-  if (hash.startsWith('#debate=')) lastDebateRoute.value = hash
+  if (isDebateRoute(hash)) lastDebateRoute.value = hash
   route.value = hash
   currentView.value = viewFromHash(hash)
 }
@@ -43,7 +48,7 @@ function routeChanged() {
 function switchView(view: TopLevelView) {
   if (creating.value) return
   if (view === 'debate' && !lastDebateRoute.value) view = 'topics'
-  if (location.hash.startsWith('#debate=')) {
+  if (isDebateRoute(location.hash)) {
     lastDebateRoute.value = location.hash
   }
   if (view === 'topics') {
@@ -64,9 +69,10 @@ function switchView(view: TopLevelView) {
   currentView.value = 'debate'
 }
 
-function openDebate(debateOrId: string | Debate) {
+function openDebate(debateOrId: string | Debate, training = false) {
   const debateId = typeof debateOrId === 'string' ? debateOrId : debateOrId.id
-  const nextHash = `#debate=${debateId}`
+  const trainingRoute = typeof debateOrId === 'string' ? training : debateOrId.mode === 'training_v2'
+  const nextHash = `#${trainingRoute ? 'training' : 'debate'}=${debateId}`
   lastDebateRoute.value = nextHash
   history.replaceState(null, '', `${location.pathname}${location.search}${nextHash}`)
   route.value = nextHash
@@ -84,7 +90,7 @@ watch(() => [auth.state.status, auth.state.user?.id] as const, ([status, id], [p
   if (previous === 'authenticated' && (status !== 'authenticated' || id !== previousId)) {
     creating.value = false; creationUncertain.value = false
     // 同一用户重新登录时仍可从地址恢复当前会话。
-    lastDebateRoute.value = location.hash.startsWith('#debate=') ? location.hash : ''
+    lastDebateRoute.value = isDebateRoute(location.hash) ? location.hash : ''
     route.value = location.hash
     currentView.value = viewFromHash(location.hash)
     mode.value = 'login'
@@ -187,8 +193,16 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
           @open-topics="switchView('topics')"
           @back-to-debate="switchView('debate')"
         />
+        <TrainingPanel
+          v-if="currentView === 'debate' && route.startsWith('#training=')"
+          :key="`${auth.state.user?.id}:${route}:${panelVersion}`"
+          :auth="auth"
+          :route="route"
+          @new-practice="newPractice"
+          @open-history="switchView('history')"
+        />
         <FirstTurnPanel
-          v-if="currentView === 'debate'"
+          v-else-if="currentView === 'debate'"
           :key="`${auth.state.user?.id}:${route}:${panelVersion}`"
           :auth="auth"
           :route="route"

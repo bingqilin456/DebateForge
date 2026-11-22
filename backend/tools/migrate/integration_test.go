@@ -71,22 +71,22 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 14 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本 + 一个策略表版本。
-		t.Fatalf("版本历史条数 = %d，期望 14", len(before))
+	if len(before) != 15 { // Goose 初始版本 0 + 十三个既有业务版本 + 00017 训练赛阶段模型版本。
+		t.Fatalf("版本历史条数 = %d，期望 15", len(before))
 	}
 	var tables int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 8 {
-		t.Fatal("八表的存储引擎/字符集不符合冻结设计", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','debate_steps','debate_step_claims') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 10 {
+		t.Fatal("十张业务表的存储引擎/字符集不符合冻结设计", err)
 	}
 	var ids, foreignKeys, historyIDs int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 8 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','debate_steps','debate_step_claims') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 10 {
 		t.Fatal("业务主键未使用自增 BIGINT UNSIGNED", err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 7 {
-		t.Fatal("冻结的七条外键关系不完整", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies','debate_steps','debate_step_claims') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 9 {
+		t.Fatal("九条外键关系（V1 七条 + 训练赛两张新表）不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 13").Scan(&historyIDs); err != nil || historyIDs != 13 {
-		t.Fatal("十三个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND (version_id BETWEEN 1 AND 13 OR version_id = 17)").Scan(&historyIDs); err != nil || historyIDs != 14 {
+		t.Fatal("十四个业务版本未逐一记录成功", err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -102,8 +102,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 13 {
-		t.Fatal("状态未显示十三个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 14 {
+		t.Fatal("状态未显示十四个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -131,10 +131,10 @@ func versionHistory(t *testing.T, db *sql.DB, table string) []string {
 	return history
 }
 
-func rowCounts(t *testing.T, db *sql.DB) [8]int64 {
+func rowCounts(t *testing.T, db *sql.DB) [10]int64 {
 	t.Helper()
-	var counts [8]int64
-	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies"} {
+	var counts [10]int64
+	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies", "debate_steps", "debate_step_claims"} {
 		if err := db.QueryRow("SELECT COUNT(*) FROM `" + table + "`").Scan(&counts[i]); err != nil {
 			t.Fatal("无法核对业务行数")
 		}
@@ -176,7 +176,15 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	debateSQL := "INSERT INTO debates(user_id,topic_id,topic_title_snapshot,topic_description_snapshot,user_stance) VALUES (?,?,?,?,?)"
 	debate := insert(debateSQL, user, topic, "中文辩题🌱", "快照", "pro")
 	reject(1452, debateSQL, 0, topic, "x", "y", "pro")
-	reject(3819, "UPDATE debates SET completed_rounds=7 WHERE id=?", debate)
+	// 00017 把粗边界放宽到 0–10（训练赛自由辩最多十回合）；11 仍是越界值。
+	// V1 的精确上限（quick_3 为 3、standard_4 为 4）由业务代码校验，数据库只做粗边界。
+	reject(3819, "UPDATE debates SET completed_rounds=11 WHERE id=?", debate)
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=10 WHERE id=?", debate); err != nil {
+		t.Fatalf("10 回合应落在新的粗边界内: %v", err)
+	}
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=0 WHERE id=?", debate); err != nil {
+		t.Fatalf("恢复夹具 completed_rounds 失败: %v", err)
+	}
 	reject(3819, "UPDATE debates SET mode='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET ai_style='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET user_stance='bad' WHERE id=?", debate)
@@ -223,9 +231,10 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		invalid       []string
 	}{
 		{"debates", "user_stance", debate, []string{"pro", "con"}, []string{"PRO", "Con", "", " pr"}},
-		{"debates", "mode", debate, []string{"quick_3", "standard_4"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 "}},
+		{"debates", "mode", debate, []string{"quick_3", "standard_4", "training_v2"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 ", "TRAINING_V2", "training_v2 "}},
 		{"debates", "ai_style", debate, []string{"logical", "aggressive", "empathic", "data"}, []string{"LOGICAL", "Logical", "", " logical", "logical "}},
 		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
+		{"debates", "training_stage", debate, []string{"opening", "rebuttal", "free_debate", "closing"}, []string{"OPENING", "Opening", "", " opening", "opening ", "free-debate"}},
 		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_summaries", "status", summary, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_strategies", "status", strategy, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},

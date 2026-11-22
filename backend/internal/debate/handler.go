@@ -30,6 +30,13 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
 	group.POST("/debates/:id/turns/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.stream)
 	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
+	// 产品 V2 训练赛：按发言步骤推进，与 V1 轮次端点并存但互不复用状态机。
+	// 创建端点单独放在 /training-debates，避免与 /debates/:id 静态段和通配段冲突。
+	group.POST("/training-debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.createTraining)
+	group.POST("/debates/:id/steps", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.submitStep)
+	group.POST("/debates/:id/steps/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.streamStep)
+	group.POST("/debates/:id/steps/:step_no/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.retryStep)
+	group.POST("/debates/:id/free-debate/end", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.endFreeDebate)
 	group.POST("/debates/:id/summary", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.summary)
 	group.GET("/debates/:id/summary", a.RequireAuth(), h.getSummary)
 	group.GET("/debates/:id/strategy", a.RequireAuth(), h.getStrategy)

@@ -1,16 +1,13 @@
 # 思弈阁 API 契约
 
-## 当前 V1 契约与 V2 待设计的边界
+## V1 与完整训练赛的接口边界
 
-**本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
+**本文描述现有 HTTP 接口及 V2-02 的完整训练赛增量。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
 
 - **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
-- **V2 尚未设计任何 HTTP 接口**：产品 V2 需要的自定义辩题、训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等能力，**均未设计接口契约**。本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
-- **不预先占用 V1 路由**：V2 是否新增端点、是否扩展既有 DTO，必须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。
 - **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
 - **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
 
-**产品 V2 未实现、未验收、未获开发阶段授权。** 本节的边界说明不代表已开始设计或排期。
 
 **T03 当前增量（2026 年 11 月 8 日）：四条认证接口已通过有条件独立审查与人工验收，原延期风险保留；T05 四接口无收费实现、累计验证与新会话独立复审 PASS，三关人工验收通过，无收费范围正式结项；真实模型链路仍待另行授权验证。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
 
@@ -550,6 +547,21 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 5. 202 继续查询；409 attempt_version_conflict 仅刷新状态，不自动换新版本重发。再次失败后，只有用户看过最新失败版本并再次明确重试才允许新尝试。SSE 事件或本地缓存不得作为最新版本事实来源。
 
 
+
+## 完整训练赛（V2-02）
+
+创建使用 `POST /api/v1/training-debates`，请求包含 `topic_id`、`user_stance`，以及可选的 `ai_style`。成功返回 201，赛制为 `training_v2`。列表识别该赛制。详情 `GET /api/v1/debates/{id}` 返回 `training.progress`、`training.steps` 和查询地址。旧会话继续通过原详情与轮次接口读取和续练。
+
+以下操作的路径相对于 `/api/v1/debates/{id}`。写入需要会话认证、所有权、Origin 和 CSRF 校验。
+
+| 操作 | 请求 |
+| --- | --- |
+| `POST /steps` | 发送 `client_request_id`、`expected_stage` 和 `expected_step`。用户步骤带 `content`，AI 步骤省略正文。首次成功 201，重放 200，生成中 202。 |
+| `POST /steps/stream` | 请求同上，且带 `Accept: text/event-stream`。复用提交入口。事件为 `start`、`delta`、`done` 或 `error`。`done` 在提交后发送，包含 `step`、`progress`、`debate_status`。生成中返回 JSON 202。 |
+| `POST /steps/{step_no}/retry` | 发送详情中的 `expected_attempt_version`，对当前失败认领重试。 |
+| `POST /free-debate/end` | 至少完成一回合才能结束。放弃当前已失败的回复时发送 `expected_failed_attempt_version`。成功或重放返回 200，从详情读取最新阶段。 |
+
+页面根据 `next_step_no`、`next_speaker` 和 `can_*` 字段开放操作。按阶段和步骤校验新发言。进度不合时返回 409 `round_conflict`，页面重查详情。同一幂等键更换原文或已提交步骤时返回 409 `idempotency_conflict`。断线后查询详情确认提交状态。放弃后已保存的用户原文和 AI 失败记录仍可见，自由辩完整回合数保持原值。
 
 ## 错误码与客户端恢复
 

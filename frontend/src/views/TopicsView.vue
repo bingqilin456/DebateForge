@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, useId, watch } from 'vue'
 import { Alert, Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from '../auth/state'
 import { createDebate, listTopics } from '../api/debate'
+import { createTrainingApi } from '../api/training'
 import { ApiError } from '../api/client'
 import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../debate/styles'
 import type { AIStyle, Debate, Stance, Topic } from '../types/api'
@@ -29,6 +30,13 @@ const blocked = computed(() => props.disabled || currentAuth.value.state.pending
 const topics = ref<Topic[]>([])
 const selectedTopicId = ref('')
 const stance = ref<Stance>('pro')
+// 练习模式：轻量练习沿用 V1 四轮会话，完整训练赛使用 V2 权威阶段模型。
+// 两者都明确展示，默认轻量练习；训练赛没有解锁条件。
+const practiceMode = ref<'standard_4' | 'training_v2'>('standard_4')
+const MODE_LABELS: Record<'standard_4' | 'training_v2', { title: string; detail: string }> = {
+  standard_4: { title: '四轮轻量练习', detail: '4 轮 · 8 条正式发言 · 批注/争点/重练' },
+  training_v2: { title: '完整训练赛', detail: '四阶段 · 自由辩 1–10 回合可主动结束' },
+}
 const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
 const loading = ref(false)
 const loaded = ref(false)
@@ -74,7 +82,9 @@ async function create() {
   createError.value = ''
   const request = ++version
   try {
-    const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
+    const debate = practiceMode.value === 'training_v2'
+      ? await createTrainingApi(currentAuth.value.client).create({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value })
+      : await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
     emit('created', debate)
@@ -121,6 +131,14 @@ onUnmounted(() => { disposed = true; version++ })
           <span><strong>{{ topic.title }}</strong><span class="description">{{ topic.description }}</span></span>
         </label>
       </fieldset>
+      <fieldset :disabled="formDisabled" class="mode-options">
+        <legend>选择练习模式</legend>
+        <label v-for="(label, value) in MODE_LABELS" :key="value" class="mode-option" :class="{ selected: practiceMode === value }" :data-mode="value">
+          <input v-model="practiceMode" type="radio" :name="`${id}-mode`" :value="value">
+          <span><strong>{{ label.title }}</strong><span class="description">{{ label.detail }}</span></span>
+        </label>
+        <p class="muted">两者都提供赛后复盘入口；完整训练赛没有解锁条件，也不会自动切换模式。</p>
+      </fieldset>
       <fieldset :disabled="formDisabled" class="stance-options">
         <legend>选择你的立场</legend>
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
@@ -159,6 +177,10 @@ legend { margin-bottom: 12px; font-weight: 600; }
 .topic-option input { flex: none; margin-top: 4px; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
+.mode-options { display: grid; gap: 10px; }
+.mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.mode-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
+.mode-option input { flex: none; margin-top: 4px; }
 .view-actions { margin-top: 20px; }
 [role="alert"] { margin-bottom: 16px; }
 .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }

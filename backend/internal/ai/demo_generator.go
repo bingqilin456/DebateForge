@@ -132,7 +132,7 @@ func (g *demoGenerator) Generate(ctx context.Context, req Request) (Result, erro
 	}
 	defer close()
 	defer g.abandon(c)
-	c.messages = 2 * req.RoundNo
+	c.messages = PromptMessageCount(req)
 	r, err := g.adapter.Generate(cctx, req)
 	if err = g.settle(cctx, c, r.Usage, err); err != nil {
 		return Result{}, err
@@ -146,7 +146,7 @@ func (g *demoGenerator) Stream(ctx context.Context, req Request, emit func(strin
 	}
 	defer close()
 	defer g.abandon(c)
-	c.messages = 2 * req.RoundNo
+	c.messages = PromptMessageCount(req)
 	r, err := g.adapter.Stream(cctx, req, emit)
 	if err = g.settle(cctx, c, r.Usage, err); err != nil {
 		return Result{}, err

@@ -150,6 +150,16 @@ func (r *Repository) Detail(ctx context.Context, uid, id uint64) (d Detail, err 
 		if e != nil {
 			return e
 		}
+		// 训练赛使用独立的权威阶段模型：V1 轮次为空，进度与步骤改由 training 投影，
+		// 不读也不写 debate_turns，避免两套状态机互相踩踏。
+		if row.IsTraining() {
+			training, e := trainingDetailTx(tx, row)
+			if e != nil {
+				return e
+			}
+			d = Detail{Debate: row, Turns: []Turn{}, Training: &training}
+			return nil
+		}
 		d, e = readTurns(tx, row, "")
 		if e != nil {
 			return e
@@ -175,6 +185,10 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 		row, e := owned(tx, uid, id, true)
 		if e != nil {
 			return e
+		}
+		// 训练赛不走 V1 轮次认领；两套状态机不得互相推进。
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		existing, e := readTurns(tx, row, in.ClientRequestID)
 		if e != nil {
@@ -235,6 +249,9 @@ func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expe
 		row, e := owned(tx, uid, debateID, true)
 		if e != nil {
 			return e
+		}
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		all, e := readTurns(tx, row, "")
 		if e != nil {
@@ -353,6 +370,9 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		if e != nil {
 			return e
 		}
+		if row.IsTraining() {
+			return ErrRoundConflict
+		}
 		if _, e = currentTurn(tx, row, t); e != nil {
 			return e
 		}
@@ -404,6 +424,9 @@ func (r *Repository) Fail(ctx context.Context, uid uint64, d Debate, t Turn, cod
 		if e != nil {
 			return e
 		}
+		if row.IsTraining() {
+			return ErrRoundConflict
+		}
 		if saved, e = currentTurn(tx, row, t); e != nil {
 			return e
 		}
@@ -440,6 +463,11 @@ func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in 
 		row, e := owned(tx, uid, debateID, true)
 		if e != nil {
 			return e
+		}
+		// V1 结构化总结只针对 V1 轮次会话；训练赛的复盘属 V2-13，本任务不实现，
+		// 因此明确拒绝而不是用错误的轮次语义生成总结。
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
 		if e != nil {
@@ -695,7 +723,12 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 		recovered += int(update.RowsAffected)
 	}
 	n, e := r.recoverStrategyLeases(ctx, now)
-	return recovered + n, e
+	if e != nil {
+		return recovered + n, e
+	}
+	// 训练赛 AI 步骤认领与 V1 轮次共用同一扫描节奏和条件更新语义。
+	training, e := r.recoverTrainingLeases(ctx, now)
+	return recovered + n + training, e
 }
 
 var _ Store = (*Repository)(nil)

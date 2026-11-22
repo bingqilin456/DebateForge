@@ -192,19 +192,9 @@ func (s *Service) submitTurn(ctx context.Context, uid, id uint64, in SubmitInput
 	if err := s.waitStartupScan(ctx); err != nil {
 		return TurnData{}, 0, dependency(err, false)
 	}
-	var permit *Permit
-	consumed := false
-	// 覆盖认领失败、生成失败、取消、panic 和正常完成；不在锁内排队。
-	defer func() { permit.Finish(consumed) }()
-	d, fresh, err := s.store.Claim(ctx, uid, id, in, func() error { var e error; permit, e = s.gate.Acquire(uid); return e })
-	if err != nil {
-		var f *Failure
-		if errors.As(err, &f) && f.CommitUnknown {
-			consumed = true
-		}
-		return TurnData{}, 0, err
-	}
-	if !fresh {
+	return runClaimedTurn(s.gate, uid, func(admit func() error) (Detail, bool, error) {
+		return s.store.Claim(ctx, uid, id, in, admit)
+	}, func(d Detail) (TurnData, int, error) {
 		if len(d.Turns) != 1 {
 			return TurnData{}, 0, dependency(nil, false)
 		}
@@ -218,19 +208,43 @@ func (s *Service) submitTurn(ctx context.Context, uid, id uint64, in SubmitInput
 			return TurnData{}, 0, &Failure{Code: "turn_failed", Status: 409, Cause: ErrTurnFailed, Details: failedDetails(d.Debate, turn)}
 		}
 		return TurnData{}, 0, dependency(nil, false)
-	}
-	consumed = true
-	if stream != nil {
-		if len(d.Turns) == 0 {
-			return TurnData{}, 0, dependency(nil, false)
+	}, func(d Detail) (TurnData, int, error) {
+		if stream != nil {
+			if len(d.Turns) == 0 {
+				return TurnData{}, 0, dependency(nil, false)
+			}
+			turn := d.Turns[len(d.Turns)-1]
+			if err := stream.start(formatID(turn.ID)); err != nil {
+				return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, "generation_cancelled", 503, ai.Usage{}, ai.Metadata{}, err)
+			}
+			return s.runTurnGeneration(ctx, uid, d, 201, stream.delta)
 		}
-		turn := d.Turns[len(d.Turns)-1]
-		if err := stream.start(formatID(turn.ID)); err != nil {
-			return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, "generation_cancelled", 503, ai.Usage{}, ai.Metadata{}, err)
-		}
-		return s.runTurnGeneration(ctx, uid, d, 201, stream.delta)
+		return s.runTurnGeneration(ctx, uid, d, 201, nil)
+	})
+}
+
+// runClaimedTurn 是普通和流式发言共用的认领入口。各赛制在事务内定位自己的一步，
+// 这里统一处理认领、幂等重放、并发槽归还与提交结果未知时的额度。
+func runClaimedTurn[D, R any](gate *Gate, uid uint64, claim func(func() error) (D, bool, error), replay, complete func(D) (R, int, error)) (R, int, error) {
+	var permit *Permit
+	consumed := false
+	defer func() { permit.Finish(consumed) }()
+	data, fresh, err := claim(func() error {
+		var err error
+		permit, err = gate.Acquire(uid)
+		return err
+	})
+	if err != nil {
+		var failure *Failure
+		consumed = errors.As(err, &failure) && failure.CommitUnknown
+		var zero R
+		return zero, 0, err
 	}
-	return s.runTurnGeneration(ctx, uid, d, 201, nil)
+	consumed = fresh
+	if !fresh {
+		return replay(data)
+	}
+	return complete(data)
 }
 
 // retry 仅在 status=failed 且 expected_attempt_version 匹配时认领并复用已存原文重新生成。

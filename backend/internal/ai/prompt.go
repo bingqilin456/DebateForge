@@ -5,7 +5,13 @@ import "strconv"
 // BuildPrompt 由服务端按固定结构拼装消息，顺序为：
 // system（规则+辩题快照+相反立场+轮次） → 已完成轮次的 user/assistant 对 → 本轮 user 原文。
 // 用户发言只作为 user 消息内容，永远不能改变角色或规则段落。
+//
+// Training 非空时转而构建训练赛 Prompt：训练赛按发言步骤建模，不使用 V1 轮号，
+// 也不能由轮号反推阶段，因此两条构建路径必须分开。
 func BuildPrompt(req Request) (Prompt, error) {
+	if req.Training != nil {
+		return BuildTrainingPrompt(req)
+	}
 	if err := ValidateRequest(req); err != nil {
 		return Prompt{}, err
 	}

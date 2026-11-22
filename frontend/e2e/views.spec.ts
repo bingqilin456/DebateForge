@@ -237,3 +237,45 @@ for (const kind of ['400', '401', '503', 'malformed', 'timeout'] as const) {
     expect(creates).toBe(1)
   })
 }
+
+test('V2-02 从历史恢复训练赛并按服务端状态进入结辩', async ({ page }) => {
+  const match = { ...debate(), mode: 'training_v2', total_rounds: 10, completed_rounds: 1, status: 'active' }
+  const queryUrl = '/api/v1/debates/11'
+  const steps = Array.from({ length: 6 }, (_, i) => ({
+    id: String(i + 1), step_no: i + 1, stage: ['opening', 'rebuttal', 'free_debate'][Math.floor(i / 2)],
+    stage_step: i % 2 + 1, free_debate_round: i >= 4 ? 1 : 0,
+    speaker: i % 2 === 0 ? 'user' : 'assistant',
+    client_request_id: `550e8400-e29b-41d4-a716-${String(i + 1).padStart(12, '0')}`,
+    content: `已保存发言 ${i + 1}`, created_at: match.created_at,
+  }))
+  let closing = false
+  let endRequests = 0
+  const progress = () => ({
+    stage: closing ? 'closing' : 'free_debate', stage_step: 0, free_debate_rounds: 1,
+    free_debate_max_rounds: 10, committed_steps: 6, total_steps: closing ? 8 : 0,
+    next_step_no: 7, next_speaker: closing ? 'assistant' : 'user', can_submit_step: true,
+    can_retry_ai: false, can_end_free_debate: !closing, end_blocked_reason: closing ? 'not_free_debate' : null,
+    pending_ai: null, abandoned_ai: null,
+  })
+  await api(page, async (route, url) => {
+    if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
+    if (url.pathname === '/api/v1/debates') return json(route, { items: [match], total: 1, page: 1, page_size: 20 })
+    if (url.pathname.endsWith('/free-debate/end')) {
+      closing = true
+      endRequests++
+      return json(route, { step: null, progress: progress(), debate_status: 'active', query_url: queryUrl })
+    }
+    expect(url.pathname).toBe(queryUrl)
+    return json(route, { debate: match, turns: [], training: { progress: progress(), steps, query_url: queryUrl } })
+  })
+  await page.goto('/#history')
+  await page.getByRole('button', { name: '查看会话：浏览器辩题 1' }).click()
+  await expect(page).toHaveURL(/#training=11$/)
+  await expect(page.getByText('已保存发言 6')).toBeVisible()
+  await page.getByRole('button', { name: '进入结辩', exact: true }).click()
+  await expect(page.getByRole('button', { name: '进入结辩', exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByText('已保存发言 6')).toBeVisible()
+  await expect(page.getByRole('button', { name: '进入结辩', exact: true })).toHaveCount(0)
+  expect(endRequests).toBe(1)
+})

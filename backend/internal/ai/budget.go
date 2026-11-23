@@ -354,10 +354,24 @@ func (f *Fake) Generate(ctx context.Context, req Request) (Result, error) {
 		return result, nil
 	}
 	// 未配置脚本时用确定性回声，便于并发隔离断言；用量保持未知。
+	// Prompt 版本取实际构建结果，训练赛与 V1 的版本标识不同。
+	version := prompt.Version
+	if version == "" {
+		version = PromptVersion
+	}
 	return Result{
-		Content:  defaultFakeReply(req.UserContent),
-		Metadata: Metadata{PromptVersion: prompt.Version, FinishReason: "stop"},
+		Content:  defaultFakeReply(fakeReplySource(req)),
+		Metadata: Metadata{PromptVersion: version, FinishReason: "stop"},
 	}, nil
+}
+
+// fakeReplySource 为确定性回声选取来源文本：训练赛取当前步骤的阶段说明、
+// V1 取用户本轮原文。它只影响 Fake 的回声内容，不改变任何真实生成语义。
+func fakeReplySource(req Request) string {
+	if req.Training != nil {
+		return "训练赛" + req.Training.Stage.label() + "阶段回应"
+	}
+	return req.UserContent
 }
 
 // defaultFakeReply 生成默认回声，且必须与真实回复遵守同一长度上限：
@@ -408,7 +422,7 @@ func (f *Fake) Stream(ctx context.Context, req Request, emit func(text string) e
 		chunks = splitIntoRunes(step.Result.Content)
 	}
 	if len(chunks) == 0 && !hasStep {
-		chunks = splitIntoRunes(defaultFakeReply(req.UserContent))
+		chunks = splitIntoRunes(defaultFakeReply(fakeReplySource(req)))
 	}
 	for index, chunk := range chunks {
 		if contextErr := stoppedStreamError(ctx); contextErr != nil {
@@ -522,6 +536,14 @@ func cloneRequest(req Request) Request {
 	if req.CompletedTurns != nil {
 		clone.CompletedTurns = make([]CompletedTurn, len(req.CompletedTurns))
 		copy(clone.CompletedTurns, req.CompletedTurns)
+	}
+	if req.Training != nil {
+		training := *req.Training
+		if req.Training.History != nil {
+			training.History = make([]TrainingStep, len(req.Training.History))
+			copy(training.History, req.Training.History)
+		}
+		clone.Training = &training
 	}
 	return clone
 }

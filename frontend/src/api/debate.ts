@@ -118,15 +118,16 @@ function isDebate(value: unknown): value is Debate {
   if (!(isRecord(value) && isEntityId(value.id) && isDebateTopic(value.topic)
     && (value.user_stance === 'pro' || value.user_stance === 'con')
     && value.ai_stance === (value.user_stance === 'pro' ? 'con' : 'pro')
-    && isMode(value.mode) && isAIStyle(value.ai_style)
+    && (isMode(value.mode) || value.mode === 'training_v2') && isAIStyle(value.ai_style)
     && (value.status === 'active' || value.status === 'completed')
-    && typeof value.total_rounds === 'number' && isTotalRounds(value.total_rounds)
+    && typeof value.total_rounds === 'number'
     && Number.isInteger(value.completed_rounds) && Number(value.completed_rounds) >= 0
     && Number(value.completed_rounds) <= Number(value.total_rounds)
     && date(value.created_at) && date(value.updated_at))) return false
   // 赛制与总轮数必须自洽：quick_3 恒为 3，standard_4 恒为 4。
   return (value.mode === 'quick_3' && Number(value.total_rounds) === 3)
     || (value.mode === 'standard_4' && Number(value.total_rounds) === 4)
+    || (value.mode === 'training_v2' && Number(value.total_rounds) === 10)
 }
 function isMessage(value: unknown): value is Message {
   return isRecord(value) && isEntityId(value.id) && (value.role === 'user' || value.role === 'assistant') && text(value.content, value.role === 'user' ? USER_CONTENT_MAX_CHARS : AI_CONTENT_MAX_CHARS) && date(value.created_at)

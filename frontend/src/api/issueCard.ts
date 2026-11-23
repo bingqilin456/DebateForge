@@ -95,6 +95,7 @@ function isList(value: unknown): value is IssueCardList {
   if (typeof value.state !== 'string' || !states.includes(value.state as IssueCardState)) return false
   if (!Number.isSafeInteger(value.display_cap) || (value.display_cap as number) < 1) return false
   if (!isAnalysis(value.analysis)) return false
+  if (value.pending !== undefined && typeof value.pending !== 'boolean') return false
   if (!Array.isArray(value.items) || value.items.length > (value.display_cap as number) || !value.items.every(isItem)) return false
   // 只对已完赛的四轮场返回 ready 与卡片；隔离状态不得携带卡片。
   if (value.state !== 'ready') return value.items.length === 0

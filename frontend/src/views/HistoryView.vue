@@ -16,7 +16,7 @@ export interface HistoryViewProps {
 const props = withDefaults(defineProps<HistoryViewProps>(), { pageSize: HISTORY_PAGE_SIZE, disabled: false })
 const emit = defineEmits<{
   /** 选中某条历史会话后触发，交由顶层切换至辩论主视图重读详情或继续未完成会话 */
-  'select-debate': [debateId: string]
+  'select-debate': [debateId: string, training?: boolean]
   /** 切换至辩题列表视图（T08） */
   'open-topics': []
   /** 返回当前辩论主视图 */
@@ -72,11 +72,12 @@ async function loadPage(target = page.value) {
 }
 function previousPage() { if (page.value > 1) void loadPage(page.value - 1) }
 function nextPage() { if (page.value < pageCount.value && !loadError.value) void loadPage(page.value + 1) }
-function selectDebate(id: string) {
+function selectDebate(id: string, training?: boolean) {
   if (controlsDisabled.value) return
   // 交接前同步锁定，只发一种事件；详情重读和展示完全由已有主界面处理。
   selectedDebateId.value = id
-  emit('select-debate', id)
+  if (training) emit('select-debate', id, true)
+  else emit('select-debate', id)
 }
 function openTopics() { if (!navigationDisabled.value) emit('open-topics') }
 function back() { if (!navigationDisabled.value) emit('back-to-debate') }
@@ -113,11 +114,11 @@ onUnmounted(() => { disposed = true; version++ })
             <div><dt>你的立场</dt><dd>{{ debate.user_stance === 'pro' ? '正方' : '反方' }}</dd></div>
             <div><dt>AI 立场</dt><dd>{{ debate.ai_stance === 'pro' ? '正方' : '反方' }}</dd></div>
             <div><dt>陪练流派</dt><dd :data-ai-style="debate.ai_style">{{ AI_STYLE_LABELS[debate.ai_style] }}（{{ debate.ai_style }}）</dd></div>
-            <div><dt>完成轮数</dt><dd>{{ debate.completed_rounds }} / {{ debate.total_rounds }} 轮</dd></div>
+            <div><dt>{{ debate.mode === 'training_v2' ? '已完成自由辩回合' : '完成轮数' }}</dt><dd>{{ debate.completed_rounds }} / {{ debate.total_rounds }} 轮</dd></div>
             <div><dt>创建时间</dt><dd><time :datetime="debate.created_at">{{ localTime(debate.created_at) }}</time></dd></div>
             <div><dt>更新时间</dt><dd><time :datetime="debate.updated_at">{{ localTime(debate.updated_at) }}</time></dd></div>
           </dl>
-          <Button type="outline" :data-debate-id="debate.id" :aria-label="`查看会话：${debate.topic.title}`" :disabled="controlsDisabled" @click="selectDebate(debate.id)">
+          <Button type="outline" :data-debate-id="debate.id" :aria-label="`查看会话：${debate.topic.title}`" :disabled="controlsDisabled" @click="selectDebate(debate.id, debate.mode === 'training_v2' ? true : undefined)">
             {{ selectedDebateId === debate.id ? '正在打开…' : '查看会话' }}
           </Button>
         </li>

@@ -51,6 +51,7 @@ export interface IssueCardAnalysis {
 export interface IssueCardList {
   state: IssueCardState
   display_cap: number
+  pending?: boolean
   analysis: IssueCardAnalysis
   items: IssueCardItem[]
 }

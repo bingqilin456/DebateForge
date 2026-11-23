@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { USER_CONTENT_MAX_CHARS } from '../../shared/limits'
-import { locateQuoteText } from '../../shared/locateQuote'
+import { locateAnnotationMarker, locateQuoteText } from '../../shared/locateQuote'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button, Switch } from '@arco-design/web-vue'
 import { AI_STYLE_LABELS } from '../../debate/styles'
@@ -54,12 +54,7 @@ function onMarkerSelect(keys: string[]) {
 }
 
 function locateAnnotation(key: string) {
-  const candidates = transcript.value?.querySelectorAll<HTMLButtonElement>('[data-annotation-keys]')
-  const marker = Array.from(candidates ?? []).find(element =>
-    element.dataset.annotationKeys?.split('\u0001').includes(key),
-  )
-  marker?.scrollIntoView?.({ block: 'center' })
-  marker?.focus({ preventScroll: true })
+  locateAnnotationMarker(transcript.value, key)
 }
 
 /**

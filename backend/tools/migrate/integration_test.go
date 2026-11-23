@@ -71,23 +71,23 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 17 { // Goose 初始版本 0 + 六张初始表 + 三份约束修复 + 一份种子 + 总结表 + 轮次与赛制 + 策略表 + 自定义辩题可空 + 原文批注 + 赛后复盘。
-		t.Fatalf("版本历史条数 = %d，期望 17", len(before))
+	if len(before) != 20 { // Goose 初始版本 0 加 19 个业务版本。
+		t.Fatalf("版本历史条数 = %d，期望 20", len(before))
 	}
 	var tables int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 10 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations','training_issue_states','training_repractice_states') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 15 {
 		t.Fatal("十表的存储引擎/字符集不符合冻结设计", err)
 	}
 	var ids, foreignKeys, historyIDs int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 10 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 13 {
 		t.Fatal("业务主键未使用自增 BIGINT UNSIGNED", err)
 	}
 	// 00015 为 turn_annotations 增加两条外键（debate_id、turn_id）、00016 为 debate_reviews 增加一条，因此为 10 条。
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 10 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 14 {
 		t.Fatal("冻结的外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 16").Scan(&historyIDs); err != nil || historyIDs != 16 {
-		t.Fatal("十六个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 19").Scan(&historyIDs); err != nil || historyIDs != 19 {
+		t.Fatal("十九个版本未逐一记录成功", err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -103,8 +103,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 16 {
-		t.Fatal("状态未显示十六个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 19 {
+		t.Fatal("状态未显示十九个成功版本", err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -132,10 +132,10 @@ func versionHistory(t *testing.T, db *sql.DB, table string) []string {
 	return history
 }
 
-func rowCounts(t *testing.T, db *sql.DB) [10]int64 {
+func rowCounts(t *testing.T, db *sql.DB) [15]int64 {
 	t.Helper()
-	var counts [10]int64
-	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies", "turn_annotations", "debate_reviews"} {
+	var counts [15]int64
+	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies", "turn_annotations", "debate_reviews", "debate_steps", "debate_step_claims", "training_annotations", "training_issue_states", "training_repractice_states"} {
 		if err := db.QueryRow("SELECT COUNT(*) FROM `" + table + "`").Scan(&counts[i]); err != nil {
 			t.Fatal("无法核对业务行数")
 		}
@@ -192,7 +192,15 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("自定义会话必须写入 NULL topic_id，实际 null=%t err=%v", storedNull, err)
 	}
 	reject(1452, debateSQL, user, 999999, "不存在的题目", "y", "pro")
-	reject(3819, "UPDATE debates SET completed_rounds=7 WHERE id=?", debate)
+	// 00017 把粗边界放宽到 0–10（训练赛自由辩最多十回合）；11 仍是越界值。
+	// V1 的精确上限（quick_3 为 3、standard_4 为 4）由业务代码校验，数据库只做粗边界。
+	reject(3819, "UPDATE debates SET completed_rounds=11 WHERE id=?", debate)
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=10 WHERE id=?", debate); err != nil {
+		t.Fatalf("10 回合应落在新的粗边界内: %v", err)
+	}
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=0 WHERE id=?", debate); err != nil {
+		t.Fatalf("恢复夹具 completed_rounds 失败: %v", err)
+	}
 	reject(3819, "UPDATE debates SET mode='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET ai_style='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET user_stance='bad' WHERE id=?", debate)
@@ -293,9 +301,10 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		invalid       []string
 	}{
 		{"debates", "user_stance", debate, []string{"pro", "con"}, []string{"PRO", "Con", "", " pr"}},
-		{"debates", "mode", debate, []string{"quick_3", "standard_4"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 "}},
+		{"debates", "mode", debate, []string{"quick_3", "standard_4", "training_v2"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 ", "TRAINING_V2", "training_v2 "}},
 		{"debates", "ai_style", debate, []string{"logical", "aggressive", "empathic", "data"}, []string{"LOGICAL", "Logical", "", " logical", "logical "}},
 		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
+		{"debates", "training_stage", debate, []string{"opening", "rebuttal", "free_debate", "closing"}, []string{"OPENING", "Opening", "", " opening", "opening ", "free-debate"}},
 		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_summaries", "status", summary, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_strategies", "status", strategy, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},

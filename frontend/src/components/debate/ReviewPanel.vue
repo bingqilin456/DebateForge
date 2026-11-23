@@ -25,6 +25,7 @@ const props = defineProps<{
   locate?: (messageId: string, startCp: number, endCp: number) => void
   /** 局部重练入口：未接入时显示“待整合”而不是死链。 */
   repractice?: (improvement: string, quote: ReviewQuote | null) => void
+  canRepractice?: (quote: ReviewQuote | null) => boolean
 }>()
 
 const emit = defineEmits<{
@@ -231,10 +232,10 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
                 原文待核对：引用存在但跨消息有歧义，不按坐标高亮。
               </p>
               <p class="dimension-improve"><span class="field-label">改进提示：</span>{{ dimension.improvement }}</p>
-              <Button v-if="repractice" size="mini" type="text" :data-repractice="dimension.key" @click="onRepractice(dimension.improvement, dimension.quote)">
+              <Button v-if="repractice && (!canRepractice || canRepractice(dimension.quote))" size="mini" type="text" :data-repractice="dimension.key" @click="onRepractice(dimension.improvement, dimension.quote)">
                 去重练
               </Button>
-              <span v-else class="pending-entry" :data-pending-entry="`repractice-${dimension.key}`">局部重练待整合</span>
+              <span v-else-if="!repractice" class="pending-entry" :data-pending-entry="`repractice-${dimension.key}`">局部重练待整合</span>
             </template>
           </article>
         </section>
@@ -251,7 +252,8 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
             <li v-for="(item, index) in content?.key_issues ?? []" :key="`issue-${index}`">
               <span>{{ item.text }}</span>
               <span v-if="item.quote" class="quote-ref">原文：“{{ item.quote.quote }}”</span>
-              <span v-else class="pending-entry">原文定位待整合</span>
+              <Button v-if="locate && item.quote?.resolved" size="mini" type="text" @click="onLocate(item.quote)">定位原句</Button>
+              <span v-else-if="!item.quote" class="pending-entry">原文待核对</span>
             </li>
           </ul>
         </div>
@@ -261,6 +263,7 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
             <li v-for="(item, index) in content?.strengths ?? []" :key="`strength-${index}`">
               <span>{{ item.text }}</span>
               <span v-if="item.quote" class="quote-ref">原文：“{{ item.quote.quote }}”</span>
+              <Button v-if="locate && item.quote?.resolved" size="mini" type="text" @click="onLocate(item.quote)">定位原句</Button>
             </li>
           </ul>
         </div>
@@ -270,6 +273,9 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
             <li v-for="(item, index) in content?.improvements ?? []" :key="`improvement-${index}`">
               <span>{{ item.text }}</span>
               <span v-if="item.quote" class="quote-ref">原文：“{{ item.quote.quote }}”</span>
+              <Button v-if="locate && item.quote?.resolved" size="mini" type="text" @click="onLocate(item.quote)">定位原句</Button>
+              <Button v-if="repractice && canRepractice?.(item.quote)" size="mini" type="text"
+                @click="onRepractice(item.text, item.quote)">去重练</Button>
             </li>
           </ul>
         </div>

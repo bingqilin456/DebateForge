@@ -67,18 +67,35 @@ type Topic struct {
 	Description string  `json:"description"`
 }
 type Debate struct {
-	ID                       uint64    `json:"-" gorm:"primaryKey"`
-	UserID                   uint64    `json:"-"`
-	TopicID                  *uint64   `json:"-"`
-	TopicTitleSnapshot       string    `json:"-"`
-	TopicDescriptionSnapshot string    `json:"-"`
-	UserStance               string    `json:"-"`
-	Mode                     string    `json:"-"`
-	AIStyle                  string    `json:"-"`
-	Status                   string    `json:"-"`
-	CompletedRounds          int       `json:"-"`
-	CreatedAt                time.Time `json:"-"`
-	UpdatedAt                time.Time `json:"-"`
+	ID                       uint64  `json:"-" gorm:"primaryKey"`
+	UserID                   uint64  `json:"-"`
+	TopicID                  *uint64 `json:"-"`
+	TopicTitleSnapshot       string  `json:"-"`
+	TopicDescriptionSnapshot string  `json:"-"`
+	UserStance               string  `json:"-"`
+	Mode                     string  `json:"-"`
+	AIStyle                  string  `json:"-"`
+	// TrainingStage / TrainingStageStep 是产品 V2 训练赛的权威阶段进度；
+	// V1 行保持 NULL 与 0，且只有训练赛路径读写它们（见 training_model.go）。
+	TrainingStage     *string   `json:"-"`
+	TrainingStageStep int       `json:"-"`
+	Status            string    `json:"-"`
+	CompletedRounds   int       `json:"-"`
+	CreatedAt         time.Time `json:"-"`
+	UpdatedAt         time.Time `json:"-"`
+}
+
+// TrainingStageValue 返回训练赛阶段字符串；非训练赛行返回空串。
+func (d Debate) TrainingStageValue() string {
+	if d.TrainingStage == nil {
+		return ""
+	}
+	return *d.TrainingStage
+}
+
+// IsTraining 报告该会话是否使用产品 V2 训练赛阶段模型。
+func (d Debate) IsTraining() bool {
+	return ai.Mode(d.Mode).IsTraining() && d.TrainingStage != nil
 }
 
 func (Debate) TableName() string { return "debates" }
@@ -104,17 +121,20 @@ type CreateInput struct {
 }
 
 type DebateDTO struct {
-	ID              string    `json:"id"`
-	Topic           Topic     `json:"topic"`
-	UserStance      string    `json:"user_stance"`
-	AIStance        string    `json:"ai_stance"`
-	Mode            string    `json:"mode"`
-	AIStyle         string    `json:"ai_style"`
-	TotalRounds     int       `json:"total_rounds"`
-	Status          string    `json:"status"`
-	CompletedRounds int       `json:"completed_rounds"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string `json:"id"`
+	Topic           Topic  `json:"topic"`
+	UserStance      string `json:"user_stance"`
+	AIStance        string `json:"ai_stance"`
+	Mode            string `json:"mode"`
+	AIStyle         string `json:"ai_style"`
+	TotalRounds     int    `json:"total_rounds"`
+	Status          string `json:"status"`
+	CompletedRounds int    `json:"completed_rounds"`
+	// Training 仅在产品 V2 训练赛会话上非空，是列表与详情共用的轻量进度；
+	// V1 会话保持 null，V1 语义与字段不变。
+	Training  *TrainingSummaryDTO `json:"training"`
+	CreatedAt time.Time           `json:"created_at"`
+	UpdatedAt time.Time           `json:"updated_at"`
 }
 
 func (d Debate) DTO() DebateDTO {
@@ -122,24 +142,30 @@ func (d Debate) DTO() DebateDTO {
 	if d.UserStance == "pro" {
 		opposite = "con"
 	}
-	// 赛制与总轮数必须自洽：无法识别赛制时统一回退为 quick_3，
-	// 避免出现 mode 为空而 total_rounds 却为 3 的矛盾输出（前端会判为格式错误）。
+	// 赛制与总轮数必须自洽：训练赛不使用「轮数」，其 total_rounds 固定投影为
+	// 自由辩回合上限，真实进度一律来自 training 字段与服务端阶段模型；
+	// 无法识别赛制时统一回退为 quick_3，避免出现矛盾输出。
 	mode := d.Mode
 	style := d.AIStyle
 	total := 3
-	if rounds, err := ai.RoundsFor(ai.Mode(mode)); err == nil {
-		total = rounds
-	} else {
+	switch {
+	case ai.Mode(mode).IsTraining():
+		total = trainingStepNumber
+	case func() bool { _, err := ai.RoundsFor(ai.Mode(mode)); return err == nil }():
+		total, _ = ai.RoundsFor(ai.Mode(mode))
+	default:
 		mode = string(ai.ModeQuick3)
 	}
 	if !ai.AIStyle(style).Valid() {
 		style = string(ai.StyleLogical)
 	}
-	return DebateDTO{ID: formatID(d.ID), Topic: Topic{d.topicIDString(), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	dto := DebateDTO{ID: formatID(d.ID), Topic: Topic{d.topicIDString(), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	if d.IsTraining() {
+		dto.Training = trainingSummaryDTO(d)
+	}
+	return dto
 }
 
-// topicIDString 只对预设题输出字符串 ID；自定义题没有题目实体，输出 null，
-// 避免用一个不存在的编号伪装成可查询的公共辩题。
 func (d Debate) topicIDString() *string {
 	if d.TopicID == nil {
 		return nil
@@ -258,11 +284,16 @@ type Detail struct {
 	Debate  Debate
 	Turns   []Turn
 	Summary *Summary
+	// Training 仅在训练赛会话上非空；此时 Turns 为空，进度来自训练赛阶段模型。
+	Training *TrainingDetail
 }
 type DetailDTO struct {
 	Debate        DebateDTO     `json:"debate"`
 	Turns         []TurnDTO     `json:"turns"`
 	SummaryStatus SummaryStatus `json:"summary_status"`
+	// Training 仅训练赛会话存在：权威阶段进度与全部已提交步骤。
+	// V1 会话该字段为 null，turns 仍为 V1 轮次；训练赛会话 turns 恒为空数组。
+	Training *TrainingDetailDTO `json:"training"`
 }
 type SummaryStatus struct {
 	Status         string      `json:"status"`
@@ -277,7 +308,15 @@ func (d Detail) DTO() DetailDTO {
 	for _, t := range d.Turns {
 		turns = append(turns, t.DTO())
 	}
-	return DetailDTO{d.Debate.DTO(), turns, d.Summary.DTO()}
+	out := DetailDTO{Debate: d.Debate.DTO(), Turns: turns, SummaryStatus: d.Summary.DTO()}
+	if d.Training != nil {
+		steps := make([]TrainingStepDTO, 0, len(d.Training.Steps))
+		for _, step := range d.Training.Steps {
+			steps = append(steps, step.DTO())
+		}
+		out.Training = &TrainingDetailDTO{Progress: d.Training.Progress, Steps: steps, QueryURL: trainingQueryURL(d.Debate.ID)}
+	}
+	return out
 }
 
 type TurnData struct {
@@ -445,10 +484,24 @@ func ParsePagination(pageValues, pageSizeValues []string) (int, int, error) {
 // 另由 MarkAnnotationEligible 单独设置资格标志，两者互不成事务依赖。
 type Store interface {
 	Create(context.Context, uint64, CreateInput) (Debate, error)
+	// CreateTraining 创建产品 V2 训练赛（mode=training_v2，权威阶段从立论开始）。
+	CreateTraining(context.Context, uint64, uint64, string, string) (Debate, error)
 	List(context.Context, uint64, int, int) (DebateList, error)
 	Detail(context.Context, uint64, uint64) (Detail, error)
+	// GetTrainingDetail 读取训练赛权威进度与全部已提交步骤。
+	GetTrainingDetail(context.Context, uint64, uint64) (TrainingDetail, error)
 	Claim(context.Context, uint64, uint64, SubmitInput, func() error) (Detail, bool, error)
 	ClaimRetry(context.Context, uint64, uint64, uint64, uint64, func() error) (Detail, bool, error)
+	// ClaimTrainingStep 认领训练赛下一步；用户步骤在事务内直接落库并推进阶段。
+	ClaimTrainingStep(context.Context, uint64, uint64, TrainingStepInput, func() error) (TrainingDetail, bool, error)
+	// ClaimTrainingRetry 在失败 AI 步骤上按期望版本递增重试。
+	ClaimTrainingRetry(context.Context, uint64, uint64, int, uint64, func() error) (TrainingDetail, bool, error)
+	// CompleteTrainingStep 在最终事务内写入 AI 正式步骤并推进阶段。
+	CompleteTrainingStep(context.Context, uint64, Debate, TrainingClaim, ai.Result) (TrainingDetail, error)
+	// FailTrainingClaim 标记 AI 尝试失败，失败步骤不占编号、不推进阶段。
+	FailTrainingClaim(context.Context, uint64, Debate, TrainingClaim, string, ai.Usage, ai.Metadata) (TrainingClaim, error)
+	// EndFreeDebate 显式进入结辩；重放不重复切换，不产生模型调用。
+	EndFreeDebate(context.Context, uint64, uint64, TrainingEndInput) (TrainingDetail, error)
 	Complete(context.Context, uint64, Debate, Turn, ai.Result, bool) (Detail, error)
 	Fail(context.Context, uint64, Debate, Turn, string, ai.Usage, ai.Metadata) (Turn, error)
 	GetSummary(context.Context, uint64, uint64) (*Summary, error)

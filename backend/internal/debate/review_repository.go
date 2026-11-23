@@ -56,13 +56,9 @@ func (r *Repository) ClaimReview(ctx context.Context, uid, debateID uint64, in R
 		if e != nil {
 			return e
 		}
-		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
-		if e != nil {
-			return dependency(e, false)
-		}
-		// 未完成结辩的训练不生成完整复盘（AC-V2-26）。
-		if row.Status != "completed" || row.CompletedRounds != rounds {
-			return ErrRoundConflict
+		// 两种模式都使用会话自身的完赛状态。
+		if e := reviewEligibility(row); e != nil {
+			return e
 		}
 		existing, e := readReview(tx, debateID, true)
 		if e != nil {
@@ -85,26 +81,9 @@ func (r *Repository) ClaimReview(ctx context.Context, uid, debateID uint64, in R
 			// 未开始的复盘不能按版本重试：调用方应以不重试的首次请求生成。
 			return ErrInvalidRequest
 		}
-		history, e := readTurns(tx, row, "")
+		messages, e := reviewSources(tx, row)
 		if e != nil {
 			return e
-		}
-		if len(history.Turns) != rounds {
-			return ErrRoundConflict
-		}
-		messages := make([]ai.ReviewMessage, 0, rounds*2)
-		for i := range history.Turns {
-			turn := history.Turns[i]
-			if turn.RoundNo != i+1 || turn.Status != "completed" || len(turn.Messages) != 2 {
-				return ErrRoundConflict
-			}
-			if turn.Messages[0].Role != "user" || turn.Messages[1].Role != "assistant" {
-				return ErrRoundConflict
-			}
-			messages = append(messages,
-				ai.ReviewMessage{MessageID: turn.Messages[0].ID, TurnNo: turn.RoundNo, Role: ai.RoleUser, Content: turn.Messages[0].Content},
-				ai.ReviewMessage{MessageID: turn.Messages[1].ID, TurnNo: turn.RoundNo, Role: ai.RoleAssistant, Content: turn.Messages[1].Content},
-			)
 		}
 		if e = admit(); e != nil {
 			return e
@@ -162,6 +141,56 @@ func (r *Repository) ClaimReview(ctx context.Context, uid, debateID uint64, in R
 	return
 }
 
+func reviewSources(tx *gorm.DB, row Debate) ([]ai.ReviewMessage, error) {
+	if row.IsTraining() {
+		detail, err := trainingDetailTx(tx, row)
+		if err != nil {
+			return nil, err
+		}
+		messages := make([]ai.ReviewMessage, 0, len(detail.Steps))
+		for _, step := range detail.Steps {
+			messages = append(messages, ai.ReviewMessage{MessageID: step.ID, TurnNo: step.StepNo, Role: ai.Role(step.Speaker), Content: step.Content})
+		}
+		return messages, nil
+	}
+	rounds, _ := ai.RoundsFor(ai.Mode(row.Mode))
+	history, err := readTurns(tx, row, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(history.Turns) != rounds {
+		return nil, ErrRoundConflict
+	}
+	messages := make([]ai.ReviewMessage, 0, rounds*2)
+	for i, turn := range history.Turns {
+		if turn.RoundNo != i+1 || turn.Status != "completed" || len(turn.Messages) != 2 ||
+			turn.Messages[0].Role != "user" || turn.Messages[1].Role != "assistant" {
+			return nil, ErrRoundConflict
+		}
+		for _, m := range turn.Messages {
+			messages = append(messages, ai.ReviewMessage{MessageID: m.ID, TurnNo: turn.RoundNo, Role: ai.Role(m.Role), Content: m.Content})
+		}
+	}
+	return messages, nil
+}
+
+func reviewEligibility(row Debate) error {
+	if row.Status != "completed" {
+		return ErrRoundConflict
+	}
+	if row.IsTraining() {
+		return nil
+	}
+	rounds, err := ai.RoundsFor(ai.Mode(row.Mode))
+	if err != nil {
+		return dependency(err, false)
+	}
+	if row.CompletedRounds != rounds {
+		return ErrRoundConflict
+	}
+	return nil
+}
+
 // currentReview 锁定复盘行并校验状态与版本，防止旧响应覆盖新尝试。
 func currentReview(tx *gorm.DB, d Debate, review Review) (Review, error) {
 	var current Review
@@ -190,12 +219,8 @@ func (r *Repository) CompleteReview(ctx context.Context, uid uint64, d Debate, r
 		if saved, e = currentReview(tx, row, review); e != nil {
 			return e
 		}
-		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
-		if e != nil {
-			return dependency(e, false)
-		}
-		if row.Status != "completed" || row.CompletedRounds != rounds {
-			return ErrRoundConflict
+		if e := reviewEligibility(row); e != nil {
+			return e
 		}
 		schemaVersion := ai.ReviewSchemaVersion
 		now := r.now()

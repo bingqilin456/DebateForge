@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref, useId, watch } from 'vue'
 import { Alert, Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from '../auth/state'
 import { createDebate, listTopics } from '../api/debate'
+import { createTrainingApi } from '../api/training'
 import { ApiError } from '../api/client'
 import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../debate/styles'
 import { CUSTOM_TOPIC_BACKGROUND_MAX_CHARS, CUSTOM_TOPIC_TITLE_MAX_CHARS } from '../shared/limits'
@@ -34,6 +35,13 @@ const source = ref<'preset' | 'custom'>('preset')
 const customTitle = ref('')
 const customBackground = ref('')
 const stance = ref<Stance>('pro')
+// 练习模式：轻量练习沿用 V1 四轮会话，完整训练赛使用 V2 权威阶段模型。
+// 两者都明确展示，默认轻量练习；训练赛没有解锁条件。
+const practiceMode = ref<'standard_4' | 'training_v2'>('standard_4')
+const MODE_LABELS: Record<'standard_4' | 'training_v2', { title: string; detail: string }> = {
+  standard_4: { title: '四轮轻量练习', detail: '4 轮 · 8 条正式发言 · 批注/争点/重练' },
+  training_v2: { title: '完整训练赛', detail: '四阶段 · 自由辩 1–10 回合可主动结束' },
+}
 const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
 const loading = ref(false)
 const loaded = ref(false)
@@ -56,7 +64,7 @@ const backgroundInvalid = computed(() => backgroundCount.value > CUSTOM_TOPIC_BA
 const customInvalid = computed(() => titleInvalid.value || backgroundInvalid.value)
 const canSubmit = computed(() => {
   if (formDisabled.value) return false
-  if (source.value === 'custom') return !customInvalid.value
+  if (source.value === 'custom') return practiceMode.value === 'standard_4' && !customInvalid.value
   return !!selectedTopicId.value && topics.value.some(topic => topic.id === selectedTopicId.value)
 })
 watch(creating, value => emit('creating', value), { flush: 'sync' })
@@ -90,6 +98,7 @@ async function loadTopics() {
 function selectSource(value: 'preset' | 'custom') {
   if (formDisabled.value) return
   source.value = value
+  if (value === 'custom') practiceMode.value = 'standard_4'
 }
 
 async function create() {
@@ -99,9 +108,10 @@ async function create() {
   createError.value = ''
   const request = ++version
   try {
-    // 严格二选一：请求体只带当前来源的字段，不带另一个。
-    const debate = source.value === 'custom'
-      ? await createDebate({ custom_topic: { title: customTitle.value, background: customBackground.value }, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
+    const debate = practiceMode.value === 'training_v2'
+      ? await createTrainingApi(currentAuth.value.client).create({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value })
+      : source.value === 'custom'
+        ? await createDebate({ custom_topic: { title: customTitle.value, background: customBackground.value }, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
       : await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
@@ -207,6 +217,14 @@ onUnmounted(() => { disposed = true; version++ })
           </p>
         </div>
       </div>
+      <fieldset :disabled="formDisabled" class="mode-options">
+        <legend>选择练习模式</legend>
+        <label v-for="(label, value) in MODE_LABELS" :key="value" class="mode-option" :class="{ selected: practiceMode === value }" :data-mode="value">
+          <input v-model="practiceMode" type="radio" :name="`${id}-mode`" :value="value" :disabled="value === 'training_v2' && source === 'custom'">
+          <span><strong>{{ label.title }}</strong><span class="description">{{ label.detail }}</span></span>
+        </label>
+        <p class="muted">两者都提供赛后复盘入口；完整训练赛没有解锁条件，也不会自动切换模式。</p>
+      </fieldset>
       <fieldset :disabled="formDisabled" class="stance-options">
         <legend>选择你的立场</legend>
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
@@ -251,6 +269,10 @@ legend { margin-bottom: 12px; font-weight: 600; }
 .topic-option input { flex: none; margin-top: 4px; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
+.mode-options { display: grid; gap: 10px; }
+.mode-option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.mode-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
+.mode-option input { flex: none; margin-top: 4px; }
 .view-actions { margin-top: 20px; }
 [role="alert"], .custom-topic { margin-bottom: 16px; }
 .custom-field { margin: 16px 0; }

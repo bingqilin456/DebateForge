@@ -217,9 +217,13 @@ func annotationMessages(req AnnotationRequest) ([]PromptMessage, error) {
 	if _, err := req.UserStance.Opposite(); err != nil {
 		return nil, err
 	}
-	rounds, err := RoundsFor(req.Mode)
-	if err != nil {
-		return nil, err
+	rounds := TrainingMaxFreeDebateRounds*2 + 6
+	if !req.Mode.IsTraining() {
+		var err error
+		rounds, err = RoundsFor(req.Mode)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if req.TriggerRoundNo < 1 || req.TriggerRoundNo > rounds {
 		return nil, invalidInput("批注触发轮超出当前赛制范围")

@@ -8,7 +8,12 @@ import "strconv"
 //
 // 私有自定义辩题（req.Custom）保持同样的角色与顺序，但把用户题目原文
 // 移到第一条 user 消息的数据段：system 只声明“题目在数据段”，不含任何用户文本。
+// Training 非空时转而构建训练赛 Prompt：训练赛按发言步骤建模，不使用 V1 轮号，
+// 也不能由轮号反推阶段，因此两条构建路径必须分开。
 func BuildPrompt(req Request) (Prompt, error) {
+	if req.Training != nil {
+		return BuildTrainingPrompt(req)
+	}
 	if err := ValidateRequest(req); err != nil {
 		return Prompt{}, err
 	}

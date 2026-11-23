@@ -1,12 +1,12 @@
 # 思弈阁 API 契约
 
-## 当前 V1 契约与 V2 待设计的边界
+## V1 与完整训练赛的接口边界
 
-**本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
+**本文描述现有 HTTP 接口及 V2-02 的完整训练赛增量。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
 
 - **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
 - **V2 已实现增量**：V2-03 私有自定义辩题扩展 `POST /api/v1/debates` 的 `custom_topic` 和会话快照的 `topic.id`。V2-04 批注契约见 §15，四轮练习的复盘和四维契约见 §16。
-- **V2 后续接口**：训练赛阶段、争点卡、局部重练和 PDF 等能力的接口在各自切片确定。
+- **V2 后续接口**：争点卡、局部重练和 PDF 等能力的接口在各自切片确定。
 - **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
 - **V2-13 复盘为本地可运行切片，未验收**：§16 的复盘接口是错误边界复用 V1、字段独立设计的新契约，默认关闭（`V2_REVIEW_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`）。关闭时不注册生成能力、不访问新表，既有 19 个操作的请求/响应语义保持不变；迁移 `00016` 仅新增正向 SQL 文件，未执行，编号需在整合时复核。
 - **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
@@ -596,6 +596,32 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 5. 202 继续查询；409 attempt_version_conflict 仅刷新状态，不自动换新版本重发。再次失败后，只有用户看过最新失败版本并再次明确重试才允许新尝试。SSE 事件或本地缓存不得作为最新版本事实来源。
 
 
+
+## 完整训练赛（V2-02）
+
+创建使用 `POST /api/v1/training-debates`，请求包含 `topic_id`、`user_stance`，以及可选的 `ai_style`。成功返回 201，赛制为 `training_v2`。列表识别该赛制。详情 `GET /api/v1/debates/{id}` 返回 `training.progress`、`training.steps` 和查询地址。旧会话继续通过原详情与轮次接口读取和续练。
+
+以下操作的路径相对于 `/api/v1/debates/{id}`。写入需要会话认证、所有权、Origin 和 CSRF 校验。
+
+| 操作 | 请求 |
+| --- | --- |
+| `POST /steps` | 发送 `client_request_id`、`expected_stage` 和 `expected_step`。用户步骤带 `content`，AI 步骤省略正文。首次成功 201，重放 200，生成中 202。 |
+| `POST /steps/stream` | 请求同上，且带 `Accept: text/event-stream`。复用提交入口。事件为 `start`、`delta`、`done` 或 `error`。`done` 在提交后发送，包含 `step`、`progress`、`debate_status`。生成中返回 JSON 202。 |
+| `POST /steps/{step_no}/retry` | 发送详情中的 `expected_attempt_version`，对当前失败认领重试。 |
+| `POST /free-debate/end` | 至少完成一回合才能结束。放弃当前已失败的回复时发送 `expected_failed_attempt_version`。成功或重放返回 200，从详情读取最新阶段。 |
+
+页面根据 `next_step_no`、`next_speaker` 和 `can_*` 字段开放操作。按阶段和步骤校验新发言。进度不合时返回 409 `round_conflict`，页面重查详情。同一幂等键更换原文或已提交步骤时返回 409 `idempotency_conflict`。断线后查询详情确认提交状态。放弃后已保存的用户原文和 AI 失败记录仍可见，自由辩完整回合数保持原值。
+
+### 训练赛批注、争点卡与赛后回看
+
+以下分析能力在隔离 Fake 环境验证。批注沿用 `V2_ANNOTATION_FAKE=1`，争点卡、复盘与重练随 `V2_REVIEW_FAKE=1` 启用。
+
+- 每次 AI 发言提交后触发批注。仍用 `GET /debates/{id}/annotations` 和批注补做入口。训练赛批次里的 `turn_id`、`round_no` 分别指 AI 发言的步骤 ID 与全局步骤号。两条同环节新增发言和 AI 独自先发分别由保存的步骤决定。批注忙或失败时可手动补做。
+- `GET /debates/{id}/issue-cards` 读取已保存卡片。双方驳立论、每个完整自由辩回合和结辩提交后，服务端依次整理。分析结果和已处理位置一同保存。返回 `pending: true` 时还有已提交位置待更新；手动补做走 `POST /debates/{id}/issue-cards/analyze`。失败后的显式重试提交 `retry: true` 与 `expected_attempt_version`。保留现有卡片编辑版本和锚点校验。
+- 完赛后沿用 §16 的 `GET/POST /debates/{id}/review`。训练赛复盘读取已提交步骤。失败只影响复盘，观察不足的维度返回 `level: null`。复盘、雷达和争点卡均用同一份原文及锚点。
+- `GET /debates/{id}/repractice` 读取已保存重练版本。`POST` 同路径提交 `client_request_id`、本人已保存原文的 `message_id`、码点区间 `start_cp` 与 `end_cp`、`quote`、`goal`、`rewrite`。原文与坐标逐字校验。重试用 `POST /debates/{id}/repractice/{version}/retry`，提交当前 `expected_attempt_version`。
+
+以上路径使用 `/api/v1` 前缀。读写统一校验会话所有权。写入沿用 Origin 与 CSRF 校验，刷新只读取保存的结果。
 
 ## 错误码与客户端恢复
 

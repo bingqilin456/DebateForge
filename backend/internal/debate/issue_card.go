@@ -139,6 +139,7 @@ type IssueCardAnalysis struct {
 	Status         string
 	AttemptVersion uint64
 	ErrorCode      *string
+	ThroughStep    int
 	LeaseExpiresAt *time.Time
 	UpdatedAt      time.Time
 }
@@ -149,6 +150,8 @@ type IssueCardSnapshot struct {
 	Sources  []IssueCardSource
 	Analysis IssueCardAnalysis
 	Cards    []IssueCard
+	Pending  bool
+	Ready    bool
 }
 
 // IssueCardClaim 是一次成功认领的分析输入快照。
@@ -232,6 +235,7 @@ type IssueCardAnalysisDTO struct {
 type IssueCardListDTO struct {
 	State      string               `json:"state"`
 	DisplayCap int                  `json:"display_cap"`
+	Pending    bool                 `json:"pending,omitempty"`
 	Analysis   IssueCardAnalysisDTO `json:"analysis"`
 	Items      []IssueCardDTO       `json:"items"`
 }
@@ -257,6 +261,9 @@ func issueCardCitationSourceKey(citation IssueCardCitation) string {
 
 // issueCardEligibility 判断该场是否允许赛后整理；顺序保证 quick_3 先被隔离。
 func issueCardEligibility(d Debate) error {
+	if d.IsTraining() {
+		return nil // 具体完成位置在训练赛 Store 内从已提交步骤读取。
+	}
 	if d.Mode != string(ai.ModeStandard4) {
 		return ErrIssueCardModeUnsupported
 	}
@@ -478,6 +485,11 @@ func projectIssueCardList(snapshot IssueCardSnapshot) IssueCardListDTO {
 		DisplayCap: MaxIssueCardsDisplayed,
 		Analysis:   projectIssueCardAnalysis(snapshot.Analysis),
 		Items:      []IssueCardDTO{},
+		Pending:    snapshot.Pending,
+	}
+	if snapshot.Debate.IsTraining() && !snapshot.Ready {
+		dto.State = IssueCardStateNotReady
+		return dto
 	}
 	if err := issueCardEligibility(snapshot.Debate); err != nil {
 		if errors.Is(err, ErrIssueCardModeUnsupported) {
@@ -554,13 +566,23 @@ func (s *IssueCardService) Get(ctx context.Context, uid, debateID uint64) (Issue
 // 槽位忙时返回 202 与当前状态，不排队、不重试；分析失败只写受控错误码，
 // 已成功卡片与人工编辑保持不变。
 func (s *IssueCardService) Analyze(ctx context.Context, uid, debateID uint64, in IssueCardAnalyzeInput) (IssueCardListDTO, int, error) {
+	return s.analyze(ctx, uid, debateID, in, false)
+}
+
+func (s *IssueCardService) analyze(ctx context.Context, uid, debateID uint64, in IssueCardAnalyzeInput, waitForSlot bool) (IssueCardListDTO, int, error) {
 	if uid == 0 || debateID == 0 {
 		return IssueCardListDTO{}, 0, ErrInvalidRequest
 	}
 	if s.analyzer == nil {
 		return IssueCardListDTO{}, 0, ErrIssueCardModeUnsupported
 	}
-	if !s.acquireSlot() {
+	if waitForSlot {
+		select {
+		case s.slot <- struct{}{}:
+		case <-ctx.Done():
+			return IssueCardListDTO{}, 0, ctx.Err()
+		}
+	} else if !s.acquireSlot() {
 		snapshot, err := s.store.LoadIssueCards(ctx, uid, debateID)
 		if err != nil {
 			return IssueCardListDTO{}, 0, err

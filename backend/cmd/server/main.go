@@ -84,14 +84,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	topicHandler := topic.NewHandler(topic.NewService(topic.NewRepository(database.ORM)))
-	debateService := debate.NewService(debate.NewRepository(database.ORM), generator, debate.NewGate(nil), debate.WithLogger(logger))
+	debateRepository := debate.NewRepository(database.ORM)
+	debateService := debate.NewService(debateRepository, generator, debate.NewGate(nil), debate.WithLogger(logger))
 	// 批注默认关闭；只有显式本地 Fake 配置才打开能力，且从不改变既有 Gate 与状态机。
 	if _, err := applyAnnotationCapability(debateService, generator); err != nil {
 		return err
 	}
 	// 复盘同样是默认关闭的独立切片：关闭时不会访问 debate_reviews，旧部署不受影响。
-	if _, err := applyReviewCapability(debateService, generator); err != nil {
+	if enabled, err := applyReviewCapability(debateService, generator); err != nil {
 		return err
+	} else if enabled {
+		debateService.EnableTrainingIssues(debateRepository, debate.NewFakeIssueCardAnalyzer())
+		debateService.EnableTrainingRepractice(debateRepository, func(ctx context.Context, _ debate.RepracticeInput) (debate.RepracticeFeedback, error) {
+			return debate.RepracticeFeedback{
+				Change:     "已保存这次改写。",
+				Reason:     "可对照原文检查结论与理由是否衔接。",
+				NewProblem: "再检查是否说明了主张的适用范围。",
+			}, ctx.Err()
+		})
 	}
 	debateHandler := debate.NewHandler(debateService)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)

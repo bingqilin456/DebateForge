@@ -15,6 +15,7 @@ const props = defineProps<{
   /** 引用出现在卡片中的位置说明，如“提出原文”“相关回应”。 */
   label: string
   disabled?: boolean
+  training?: boolean
 }>()
 
 const emit = defineEmits<{ locate: [key: string] }>()
@@ -28,7 +29,7 @@ const accessibleName = computed(() => props.label + '：' + props.view.citation.
   <div class="issue-card-citation" :data-issue-card-citation-status="verified ? 'verified' : 'pending'">
     <p class="citation-head">
       <span class="citation-label">{{ label }}</span>
-      <span class="citation-turn">{{ view.citation.speaker === 'user' ? '你' : 'AI' }} · 第 {{ view.citation.turn_no }} 轮</span>
+      <span class="citation-turn">{{ view.citation.speaker === 'user' ? '你' : 'AI' }} · 第 {{ view.citation.turn_no }} {{ training ? '步' : '轮' }}</span>
     </p>
     <p class="citation-text">
       <button

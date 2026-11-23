@@ -23,6 +23,7 @@ const props = defineProps<{
   detail: DebateDetail
   api: AnnotationApi
   disabled?: boolean
+  trainingStep?: number
 }>()
 
 const emit = defineEmits<{
@@ -43,7 +44,9 @@ let active = true
 let versionToken = 0
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let pollSince = 0
-let observedRounds = props.detail.debate.completed_rounds
+const triggerPosition = computed(() => props.trainingStep ?? props.detail.debate.completed_rounds)
+const positionUnit = computed(() => props.trainingStep === undefined ? '轮' : '步')
+let observedRounds = triggerPosition.value
 let awaitingFreshBatch = false
 
 const completedBatches = computed(() => batches.value.filter(batch => batch.status === 'completed'))
@@ -193,13 +196,13 @@ watch(() => props.detail.debate.id, () => {
   batches.value = []
   notice.value = ''
   pollSince = 0
-  observedRounds = props.detail.debate.completed_rounds
+  observedRounds = triggerPosition.value
   awaitingFreshBatch = false
   void load()
 }, { immediate: true })
 
 // 完成轮数增加（新一轮提交成功）时立即重读，让场中批注跟上来。
-watch(() => props.detail.debate.completed_rounds, rounds => {
+watch(triggerPosition, rounds => {
   if (rounds === observedRounds) return
   awaitingFreshBatch = rounds > observedRounds
   observedRounds = rounds
@@ -232,8 +235,8 @@ defineExpose({ load, messageItems, focusFromMarker })
 
       <!-- not_started / failed 都给出可执行的手动补做入口。 -->
       <div v-for="batch in retryableBatches" :key="`pending-${batch.turn_id}`" class="pending-block" :data-annotation-pending="batch.round_no">
-        <p v-if="batch.status === 'not_started'">第 {{ batch.round_no }} 轮批注尚未开始，可手动补做。</p>
-        <p v-else>第 {{ batch.round_no }} 轮批注未完成（错误码：{{ batch.error_code ?? 'unknown' }}）。辩论与保存不受影响。</p>
+        <p v-if="batch.status === 'not_started'">第 {{ batch.round_no }} {{ positionUnit }}批注尚未开始，可手动补做。</p>
+        <p v-else>第 {{ batch.round_no }} {{ positionUnit }}批注未完成（错误码：{{ batch.error_code ?? 'unknown' }}）。辩论与保存不受影响。</p>
         <Button
           size="small"
           data-annotation-retry
@@ -246,7 +249,7 @@ defineExpose({ load, messageItems, focusFromMarker })
       </div>
 
       <div v-for="batch in completedBatches" :key="`batch-${batch.turn_id}`" class="round-block" :data-annotation-round="batch.round_no">
-        <h4>第 {{ batch.round_no }} 轮<span class="count">批注 {{ batch.items.length }} 条</span></h4>
+        <h4>第 {{ batch.round_no }} {{ positionUnit }}<span class="count">批注 {{ batch.items.length }} 条</span></h4>
         <p v-if="batch.items.length === 0" class="empty" role="status">本次没有批注，这不代表没有问题。</p>
         <ul v-else class="annotation-list">
           <li v-for="item in batch.items" :key="keysOf(item)">

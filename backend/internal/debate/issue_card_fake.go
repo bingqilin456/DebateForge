@@ -83,7 +83,7 @@ func (f *FakeIssueCardAnalyzer) AnalyzeIssueCards(ctx context.Context, req Issue
 		return IssueCardResult{}, err
 	}
 	if !explicit {
-		candidates = NewDefaultFakeIssueCardCandidates(req.Sources)
+		candidates = defaultFakeIssueCardCandidates(req.Sources, req.Mode.IsTraining())
 	}
 	return IssueCardResult{Candidates: candidates}, nil
 }
@@ -94,6 +94,10 @@ var _ IssueCardAnalyzer = (*FakeIssueCardAnalyzer)(nil)
 // 供不逐字构造夹具的联调与前端 Mock 使用：每个用户发言取一条提出位置，
 // 该轮对位 AI 回应作为相关回应。文本只是占位样例，不代表真实模型判断。
 func NewDefaultFakeIssueCardCandidates(sources []IssueCardSource) []IssueCardCandidate {
+	return defaultFakeIssueCardCandidates(sources, false)
+}
+
+func defaultFakeIssueCardCandidates(sources []IssueCardSource, training bool) []IssueCardCandidate {
 	ordered := issueCardSortedSources(sources)
 	byRound := make(map[int][]IssueCardSource)
 	for _, source := range ordered {
@@ -117,6 +121,17 @@ func NewDefaultFakeIssueCardCandidates(sources []IssueCardSource) []IssueCardCan
 		if origin == nil {
 			continue
 		}
+		if training {
+			// Fake 只提供可核对的回复样例，让用户能验证跨阶段的引用定位。
+			for _, source := range ordered {
+				if source.RoundNo > origin.RoundNo && source.Role == "assistant" {
+					responses = append(responses, source)
+				}
+			}
+			if len(responses) > 2 {
+				responses = []IssueCardSource{responses[0], responses[len(responses)-1]}
+			}
+		}
 		candidate := IssueCardCandidate{
 			Title:       issueCardTrimTitle("争点：" + issueCardQuotePrefix(origin.Content, 16)),
 			Explanation: "双方围绕「" + issueCardQuotePrefix(origin.Content, 24) + "」形成交锋，回应是否切中问题需要本人核对双方原句。",
@@ -133,6 +148,9 @@ func NewDefaultFakeIssueCardCandidates(sources []IssueCardSource) []IssueCardCan
 			})
 		}
 		candidates = append(candidates, candidate)
+		if training && len(candidates) == MaxIssueCardsDisplayed {
+			break
+		}
 	}
 	return candidates
 }

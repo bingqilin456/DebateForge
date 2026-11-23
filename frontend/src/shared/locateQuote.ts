@@ -25,6 +25,16 @@ function clearLocatedIn(root: ParentNode): void {
   }
 }
 
+/** 复用批注标记 DOM 键，定位侧栏解释对应的原文。 */
+export function locateAnnotationMarker(root: ParentNode | null, key: string): void {
+  const candidates = root?.querySelectorAll<HTMLButtonElement>('[data-annotation-keys]')
+  const marker = Array.from(candidates ?? []).find(element =>
+    element.dataset.annotationKeys?.split('\u0001').includes(key),
+  )
+  marker?.scrollIntoView?.({ block: 'center' })
+  marker?.focus({ preventScroll: true })
+}
+
 /**
  * 按 messageId 找到原文段落节点。
  *

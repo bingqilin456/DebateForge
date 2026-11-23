@@ -47,9 +47,9 @@ type AnnotationClaim struct {
 	Sources    []AnnotationSource
 }
 
-func readAnnotation(tx *gorm.DB, turnID uint64, lock bool) (*TurnAnnotation, error) {
+func readAnnotation(tx *gorm.DB, d Debate, turnID uint64, lock bool) (*TurnAnnotation, error) {
 	var out TurnAnnotation
-	q := tx.Where("turn_id = ?", turnID)
+	q := annotationTable(tx, d).Where("turn_id = ?", turnID)
 	if lock {
 		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -72,6 +72,10 @@ func (r *Repository) ListAnnotations(ctx context.Context, uid, debateID uint64) 
 		if e != nil {
 			return e
 		}
+		if row.IsTraining() {
+			out, e = listTrainingAnnotations(tx, row)
+			return e
+		}
 		var turns []Turn
 		if e = tx.Where("debate_id = ? AND annotation_eligible = ?", row.ID, true).
 			Order("round_no ASC").Find(&turns).Error; e != nil {
@@ -79,7 +83,7 @@ func (r *Repository) ListAnnotations(ctx context.Context, uid, debateID uint64) 
 		}
 		for i := range turns {
 			batch := AnnotationBatch{Turn: turns[i]}
-			if batch.Annotation, e = readAnnotation(tx, turns[i].ID, false); e != nil {
+			if batch.Annotation, e = readAnnotation(tx, row, turns[i].ID, false); e != nil {
 				return e
 			}
 			out = append(out, batch)
@@ -128,19 +132,15 @@ func (r *Repository) ClaimAnnotation(ctx context.Context, uid, debateID, turnID,
 		if e != nil {
 			return e
 		}
-		var turn Turn
-		if e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND debate_id = ?", turnID, debateID).First(&turn).Error; e != nil {
-			if errors.Is(e, gorm.ErrRecordNotFound) {
-				return ErrNotFound
-			}
-			return dependency(e, false)
+		turn, sources, e := annotationTrigger(tx, row, turnID)
+		if e != nil {
+			return e
 		}
 		if !turn.AnnotationEligible || turn.Status != "completed" {
 			// 非合格轮不启动：未开启切片时的旧轮次、失败轮与在途轮都不参与。
 			return ErrRoundConflict
 		}
-		existing, e := readAnnotation(tx, turnID, true)
+		existing, e := readAnnotation(tx, row, turnID, true)
 		if e != nil {
 			return e
 		}
@@ -178,7 +178,7 @@ func (r *Repository) ClaimAnnotation(ctx context.Context, uid, debateID, turnID,
 				CreatedAt:      now,
 				UpdatedAt:      now,
 			}
-			if e = tx.Create(&created).Error; e != nil {
+			if e = annotationTable(tx, row).Create(&created).Error; e != nil {
 				return dependency(e, false)
 			}
 			claim.Annotation = created
@@ -191,7 +191,7 @@ func (r *Repository) ClaimAnnotation(ctx context.Context, uid, debateID, turnID,
 			values["error_code"] = nil
 			values["content_json"] = nil
 			values["updated_at"] = now
-			update := tx.Model(&TurnAnnotation{}).
+			update := annotationTable(tx, row).
 				Where("id = ? AND status = ? AND attempt_version = ?", existing.ID, "failed", existing.AttemptVersion).
 				Updates(values)
 			if update.Error != nil {
@@ -208,7 +208,9 @@ func (r *Repository) ClaimAnnotation(ctx context.Context, uid, debateID, turnID,
 			existing.UpdatedAt = now
 			claim.Annotation = *existing
 		}
-		if claim.Sources, e = annotationSources(tx, debateID, turn.RoundNo); e != nil {
+		if row.IsTraining() {
+			claim.Sources = sources
+		} else if claim.Sources, e = annotationSources(tx, debateID, turn.RoundNo); e != nil {
 			return e
 		}
 		fresh = true
@@ -223,7 +225,7 @@ func (r *Repository) ClaimAnnotation(ctx context.Context, uid, debateID, turnID,
 // currentAnnotation 锁定批次行并校验状态与版本，防止旧响应覆盖新尝试。
 func currentAnnotation(tx *gorm.DB, d Debate, a TurnAnnotation) (TurnAnnotation, error) {
 	var current TurnAnnotation
-	e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+	e := annotationTable(tx, d).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND debate_id = ?", a.ID, d.ID).First(&current).Error
 	if e != nil {
 		return current, dependency(e, false)
@@ -251,7 +253,7 @@ func (r *Repository) CompleteAnnotation(ctx context.Context, uid uint64, d Debat
 		values["content_json"] = contentJSON
 		values["error_code"] = nil
 		values["updated_at"] = now
-		update := tx.Model(&TurnAnnotation{}).
+		update := annotationTable(tx, row).
 			Where("id = ? AND status = ? AND attempt_version = ?", a.ID, "generating", a.AttemptVersion).
 			Updates(values)
 		if update.Error != nil {
@@ -292,7 +294,7 @@ func (r *Repository) FailAnnotation(ctx context.Context, uid uint64, d Debate, a
 		values["content_json"] = nil
 		values["error_code"] = code
 		values["updated_at"] = now
-		update := tx.Model(&TurnAnnotation{}).
+		update := annotationTable(tx, row).
 			Where("id = ? AND status = ? AND attempt_version = ?", a.ID, "generating", a.AttemptVersion).
 			Updates(values)
 		if update.Error != nil {
@@ -314,8 +316,17 @@ func (r *Repository) FailAnnotation(ctx context.Context, uid uint64, d Debate, a
 // recoverAnnotationLeases 把过期在途批次标记为失败，使下一次手动认领可以恢复。
 // 只按状态与版本条件更新，不覆盖并发完成的结果。
 func (r *Repository) recoverAnnotationLeases(ctx context.Context, now time.Time) (int, error) {
+	n, err := r.recoverAnnotationTable(ctx, now, "turn_annotations")
+	if err != nil {
+		return n, err
+	}
+	training, err := r.recoverAnnotationTable(ctx, now, "training_annotations")
+	return n + training, err
+}
+
+func (r *Repository) recoverAnnotationTable(ctx context.Context, now time.Time, table string) (int, error) {
 	var expired []TurnAnnotation
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Table(table).
 		Select("id", "debate_id", "attempt_version").
 		Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?", "generating", now).
 		Find(&expired).Error; err != nil {
@@ -323,7 +334,7 @@ func (r *Repository) recoverAnnotationLeases(ctx context.Context, now time.Time)
 	}
 	recovered := 0
 	for _, a := range expired {
-		update := r.db.WithContext(ctx).Model(&TurnAnnotation{}).
+		update := r.db.WithContext(ctx).Table(table).
 			Where("id = ? AND status = ? AND attempt_version = ? AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?",
 				a.ID, "generating", a.AttemptVersion, now).
 			Updates(map[string]any{

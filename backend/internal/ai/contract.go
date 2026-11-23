@@ -150,6 +150,11 @@ func (s Stance) Opposite() (Stance, error) {
 	}
 }
 
+// Valid 报告立场是否为受控枚举；与 Opposite 分开，便于校验先行于取反。
+func (s Stance) Valid() bool {
+	return s == StancePro || s == StanceCon
+}
+
 // label 是写入中文 Prompt 的固定措辞，不接受外部输入。
 func (s Stance) label() string {
 	switch s {
@@ -176,12 +181,17 @@ type CompletedTurn struct {
 }
 
 // Request 是一次无状态生成请求：每轮都完整重建消息，不跨请求共享可变状态。
+//
+// V1 与产品 V2 训练赛共用该结构与 Generator 接口，靠 Training 是否为空区分：
+// 为空时走 V1「(赛制, 轮号)」路径，非空时走训练赛按发言步骤建模的路径。
+// 两者不能混用字段，避免把训练赛塞进 V1 的轮次推导形成第二个事实源。
 type Request struct {
 	// UserID 来自认证会话，只用于真实试运行准入。
-	UserID         uint64
-	Mode           Mode
-	AIStyle        AIStyle
-	Topic          Topic
+	UserID  uint64
+	Mode    Mode
+	AIStyle AIStyle
+	Topic   Topic
+	// V1 字段：训练赛请求不使用。
 	UserStance     Stance
 	RoundNo        int
 	CompletedTurns []CompletedTurn
@@ -190,6 +200,8 @@ type Request struct {
 	// 为真时 Topic 是用户原文：只作为 user 消息的数据段外发，
 	// system 规则段不出现题目文本，且改用独立 Prompt 版本。
 	Custom bool
+	// Training 非空表示本次是产品 V2 训练赛的 AI 发言步骤。
+	Training *TrainingContext
 }
 
 // PromptMessage 是一条待发送消息，角色由服务端构造，调用方不可指定。
@@ -317,6 +329,10 @@ func windowExceeded(message string) *Error {
 
 // ValidateRequest 在调用任何模型之前校验输入，绝不截断或静默丢弃内容。
 func ValidateRequest(req Request) error {
+	// 产品 V2 训练赛请求使用独立的发言步骤校验，不复用 V1 的轮次字段。
+	if req.Training != nil {
+		return ValidateTrainingRequest(req)
+	}
 	if !utf8.ValidString(req.Topic.Title) || !utf8.ValidString(req.Topic.Description) ||
 		!utf8.ValidString(req.UserContent) {
 		return invalidInput("输入必须是合法 UTF-8")

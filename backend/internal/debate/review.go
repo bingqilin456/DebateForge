@@ -282,12 +282,11 @@ func (s *Service) requestReview(ctx context.Context, uid, debateID uint64, in Re
 func (s *Service) runReviewGeneration(ctx context.Context, uid uint64, claim ReviewClaim, successStatus int) (ReviewStatus, int, error) {
 	d, current := claim.Debate, claim.Review
 	// 只接受完赛会话的完整正式消息；历史不完整时按依赖失败处理，不生成半份复盘。
-	rounds, err := ai.RoundsFor(ai.Mode(d.Mode))
-	if err != nil {
-		return ReviewStatus{}, 0, dependency(err, false)
-	}
-	if len(claim.Messages) != rounds*2 {
-		return ReviewStatus{}, 0, dependency(nil, false)
+	if !d.IsTraining() {
+		rounds, err := ai.RoundsFor(ai.Mode(d.Mode))
+		if err != nil || len(claim.Messages) != rounds*2 {
+			return ReviewStatus{}, 0, dependency(err, false)
+		}
 	}
 	result, genErr := s.generateReview(ctx, ai.ReviewRequest{
 		UserID:     uid,

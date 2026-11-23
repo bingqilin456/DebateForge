@@ -31,6 +31,13 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	group.POST("/debates/:id/turns", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.submit)
 	group.POST("/debates/:id/turns/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.stream)
 	group.POST("/debates/:id/turns/:turn_id/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.retry)
+	// 产品 V2 训练赛：按发言步骤推进，与 V1 轮次端点并存但互不复用状态机。
+	// 创建端点单独放在 /training-debates，避免与 /debates/:id 静态段和通配段冲突。
+	group.POST("/training-debates", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.createTraining)
+	group.POST("/debates/:id/steps", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.submitStep)
+	group.POST("/debates/:id/steps/stream", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.streamStep)
+	group.POST("/debates/:id/steps/:step_no/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, h.retryStep)
+	group.POST("/debates/:id/free-debate/end", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.endFreeDebate)
 	group.POST("/debates/:id/summary", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, h.summary)
 	group.GET("/debates/:id/summary", a.RequireAuth(), h.getSummary)
 	group.GET("/debates/:id/strategy", a.RequireAuth(), h.getStrategy)
@@ -41,6 +48,10 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	h.registerAnnotationRoutes(group, a)
 	// V2-13 复盘：读取只要 Session；显式生成/重试额外要求 Origin/CSRF 与防刷前置。
 	h.registerReviewRoutes(group, a)
+	h.registerTrainingRepractice(group, a)
+	if h.service != nil && h.service.trainingIssues != nil {
+		NewIssueCardHandler(h.service.trainingIssues).RegisterIssueCardRoutes(group, a)
+	}
 }
 
 // 有效身份与写保护通过后、路径/正文解析前计数；坏 JSON、超长和非法字段也受防刷限制。

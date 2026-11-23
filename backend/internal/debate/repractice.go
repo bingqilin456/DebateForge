@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -20,22 +21,28 @@ type RepracticeInput struct {
 	Quote, Goal, Rewrite string
 }
 
-type RepracticeFeedback struct{ Change, Reason, NewProblem string }
-
-type RepracticeVersion struct {
-	ID, Attempt uint64
-	Status      string
-	Input       RepracticeInput
-	Feedback    RepracticeFeedback
+type RepracticeFeedback struct {
+	Change     string `json:"change"`
+	Reason     string `json:"reason"`
+	NewProblem string `json:"new_problem"`
 }
 
-// Repractice 是隔离切片的版本存储；正式存储接入之前不挂载公开路由。
+type RepracticeVersion struct {
+	ID, Attempt    uint64
+	Status         string
+	Input          RepracticeInput
+	Feedback       RepracticeFeedback
+	LeaseExpiresAt time.Time
+}
+
+// Repractice 校验完赛原文并管理独立的改写版本。
 // 记录在模型调用前保存，重试只推进已有失败版本，不写正式发言。
 type Repractice struct {
 	detail   func(context.Context, uint64, uint64) (Detail, error)
 	generate func(context.Context, RepracticeInput) (RepracticeFeedback, error)
 	mu       sync.Mutex
 	sessions map[[2]uint64][]RepracticeVersion
+	store    func(context.Context, uint64, uint64, bool, func(*[]RepracticeVersion) error) error
 }
 
 func NewRepractice(detail func(context.Context, uint64, uint64) (Detail, error), generate func(context.Context, RepracticeInput) (RepracticeFeedback, error)) *Repractice {
@@ -57,9 +64,29 @@ func (r *Repractice) List(ctx context.Context, owner, id uint64) ([]RepracticeVe
 	if _, err := r.completed(ctx, owner, id); err != nil {
 		return nil, err
 	}
+	out := []RepracticeVersion{}
+	err := r.withVersions(ctx, owner, id, false, func(versions *[]RepracticeVersion) error {
+		out = append(out, (*versions)...)
+		return nil
+	})
+	return out, err
+}
+
+func (r *Repractice) withVersions(ctx context.Context, owner, id uint64, write bool, apply func(*[]RepracticeVersion) error) error {
+	if r.store != nil {
+		return r.store(ctx, owner, id, write, apply)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]RepracticeVersion{}, r.sessions[[2]uint64{owner, id}]...), nil
+	key := [2]uint64{owner, id}
+	versions := r.sessions[key]
+	if err := apply(&versions); err != nil {
+		return err
+	}
+	if write {
+		r.sessions[key] = versions
+	}
+	return nil
 }
 
 func (r *Repractice) Submit(ctx context.Context, owner, id uint64, in RepracticeInput) (RepracticeVersion, error) {
@@ -73,27 +100,42 @@ func (r *Repractice) Submit(ctx context.Context, owner, id uint64, in Repractice
 	if !repracticeSourceMatches(d, in) {
 		return RepracticeVersion{}, ErrRepracticeSource
 	}
-	key := [2]uint64{owner, id}
-	r.mu.Lock()
-	versions := r.sessions[key]
-	for _, v := range versions {
-		if v.Input.RequestID != in.RequestID {
-			continue
+	var version RepracticeVersion
+	fresh := false
+	err = r.withVersions(ctx, owner, id, true, func(versions *[]RepracticeVersion) error {
+		for _, v := range *versions {
+			if v.Input.RequestID == in.RequestID {
+				if v.Input != in {
+					return ErrRepracticeInput
+				}
+				version = v
+				return nil
+			}
 		}
-		r.mu.Unlock()
-		if v.Input != in {
-			return RepracticeVersion{}, ErrRepracticeInput
+		version = RepracticeVersion{
+			ID: uint64(len(*versions)) + 1, Attempt: 1, Status: "generating", Input: in,
+			LeaseExpiresAt: time.Now().UTC().Add(LeaseDuration),
 		}
-		return v, nil
+		*versions = append(*versions, version)
+		fresh = true
+		return nil
+	})
+	if err != nil || !fresh {
+		return version, err
 	}
-	v := RepracticeVersion{ID: uint64(len(versions)) + 1, Attempt: 1, Status: "generating", Input: in}
-	r.sessions[key] = append(versions, v)
-	r.mu.Unlock()
-	return r.finish(ctx, key, v), nil
+	return r.finish(ctx, owner, id, version)
 }
 
 func repracticeSourceMatches(d Detail, in RepracticeInput) bool {
 	if in.MessageID == 0 || isBlankText(in.Quote) || !utf8.ValidString(in.Quote) || in.End <= in.Start {
+		return false
+	}
+	if d.Training != nil {
+		for _, step := range d.Training.Steps {
+			if step.ID == in.MessageID && step.Speaker == "user" && VerifiedQuote(step.Content, in.Start, in.End, in.Quote) {
+				return true
+			}
+		}
 		return false
 	}
 	for _, turn := range d.Turns {
@@ -114,30 +156,33 @@ func (r *Repractice) Retry(ctx context.Context, owner, id, version, attempt uint
 	if err != nil {
 		return RepracticeVersion{}, err
 	}
-	key := [2]uint64{owner, id}
-	r.mu.Lock()
-	versions := r.sessions[key]
-	if version == 0 || version > uint64(len(versions)) {
-		r.mu.Unlock()
-		return RepracticeVersion{}, ErrRepracticeVersion
+	var v RepracticeVersion
+	fresh := false
+	err = r.withVersions(ctx, owner, id, true, func(versions *[]RepracticeVersion) error {
+		if version == 0 || version > uint64(len(*versions)) {
+			return ErrRepracticeVersion
+		}
+		v = (*versions)[version-1]
+		if v.Status != "failed" || v.Attempt != attempt {
+			return nil
+		}
+		if !repracticeSourceMatches(d, v.Input) {
+			return ErrRepracticeSource
+		}
+		v.Attempt++
+		v.Status = "generating"
+		v.LeaseExpiresAt = time.Now().UTC().Add(LeaseDuration)
+		(*versions)[version-1] = v
+		fresh = true
+		return nil
+	})
+	if err != nil || !fresh {
+		return v, err
 	}
-	v := versions[version-1]
-	if v.Status != "failed" || v.Attempt != attempt {
-		r.mu.Unlock()
-		return v, nil
-	}
-	if !repracticeSourceMatches(d, v.Input) {
-		r.mu.Unlock()
-		return RepracticeVersion{}, ErrRepracticeSource
-	}
-	v.Attempt++
-	v.Status = "generating"
-	versions[version-1] = v
-	r.mu.Unlock()
-	return r.finish(ctx, key, v), nil
+	return r.finish(ctx, owner, id, v)
 }
 
-func (r *Repractice) finish(ctx context.Context, key [2]uint64, v RepracticeVersion) RepracticeVersion {
+func (r *Repractice) finish(ctx context.Context, owner, id uint64, v RepracticeVersion) (RepracticeVersion, error) {
 	feedback, err := r.generate(ctx, v.Input)
 	if err != nil || isBlankText(feedback.Change) || isBlankText(feedback.Reason) {
 		v.Status = "failed"
@@ -145,8 +190,16 @@ func (r *Repractice) finish(ctx context.Context, key [2]uint64, v RepracticeVers
 		v.Status = "completed"
 		v.Feedback = feedback
 	}
-	r.mu.Lock()
-	r.sessions[key][v.ID-1] = v
-	r.mu.Unlock()
-	return v
+	v.LeaseExpiresAt = time.Time{}
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	err = r.withVersions(saveCtx, owner, id, true, func(versions *[]RepracticeVersion) error {
+		current := (*versions)[v.ID-1]
+		if current.Status != "generating" || current.Attempt != v.Attempt {
+			return ErrAttemptVersionConflict
+		}
+		(*versions)[v.ID-1] = v
+		return nil
+	})
+	return v, err
 }

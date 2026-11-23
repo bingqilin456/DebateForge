@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Alert, Button, Input, Modal } from '@arco-design/web-vue'
 import { ApiError } from '../../api/client'
+import { GENERATION_POLL_BUDGET_MS, GENERATION_POLL_INTERVAL_MS } from '../../shared/limits'
 import type { IssueCardApi } from '../../api/issueCard'
 import type { IssueCardItem, IssueCardList } from '../../types/issueCard'
 import {
@@ -36,6 +37,7 @@ const props = defineProps<{
   contents: IssueCardContents
   /** 本场是否已完赛四轮；未完赛时不自动请求整理。 */
   completed?: boolean
+  training?: boolean
   disabled?: boolean
   /** 二次确认的可注入边界：默认用 Arco 弹窗，测试注入桩函数以避免真实弹层。 */
   confirm?: (content: string, title: string) => Promise<boolean>
@@ -54,11 +56,13 @@ const renameDraft = ref('')
 const mergeSource = ref<string | null>(null)
 let active = true
 let requestToken = 0
+let pollSince = 0
+let timer: ReturnType<typeof setTimeout> | undefined
 
 const views = computed(() => list.value ? buildIssueCardViews(list.value, props.contents) : [])
 const state = computed(() => list.value?.state ?? 'not_ready')
 const analysis = computed(() => list.value?.analysis ?? { status: 'not_started' as const, attempt_version: 0 })
-const stateMessage = computed(() => issueCardStateMessage(state.value))
+const stateMessage = computed(() => props.training && state.value === 'not_ready' ? '双方驳立论完成后开始整理。' : issueCardStateMessage(state.value))
 const analysisMessage = computed(() => list.value ? issueCardAnalysisMessage(list.value.analysis) : '')
 const canRender = computed(() => state.value === 'ready')
 const atCap = computed(() => views.value.length >= ISSUE_CARD_DISPLAY_CAP)
@@ -67,6 +71,7 @@ const busy = computed(() => Boolean(props.disabled) || analyzing.value || Boolea
 /** 读取保存的卡片与人工编辑；无模型调用、无写操作。 */
 async function load() {
   if (!active) return
+  clearTimeout(timer)
   const token = ++requestToken
   loading.value = true
   loadError.value = ''
@@ -74,6 +79,10 @@ async function load() {
     const result = await props.api.list(props.debateId)
     if (!active || token !== requestToken) return
     list.value = result
+    if (props.training && (result.analysis.status === 'generating' || (result.pending && result.analysis.status !== 'failed'))
+      && Date.now() - pollSince < GENERATION_POLL_BUDGET_MS) {
+      timer = setTimeout(() => { void load() }, GENERATION_POLL_INTERVAL_MS)
+    }
     // 会话切换或刷新后不保留任何本地编辑态。
     renamingKey.value = null
     renameDraft.value = ''
@@ -93,7 +102,7 @@ async function analyze() {
   notice.value = ''
   try {
     // 未开始是首次整理；已完成/已失败都必须显式 retry 并带版本，避免把重复触发当成重新分析。
-    const request = analysis.value.status === 'not_started'
+    const request = analysis.value.status === 'not_started' || (props.training && analysis.value.status === 'completed')
       ? {}
       : { retry: true, expected_attempt_version: analysis.value.attempt_version }
     const result = await props.api.analyze(props.debateId, request)
@@ -242,12 +251,13 @@ function locate(key: string) {
 }
 
 watch(() => [props.debateId, props.contents] as const, () => {
-  list.value = null
+  if (!props.training) list.value = null
   notice.value = ''
+  pollSince = Date.now()
   void load()
 }, { immediate: true })
 
-onUnmounted(() => { active = false; requestToken++ })
+onUnmounted(() => { active = false; requestToken++; clearTimeout(timer) })
 
 defineExpose({ load, views })
 </script>
@@ -283,14 +293,14 @@ defineExpose({ load, views })
             {{ analysis.status === 'failed' ? '重试整理争点卡' : '整理争点卡' }}
           </Button>
           <Button
-            v-else-if="analysis.status === 'completed'"
+            v-else-if="analysis.status === 'completed' && (!training || list?.pending)"
             size="small"
             data-issue-card-analyze
             :disabled="busy"
             :loading="analyzing"
             @click="analyze"
           >
-            重新整理
+            {{ training ? '补做争点更新' : '重新整理' }}
           </Button>
         </div>
 
@@ -310,14 +320,14 @@ defineExpose({ load, views })
             <p v-if="view.item.title_source === 'user'" class="muted">人工标题</p>
 
             <!-- 提出原文 / 相关回应 都来自双方已保存发言，各自回读校验。 -->
-            <IssueCardCitationText
+            <IssueCardCitationText :training="training"
               :view="view.origin"
               label="提出原文"
               :disabled="busy"
               @locate="locate"
             />
             <div v-if="view.responses.length" class="responses">
-              <IssueCardCitationText
+              <IssueCardCitationText :training="training"
                 v-for="response in view.responses"
                 :key="response.key"
                 :view="response"

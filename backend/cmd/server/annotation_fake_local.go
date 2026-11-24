@@ -8,16 +8,14 @@ import (
 	"github.com/bingqilin456/DebateForge/backend/internal/debate"
 )
 
-// 批注的启动装配只有一条允许路径：显式本地测试开关 + AI_MODE=fake + APP_ENV=test。
+// 批注默认关闭。隔离测试与明确开启的部署演示使用 Fake 批注。
 //
 // 采用“默认关闭、显式开启”的理由：批注当前只有 Fake 实现，真实供应商接入
 // （模型、费用、总并发、前台优先与限额）属于另一项独立授权任务；
 // 若默认开启，任何 Fake 环境都会凭空产生批注批次，使旧行为与费用边界失控。
 // 关闭时 Complete 不设置资格标志、不启动分析，读取接口对旧会话返回空列表。
 //
-// 只接受 APP_ENV=test：本切片是固定隔离测试环境的验收对象，
-// dev/demo 虽然不是生产环境，但它们有独立的人工联调用途，
-// 不应因为本切片而在开发者日常环境里静默产生批注批次与额外模型调用。
+// dev/demo 仍有独立的联调用途，不自动产生批注。
 
 const (
 	// annotationEnableEnv 是唯一允许开启本切片的开关。
@@ -26,7 +24,7 @@ const (
 	annotationEnableValue = "1"
 )
 
-// annotationFakeEnabled 判断是否满足固定本地测试条件；任何一项不满足都返回关闭。
+// annotationFakeEnabled 校验 Fake 模式与允许显式启用的环境。
 func annotationFakeEnabled() (bool, error) {
 	if os.Getenv(annotationEnableEnv) != annotationEnableValue {
 		return false, nil
@@ -34,9 +32,9 @@ func annotationFakeEnabled() (bool, error) {
 	if os.Getenv("AI_MODE") != "fake" {
 		return false, errors.New("批注 Fake 切片只允许 AI_MODE=fake")
 	}
-	// 只允许显式测试环境：dev/demo 与生产一律拒绝，避免日常联调环境被静默开启。
-	if os.Getenv("APP_ENV") != "test" {
-		return false, errors.New("批注 Fake 切片只允许 APP_ENV=test")
+	env := os.Getenv("APP_ENV")
+	if env != "test" && env != "deploy" {
+		return false, errors.New("批注 Fake 切片只允许 APP_ENV=test 或 deploy")
 	}
 	return true, nil
 }

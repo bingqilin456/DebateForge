@@ -15,7 +15,7 @@ import (
 // 而且旧部署在尚未执行 00016 前会因缺表而失败。因此必须同时满足：
 //   - 显式开关 V2_REVIEW_FAKE=1；
 //   - AI_MODE=fake；
-//   - APP_ENV=test；
+//   - APP_ENV=test 或 deploy；
 //   - 生成器实际实现 ai.ReviewGenerator。
 //
 // 关闭时：读接口仍返回 not_started，写接口返回 400，不触发任何模型调用；
@@ -28,7 +28,7 @@ const (
 	reviewEnableValue = "1"
 )
 
-// reviewFakeEnabled 判断是否满足固定本地测试条件；任何一项不满足都返回关闭。
+// reviewFakeEnabled 校验 Fake 模式与允许显式启用的环境。
 func reviewFakeEnabled() (bool, error) {
 	if os.Getenv(reviewEnableEnv) != reviewEnableValue {
 		return false, nil
@@ -36,8 +36,9 @@ func reviewFakeEnabled() (bool, error) {
 	if os.Getenv("AI_MODE") != "fake" {
 		return false, errors.New("复盘 Fake 切片只允许 AI_MODE=fake")
 	}
-	if os.Getenv("APP_ENV") != "test" {
-		return false, errors.New("复盘 Fake 切片只允许 APP_ENV=test")
+	env := os.Getenv("APP_ENV")
+	if env != "test" && env != "deploy" {
+		return false, errors.New("复盘 Fake 切片只允许 APP_ENV=test 或 deploy")
 	}
 	return true, nil
 }

@@ -36,7 +36,11 @@ t07=(docker compose --env-file deploy/.env -f deploy/compose.yaml -p siyige-t07-
 "${t07[@]}" exec -T mysql bash /opt/siyige/mysql-client.sh app --execute='SELECT COUNT(*) FROM topics'
 ```
 
-部署目标固定为内部 `mysql:3306/siyige_deploy` 与 `siyige_deploy_migrator`，本机 `dev/test` 目标仍各自固定。CLI 在同一会话核对实际库名、账户、MySQL 版本并取锁，沿用历史检查与前向迁移。全新库预期 13 个版本全部 applied（以 `backend/migrations/` 当前文件数为准）、5 条题目；隔离首次验证时再次显式执行 `up` 应为 `applied=0`。再用 app 客户端执行 `UPDATE goose_db_version SET is_applied=is_applied WHERE 1=0`，预期被权限拒绝（1142），即使误获授权也不会更新行。管理员核对 `SHOW GRANTS FOR 'siyige_deploy_app'@'%'` 仅列业务表权限。初始化、迁移或授权失败即暂停发布，保留目标卷和证据，按现有恢复手册核对结构、历史和锁。 [迁移与失败处理](../backend/migrations/README.md#失败重跑与恢复)
+部署目标固定为内部 `mysql:3306/siyige_deploy` 与 `siyige_deploy_migrator`，本机 `dev/test` 目标仍各自固定。CLI 在同一会话核对实际库名、账户、MySQL 版本并取锁。以 `backend/migrations/` 当前文件核对每条迁移均为 applied，再次执行 `up` 应为 `applied=0`。Neon 预设题库包含 6 道题。再用 app 客户端执行 `UPDATE goose_db_version SET is_applied=is_applied WHERE 1=0`，预期被权限拒绝（1142），即使误获授权也不会更新行。管理员核对 `SHOW GRANTS FOR 'siyige_deploy_app'@'%'` 仅列业务表权限。初始化、迁移或授权失败即暂停发布，保留目标卷和证据。 [迁移与失败处理](../backend/migrations/README.md#失败重跑与恢复)
+
+从版本 `00013` 升级到 Neon 的独立副本时，管理员先临时授予迁移账号对 `siyige_deploy.topics` 的表级 `UPDATE`。版本 `00027` 要回填既有辩题分类。迁移核对完成后撤回这项临时权限，再执行应用的逐表授权。保留旧库与旧应用对应的版本，以便切换前验证回退路径。
+
+Neon 公网演示使用 `AI_MODE=fake`。迁移与授权就绪后，应用可通过覆盖配置显式设置 `V2_ANNOTATION_FAKE=1` 和 `V2_REVIEW_FAKE=1`，分别启用演示批注与复盘。
 
 ## 3. 首次受控发布与回退
 

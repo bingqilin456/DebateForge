@@ -8,7 +8,7 @@ import (
 	"github.com/bingqilin456/DebateForge/backend/internal/debate"
 )
 
-// 复盘启动装配沿用 V2-04 的白名单：默认关闭、显式开启、只看固定本地测试环境。
+// 复盘启动装配沿用 V2-04 的白名单。仅允许在测试与部署 Fake 模式下显式启用。
 // 关闭时既不启用能力，也不访问 debate_reviews 新表。
 
 func TestReviewFakeEnabledRequiresAllConditions(t *testing.T) {
@@ -23,7 +23,10 @@ func TestReviewFakeEnabledRequiresAllConditions(t *testing.T) {
 		{"开关为 true 文本", map[string]string{"V2_REVIEW_FAKE": "true", "APP_ENV": "test", "AI_MODE": "fake"}, false, false},
 		{"开启但模式非 fake", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "test", "AI_MODE": "deepseek"}, false, true},
 		{"开启但模式 disabled", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "test", "AI_MODE": "disabled"}, false, true},
-		{"开启但生产环境", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "fake"}, false, true},
+		{"部署环境默认关闭", map[string]string{"APP_ENV": "deploy", "AI_MODE": "fake"}, false, false},
+		{"部署环境显式开启 Fake", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "fake"}, true, false},
+		{"部署环境禁止真实模式", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "deepseek"}, false, true},
+		{"部署环境禁止个人密钥模式", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "byok"}, false, true},
 		{"开启但 dev 环境", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "dev", "AI_MODE": "fake"}, false, true},
 		{"开启但 demo 环境", map[string]string{"V2_REVIEW_FAKE": "1", "APP_ENV": "demo", "AI_MODE": "fake"}, false, true},
 		{"开启但未设置 APP_ENV", map[string]string{"V2_REVIEW_FAKE": "1", "AI_MODE": "fake"}, false, true},

@@ -22,9 +22,11 @@ func TestAnnotationFakeEnabledRequiresAllConditions(t *testing.T) {
 		{"开关为 true 文本", map[string]string{"V2_ANNOTATION_FAKE": "true", "APP_ENV": "test", "AI_MODE": "fake"}, false, false},
 		{"开启但模式非 fake", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "test", "AI_MODE": "deepseek"}, false, true},
 		{"开启但模式 disabled", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "test", "AI_MODE": "disabled"}, false, true},
-		{"开启但生产环境", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "fake"}, false, true},
-		// dev 与 demo 不是生产环境，但有独立的人工联调用途：
-		// 本切片只允许固定隔离测试环境，不能在日常环境静默产生批注批次。
+		{"部署环境默认关闭", map[string]string{"APP_ENV": "deploy", "AI_MODE": "fake"}, false, false},
+		{"部署环境显式开启 Fake", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "fake"}, true, false},
+		{"部署环境禁止真实模式", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "deepseek"}, false, true},
+		{"部署环境禁止个人密钥模式", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "deploy", "AI_MODE": "byok"}, false, true},
+		// dev 与 demo 有独立的人工联调用途，不能在这些环境产生批注批次。
 		{"开启但 dev 环境", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "dev", "AI_MODE": "fake"}, false, true},
 		{"开启但 demo 环境", map[string]string{"V2_ANNOTATION_FAKE": "1", "APP_ENV": "demo", "AI_MODE": "fake"}, false, true},
 		{"开启但未设置 APP_ENV", map[string]string{"V2_ANNOTATION_FAKE": "1", "AI_MODE": "fake"}, false, true},

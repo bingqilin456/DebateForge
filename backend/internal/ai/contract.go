@@ -12,6 +12,18 @@ import (
 // 便于 T05 在 debate_turns.prompt_version 中留下可追溯记录。
 const PromptVersion = "debate-v1"
 
+// CustomPromptVersion 是私有自定义辩题（V2-03）对辩的独立版本标识。
+// 自定义题把用户原文放在 user 消息的数据段而不是 system 规则段，
+// 结构不同就必须换版本，不能与预设题共用一个可追溯标识。
+const CustomPromptVersion = "debate-custom-v1"
+
+// CustomSummaryPromptVersion 与 CustomStrategyPromptVersion 同样是自定义辩题的
+// 独立版本标识：题目原文只作为 user 数据段出现，system 不含用户题目。
+const (
+	CustomSummaryPromptVersion  = "summary-custom-v1"
+	CustomStrategyPromptVersion = "strategy-custom-v1"
+)
+
 // Mode 是会话的赛制模式标识。它是轮数上限的唯一事实来源：
 // 数据库 debates.mode 决定该会话跑几轮，代码不再保留固定的轮数常量。
 type Mode string
@@ -94,6 +106,10 @@ const (
 	MaxTopicTitleCodepoints = 200
 	// MaxTopicDescriptionCodepoints 限制受信任辩题描述长度。
 	MaxTopicDescriptionCodepoints = 2000
+	// MaxCustomTopicTitleCodepoints 与 PRD §12 一致：自定义辩题 1–200 字。
+	MaxCustomTopicTitleCodepoints = 200
+	// MaxCustomTopicBackgroundCodepoints 与 PRD §12 一致：背景 0–1000 字。
+	MaxCustomTopicBackgroundCodepoints = 1000
 )
 
 // DefaultRequestBudget 是单个生成请求从 HTTP 入口开始计算的总预算。
@@ -134,6 +150,11 @@ func (s Stance) Opposite() (Stance, error) {
 	}
 }
 
+// Valid 报告立场是否为受控枚举；与 Opposite 分开，便于校验先行于取反。
+func (s Stance) Valid() bool {
+	return s == StancePro || s == StanceCon
+}
+
 // label 是写入中文 Prompt 的固定措辞，不接受外部输入。
 func (s Stance) label() string {
 	switch s {
@@ -160,16 +181,33 @@ type CompletedTurn struct {
 }
 
 // Request 是一次无状态生成请求：每轮都完整重建消息，不跨请求共享可变状态。
+//
+// V1 与产品 V2 训练赛共用该结构与 Generator 接口，靠 Training 是否为空区分：
+// 为空时走 V1「(赛制, 轮号)」路径，非空时走训练赛按发言步骤建模的路径。
+// 两者不能混用字段，避免把训练赛塞进 V1 的轮次推导形成第二个事实源。
 type Request struct {
+	// 已有采纳的真实回复时禁止后续自动降级。
+	RequireReal bool
+	ForceFake   bool
 	// UserID 来自认证会话，只用于真实试运行准入。
-	UserID         uint64
-	Mode           Mode
-	AIStyle        AIStyle
-	Topic          Topic
+	UserID     uint64
+	Mode       Mode
+	AIStyle    AIStyle
+	Difficulty string
+	// OpponentPersona 是用户配置的风格提示，只作为 user 数据外发。
+	OpponentPersona string
+	Topic           Topic
+	// V1 字段：训练赛请求不使用。
 	UserStance     Stance
 	RoundNo        int
 	CompletedTurns []CompletedTurn
 	UserContent    string
+	// Custom 表示本场是私有自定义辩题（会话快照无 topic_id）。
+	// 为真时 Topic 是用户原文：只作为 user 消息的数据段外发，
+	// system 规则段不出现题目文本，且改用独立 Prompt 版本。
+	Custom bool
+	// Training 非空表示本次是产品 V2 训练赛的 AI 发言步骤。
+	Training *TrainingContext
 }
 
 // PromptMessage 是一条待发送消息，角色由服务端构造，调用方不可指定。
@@ -297,15 +335,30 @@ func windowExceeded(message string) *Error {
 
 // ValidateRequest 在调用任何模型之前校验输入，绝不截断或静默丢弃内容。
 func ValidateRequest(req Request) error {
+	// 产品 V2 训练赛请求使用独立的发言步骤校验，不复用 V1 的轮次字段。
+	if req.Training != nil {
+		return ValidateTrainingRequest(req)
+	}
 	if !utf8.ValidString(req.Topic.Title) || !utf8.ValidString(req.Topic.Description) ||
 		!utf8.ValidString(req.UserContent) {
 		return invalidInput("输入必须是合法 UTF-8")
 	}
-	if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
-		return err
-	}
-	if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
-		return err
+	if req.Custom {
+		// 自定义辩题快照来自用户原文：标题必填且不得为空白，背景选填可为空。
+		// 上界按 PRD §12 的实际输入范围收窄，避免用预设题更宽的 2000 掩盖越界。
+		if err := validateText("自定义辩题", req.Topic.Title, MaxCustomTopicTitleCodepoints); err != nil {
+			return err
+		}
+		if utf8.RuneCountInString(req.Topic.Description) > MaxCustomTopicBackgroundCodepoints {
+			return invalidInput("自定义辩题背景最多 1000 个 Unicode 码点")
+		}
+	} else {
+		if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
+			return err
+		}
+		if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
+			return err
+		}
 	}
 	// 轮数上限来自会话赛制，不从常量读取；未知赛制在 RoundsFor 处受控失败。
 	rounds, err := RoundsFor(req.Mode)

@@ -1,6 +1,6 @@
 # T02 版本化数据库迁移
 
-当前共十三个版本：六张初始表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展及一张策略表。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
+当前共十五个版本：六张初始表、三份精确枚举 CHECK 修复、一份五条辩题种子、一张总结表、一份轮次与赛制前向扩展、一张策略表、一份自定义辩题可空扩展及一张原文批注表。业务 Repository/Handler 与 T10 总结已实现；服务启动仍不自动迁移或播种。逻辑实体和 API 依据 [ARCHITECTURE](../../docs/architecture/ARCHITECTURE.md#数据实体与关系)、[API](../../docs/api/API.md)；当前累计证据见 [Phase 2 最终验收](../../docs/acceptance/PHASE2_FINAL_ACCEPTANCE.md)，原种子与持久化证据见 [记录](../../docs/acceptance/T02_SEEDS_PERSISTENCE_ACCEPTANCE.md)，初始六表历史见 [迁移验收记录](../../docs/acceptance/T02_MIGRATIONS_ACCEPTANCE.md)。
 
 2026 年 11 月 8 日最终独立技术审查及项目负责人人工验收通过，完整 T02 已结项。00007–00010、测试及重启持久化验证已验收，M01/M02 关闭；M03 受控诊断及已接受的验证/恢复边界继续延期，详见 [风险登记](../../docs/planning/TASKS.md#t02-迁移延期问题登记)。原六份 SQL 保持不变；负责人仅授权本轮提交/推送，不创建 PR、不合并或推进后续开发。
 
@@ -53,6 +53,9 @@ Pop-Location
 | 00005 debate_turns | 会话外键；轮号 1–3（00012 放宽至 1–6）；规范 UUID `client_request_id CHAR(36)`；两组唯一键 `(debate_id,round_no)`、`(debate_id,client_request_id)`；三种状态 CHECK；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建时间；索引 `(status,lease_expires_at)`。 |
 | 00006 messages | 轮次外键；user/assistant CHECK；`(turn_id,role)` 唯一；`content TEXT`、创建时间。 |
 | 00011 debate_summaries | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本 `BIGINT UNSIGNED` 默认 1 且 >=1；可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
+| 00013 debate_strategies | 会话唯一外键；三种状态及字节精确 CHECK；可空 `schema_version` 与 `content_json TEXT`；版本、可空租约、受控错误/模型/Prompt 元数据及创建/更新时间；索引 `(status,lease_expires_at)`。 |
+| 00014 debates.topic_id 可空 | 仅放宽 `topic_id` 为 NULL：非空表示预设题，NULL 表示私有自定义辩题。保留 `ix_debates_topic_id` 索引与 `fk_debates_topic` 外键，不改列类型、不回填数据。 |
+| 00015 原文批注 | `debate_turns` 增加 `annotation_eligible BOOLEAN NOT NULL DEFAULT false`（含 0/1 CHECK）；新建 `turn_annotations`（触发轮唯一、状态/版本/租约/受控错误与内容列、UTC 时间、两条 RESTRICT 外键）。 |
 
 生成元数据：`error_code/prompt_version VARCHAR(64)` ASCII，`model_name VARCHAR(255)` utf8mb4，token 用量和耗时为可空 `INT UNSIGNED`。未知用量为 NULL，不能记成 0。2000 码点、UUID 规范化、用户名规则、状态转换、所有权及密码哈希仍由后续业务任务实现；数据库检查不能替代这些规则。`updated_at` 由后续业务显式维护，无隐式 ON UPDATE。文本使用 TEXT，避免自行引入短标题上限；后续新增输入边界须同步契约。
 
@@ -76,9 +79,9 @@ Pop-Location
 - **两段式默认值必须有。** 先 `ADD COLUMN mode ... DEFAULT 'quick_3'` 使既有行填充为 `quick_3`（历史三轮语义不变），随后 `ALTER COLUMN mode SET DEFAULT 'standard_4'` 使新插入行使用 4 轮标准赛制。两步都是元数据操作，不改写既有行；若只做一步，要么旧会话语义错，要么新赛制等于没上线。
 - **不含数据回填。** 既有 `completed_rounds` 原值保留，不回填、不补轮、不重算 `status`。历史会话按只读语义处理，新赛制只影响新建会话。
 
-滑轮次上限的同时，[迁移集成测试](../tools/migrate/integration_test.go) 中三条以“第 4 轮/4 轮必被拒”为断言的用例已改为以 7 为越界值，并补充 `mode`/`ai_style` 的合法值与 PAD SPACE 反例。00012 当时 CI 的预期版本计数为 `applied=12`，当前为 `applied=13`（见末节）。
+滑轮次上限的同时，[迁移集成测试](../tools/migrate/integration_test.go) 中三条以“第 4 轮/4 轮必被拒”为断言的用例已改为以 7 为越界值，并补充 `mode`/`ai_style` 的合法值与 PAD SPACE 反例。00012 当时 CI 的预期版本计数为 `applied=12`，当前为 `applied=14`（见末节）。
 
-00012 阶段从已有 1–11 的测试库实际新增 `applied=1`，重跑 `applied=0`；当时空库预期 `applied=12`，未新建空库重测；当前空库预期为 13，交由 PR CI 实际验证。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
+00012 阶段从已有 1–11 的测试库实际新增 `applied=1`，重跑 `applied=0`；当时空库预期 `applied=12`，未新建空库重测；当前空库预期为 14（含 00014），交由 PR CI 实际验证。可在根目录运行 `pwsh -NoProfile -File infra/mysql/verify-t02-persistence.ps1`，仅重启测试 MySQL 并核对版本、六表和五条种子；详见最新验收记录。
 
 新增集成测试覆盖异常历史在 up/status 下拒绝、合法前缀继续、既有异常枚举阻止 ALTER 和种子冲突回滚。独立探针表保留且每次运行增加，不改正式历史，不清理旧数据。默认仍跳过真实数据库测试。
 
@@ -131,6 +134,47 @@ Goose 根库运行时只引入其所需的少量通用包。`go mod tidy` 还会
 
 2026-11-14 新增 `00013_create_debate_strategies.sql`，单条前向建表，复用总结表的状态、尝试版本、租约、模型/Prompt/用量与 UTC 元数据列；唯一 `debate_id`、RESTRICT 外键和字节精确状态 CHECK。策略不进入 messages，不改 completed_rounds。流派继续使用既有 debates.ai_style，无重复流派列。
 
-在固定 `127.0.0.1:13307/siyige_test`、`siyige_test_migrator` 实际从 12 升到 13，输出 `applied=1`；隔离迁移测试重跑 `applied=0`，历史共 0–13、八张业务表、七条外键。CI 空库预期同步为 `applied=13`，旧迁移文件保持原样。未迁移开发或生产库。后续下一候选编号为 00014，实施前再次核对远程分支。
+在固定 `127.0.0.1:13307/siyige_test`、`siyige_test_migrator` 实际从 12 升到 13，输出 `applied=1`；隔离迁移测试重跑 `applied=0`，历史共 0–13、八张业务表、七条外键。CI 空库预期同步为 `applied=13`，旧迁移文件保持原样。未迁移开发或生产库。后续下一候选编号为 00015，实施前再次核对远程分支。
 
 业务专项证据、测试环境与启动见 [后端验收记录](../../docs/acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。
+
+## V2-03 / 00014 自定义辩题可空
+
+2026-11-18 新增 `00014_allow_null_debate_topic.sql`，单条前向 `MODIFY COLUMN`，把 `debates.topic_id` 放宽为可空。非空表示预设题，NULL 表示私有自定义辩题；题目与背景仍只存在于本行的快照列，不新增私题表，也不往公共 `topics` 写入任何用户内容。
+
+- **保留索引与外键。** `ix_debates_topic_id` 保留（二级索引允许 NULL），`fk_debates_topic` 保留（外键列允许 NULL，且 NULL 不参与引用检查），因此「没有公共题目」与「引用不存在的题目」在数据库层仍是两种状态。
+- **不回填数据。** 既有行保持原值，历史会话的预设语义与只读行为不变。
+- **上线顺序。** 本迁移必须先于新程序上线。含自定义记录的库不能直接恢复到要求 `topic_id NOT NULL` 的旧 Schema 或旧程序，旧程序读取 NULL 行会得到无效题目。
+
+迁移集成测试已补充可空性与两条语义的断言（NULL 可写入、非 NULL 的非法 ID 仍被外键拒绝），空库预期版本计数同步为 `applied=14`、历史 0–14。
+
+2026-11-18，已获授权在固定隔离库执行 `00014`。首次 `up` 输出 `applied=1`，重跑 `applied=0`，专项用例验证列可空及外键约束。证据见 [V2-03 验证记录](../../docs/planning/V2_03_PRIVATE_TOPIC_DESIGN.md#隔离-mysql-验证记录2026-11-18)。下一候选编号为 00015，实施前再次核对远程分支。
+
+## V2-04 / 00015 原文批注
+
+2026-11-18 新增 `00015_create_turn_annotations.sql`，两条前向语句，不改既有行。
+
+- **资格标志独立于状态机。** `debate_turns.annotation_eligible` 默认 `false`，表示「本轮在提交时被本次切片允许生成批注」。它不参与 `generating/completed/failed` 的判断，也不改变 `completed_rounds` 或会话状态；旧行保持 `false`，因此旧会话不会凭空获得批注资格，读取接口对它们返回空列表。
+- **批次以触发轮唯一。** `turn_annotations` 一行代表一次限定范围的批注批次，`UNIQUE KEY uq_turn_annotations_turn` 保证每轮至多一个批次；状态、尝试版本、租约、受控错误码与内容列沿用总结/策略表的既有形状，便于复用过期恢复路径。
+- **两条 RESTRICT 外键。** `debate_id` 与 `turn_id` 均 `ON DELETE/UPDATE RESTRICT`，与既有外键策略一致；不级联删除，也不新增原文副本或全局锚点表。
+- **成功结果整体保存。** `content_json` 保存服务端复核并重新定位后的规范化 JSON，空数组也是合法内容；未完成时内容与错误码为 NULL。版本约束 `attempt_version >= 1`。
+
+迁移集成测试已补充断言：`annotation_eligible` 默认 `false`、可独立置为 `true`、拒绝非 0/1；`turn_annotations` 的触发轮唯一、两条外键、状态字节精确 CHECK、版本下界与「未完成字段为 NULL」。空库预期版本计数同步为 `applied=15`、历史 0–15、九张业务表、九条外键。
+
+**本轮未在隔离库执行 00015。** 该工作树缺少固定隔离库的迁移与应用账户秘密文件（`.cache/t02-mysql/secrets/` 不在工作树内，且本任务不读取秘密内容），因此只完成改动、无库检查与上述预期更新；实际 `up/status` 与集成取证留待具备固定目标凭证的授权环境执行。
+
+下一候选编号为 00016，实施前再次核对远程分支。
+
+## V2-13 / 00016 赛后复盘
+
+2026-11-19 新增 `00016_create_debate_reviews.sql`，单条前向建表，不改既有行、不改既有表。
+
+- **独立表与独立状态机。** `debate_reviews` 会话唯一外键；三态 `generating/completed/failed` 及字节精确 CHECK；沿用总结/策略/批注的版本、租约、受控错误与模型元数据列形状，便于复用过期恢复路径。复盘与 `debate_summaries`、`turn_annotations`、`debate_turns` 分表，复盘失败或重试不会覆盖已成功的总结、批注或人工编辑。
+- **整份原子写入。** `completed` 时 `content_json` 一次性写入完整复盘（含服务端复核后的定位坐标）；`failed` 只写受控错误码、内容为 NULL。首版不存在“分段保存/局部恢复”，因此重试是重生成整份复盘。
+- **功能关闭时不访问本表。** 复盘默认关闭；只有显式本地测试开关同时启用能力时，服务启动与定期租约回收才会扫描 `debate_reviews`，旧部署在未执行本迁移时不会因缺表而失败，也不影响旧原文与旧总结读取。
+- **新增正向 SQL，未执行。** 本工作树**未执行** 00016，实际 `up/status` 与库结构取证留待具备固定隔离库凭证的授权环境。
+  迁移集成测试已同步补充断言（未运行）：空库预期 `applied=16`、历史 0–16、十张业务表、十条外键，以及
+  `debate_reviews` 的会话唯一、`fk_debate_reviews_debate` 为 `RESTRICT` 指向 `debates`、三态字节精确 CHECK、
+  `attempt_version >= 1` 与「未完成字段为 NULL」。
+
+**整合注意事项：** 并行分支可能同时占用 `00016`。整合时必须重新核对远程分支与已执行版本历史，按最终顺序重编号本文件（仅重命名与版本登记，不改 DDL 语义），再在隔离库执行并更新“空库预期 `applied=N`、历史 0–N、十张业务表”等计数。**本轮未在隔离库执行任何 SQL，也未写入数据库。**

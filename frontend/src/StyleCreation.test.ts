@@ -19,7 +19,7 @@ async function mount(returnedStyle?: AIStyle) {
     if (url.endsWith('/auth/me')) return reply({ user: { id: '42', username: 'alice' }, csrf_token: 'memory-csrf' })
     if (url.endsWith('/topics')) return reply({ items: [topic] })
     if (url.endsWith('/strategy')) return reply({ status: 'not_started', attempt_version: null })
-    if (url.startsWith('/api/v1/debates?')) return reply({ items: [current], total: 1, page: 1, page_size: 20 })
+    if (url.startsWith('/api/v1/debates?')) return reply({ items: [current], total: 1, page: 1, page_size: 10 })
     if (url.endsWith('/debates/123')) return reply({ debate: current, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
     if (url === '/api/v1/debates' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as CreateDebateRequest

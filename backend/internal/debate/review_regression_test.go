@@ -26,12 +26,12 @@ type reviewStore struct {
 	meta      ai.Metadata
 }
 
-func (s *reviewStore) Complete(c context.Context, u uint64, d Debate, t Turn, r ai.Result) (Detail, error) {
+func (s *reviewStore) Complete(c context.Context, u uint64, d Debate, t Turn, r ai.Result, eligible bool) (Detail, error) {
 	if s.cancel != nil {
 		s.cancel()
 		return Detail{}, dependency(context.Canceled, s.unknown)
 	}
-	return s.testStore.Complete(c, u, d, t, r)
+	return s.testStore.Complete(c, u, d, t, r, eligible)
 }
 func (s *reviewStore) Fail(c context.Context, u uint64, d Debate, t Turn, code string, usage ai.Usage, m ai.Metadata) (Turn, error) {
 	s.failCalls++

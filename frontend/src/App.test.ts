@@ -35,6 +35,32 @@ function click(label: string) {
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); history.replaceState(null, '', '/'); })
 afterEach(() => { app?.unmount(); host?.remove(); vi.unstubAllGlobals() })
 
+it('访客可以直达示例复盘，示例不读取私有对局或调用生成接口', async () => {
+  fetchMock.mockResolvedValue(failure(401, 'unauthenticated'))
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('input[name="password"]')).not.toBeNull())
+  click('看完整复盘示例')
+  await nextTick()
+  expect(location.hash).toBe('#review')
+  expect(host.querySelector('[aria-label="示例复盘"]')).not.toBeNull()
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/auth/me'])
+})
+
+it('手机菜单可收合，并打开道场的逻辑排雷', async () => {
+  fetchMock.mockImplementation(async url => String(url).endsWith('/auth/me')
+    ? response({ user: { id: '42', username: 'alice' }, csrf_token: 'memory-only' })
+    : response({ items: [] }))
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('[data-view-nav]')).not.toBeNull())
+  expect(host.querySelectorAll('[data-view-tab]')).toHaveLength(5)
+  const menu = host.querySelector<HTMLButtonElement>('[aria-controls="neon-navigation"]')!
+  menu.click(); await nextTick()
+  expect(menu.getAttribute('aria-expanded')).toBe('true')
+  click('思辨道场'); await nextTick()
+  expect(menu.getAttribute('aria-expanded')).toBe('false')
+  expect(host.textContent).toContain('30 秒逻辑排雷')
+})
+
 it('恢复失败提供显式恢复入口；503 不伪装未登录', async () => {
   fetchMock.mockResolvedValue(failure(503, 'dependency_unavailable'))
   const auth = mount()
@@ -182,6 +208,21 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
       }
       return response(summaryState, 200)
     }
+    if (u.endsWith('/debates/123/annotations')) {
+      // 批注读取返回一条引用首轮用户原文的完成批次：用于验证标记渲染在正式消息流上。
+      return response({
+        items: [{
+          turn_id: '10', round_no: 1, status: 'completed', attempt_version: 1,
+          items: [{
+            category: 'strength', label: '论证有效',
+            reason: '把主张落在可检验的标准上，因此论证有效。',
+            improvement: '补一句该标准的适用范围。',
+            anchor: { message_id: '101', quote: '第一轮论点', start_cp: 0, end_cp: 5, resolved: true },
+            turn_no: 1, role: 'user',
+          }],
+        }],
+      })
+    }
     return failure(404, 'not_found')
   })
 
@@ -190,12 +231,49 @@ it('三轮连续发言、失败重试与 SummaryPanel 纯文本转义展示完�
   host.querySelector<HTMLInputElement>('[data-topic-id="1"] input')!.click(); await nextTick()
   click('创建会话')
   await vi.waitFor(() => expect(host.querySelector('textarea')).not.toBeNull())
+  // 批注面板随工作台挂载并读取本场批注；读取失败不得影响辩论流程。
+  await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/debates/123/annotations'))).toBe(true))
+  expect(host.querySelector('[data-annotation-panel]')).not.toBeNull()
 
   // 第 1 轮成功
   let textarea = host.querySelector('textarea')!
   textarea.value = '第一轮论点'; textarea.dispatchEvent(new Event('input', { bubbles: true })); await nextTick()
   host.querySelector('form[data-first-turn]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
   await vi.waitFor(() => expect(host.textContent).toContain('第 2 轮发言'))
+
+  // 批注标记渲染在正式消息原文上（不复制到侧栏），点击可展开对应解释。
+  await vi.waitFor(() => expect(host.querySelector('[data-annotation-markers-entry]')).not.toBeNull())
+  const marker = host.querySelector('[data-annotation-markers-entry]') as HTMLButtonElement
+  expect(marker.closest('[data-round-no="1"]')).not.toBeNull()
+  expect(marker.getAttribute('aria-label')).toContain('论证有效')
+  expect(host.querySelector('[data-annotation-panel]')?.querySelector('[data-annotation-markers-entry]')).toBeFalsy()
+  marker.click()
+  await vi.waitFor(() => expect(host.querySelector('[data-annotation-detail]')).not.toBeNull())
+  expect(host.textContent).toContain('把主张落在可检验的标准上')
+  const side = host.querySelector<HTMLElement>('[data-annotation-panel]')!
+  const entry = side.querySelector<HTMLButtonElement>('[data-annotation-entry]')!
+  const controls = host.querySelector<HTMLElement>('[data-annotation-toggle]')!
+  expect(side.closest('[aria-label="首轮辩论面板"]')).toBeNull()
+  // 展开/收起只改卡片状态，绝不把焦点交回原文标记。
+  entry.click()
+  await nextTick()
+  expect(entry.getAttribute('aria-expanded')).toBe('false')
+  expect(document.activeElement).not.toBe(marker)
+  entry.click()
+  await nextTick()
+  expect(entry.getAttribute('aria-expanded')).toBe('true')
+  expect(document.activeElement).not.toBe(marker)
+  // 只有显式「定位原文」按钮才跳回原文并聚焦标记。
+  const locateButton = [...side.querySelectorAll('button')].find(el => el.textContent?.includes('定位原文'))!
+  locateButton.click()
+  await vi.waitFor(() => expect(document.activeElement).toBe(marker))
+  controls.click()
+  await vi.waitFor(() => expect(side.style.display).toBe('none'))
+  expect(host.querySelector('[data-annotation-markers-entry]')).toBeNull()
+  expect(host.querySelector('.message.user')?.textContent).toContain('第一轮论点')
+  controls.click()
+  await vi.waitFor(() => expect(side.style.display).not.toBe('none'))
+  expect(host.querySelector('[data-annotation-markers-entry]')).not.toBeNull()
 
   // 第 2 轮首次超时失败 -> 展示重试按钮
   textarea = host.querySelector('textarea')!
@@ -294,7 +372,7 @@ it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保�
     const u = String(url)
     if (u.endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
     if (u.endsWith('/topics')) return response({ items: [debate.topic] })
-    if (u.startsWith('/api/v1/debates?')) return response({ items: [debate], total: 1, page: 1, page_size: 20 })
+    if (u.startsWith('/api/v1/debates?')) return response({ items: [debate], total: 1, page: 1, page_size: 10 })
     if (u.endsWith('/debates/123')) {
       return response({ debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
     }
@@ -345,7 +423,7 @@ it('创建期间锁定顶层导航；结果不明切页回来仍只能查历史'
     if (String(url).endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
     if (String(url).endsWith('/topics')) return response({ items: [{ id: '1', title: '选题', description: '说明' }] })
     if (init?.method === 'POST') return new Promise<Response>(resolve => { finish = resolve })
-    return response({ items: [], total: 0, page: 1, page_size: 20 })
+    return response({ items: [], total: 0, page: 1, page_size: 10 })
   })
   mount()
   await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())

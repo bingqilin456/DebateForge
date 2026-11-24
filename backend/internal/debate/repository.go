@@ -73,33 +73,85 @@ func readTurns(tx *gorm.DB, d Debate, key string) (Detail, error) {
 	}
 	return result, nil
 }
-func (r *Repository) Create(ctx context.Context, uid, tid uint64, stance, style string) (d Debate, err error) {
+
+// Create 在单个短事务内创建会话，并保持严格二选一的两条分支：
+//   - 预设：锁定并读取启用题目，把同一份题目快照写入会话，topic_id 为题目 ID。
+//   - 自定义：跳过题库查询，把用户原文与登录用户 ID 一次写入，topic_id 为 NULL。
+//
+// 两条分支共用立场、流派与固定 standard_4 的写入结构；
+// 私有自定义题不进入公共 topics 表，因此不会出现在任何公共题库查询中。
+func (r *Repository) Create(ctx context.Context, uid uint64, in CreateInput) (d Debate, err error) {
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
-		var topic struct {
-			ID          uint64
-			Title       string
-			Description string
-		}
-		e := tx.Table("topics").Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND enabled = ?", tid, true).First(&topic).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
-		if e != nil {
-			return dependency(e, false)
-		}
 		// 新会话固定 standard_4；流派由 Service 精确校验后保存。
 		// quick_3 仅供历史数据与隔离 E2E 使用，生产创建路径不提供该选项。
-		d = Debate{
-			UserID:                   uid,
-			TopicID:                  topic.ID,
-			TopicTitleSnapshot:       topic.Title,
-			TopicDescriptionSnapshot: topic.Description,
-			UserStance:               stance,
-			Mode:                     string(ai.ModeStandard4),
-			AIStyle:                  style,
-			Status:                   "active",
+		if in.CupStage != "" {
+			index := neonStageIndex(in.CupStage)
+			if index < 0 {
+				return ErrInvalidRequest
+			}
+			player, err := readNeonCupPlayer(tx, uid)
+			if err != nil {
+				return dependency(err, false)
+			}
+			stage := neonCupStages[index]
+			in.Difficulty, in.AIStyle = stage.Difficulty, stage.AIStyle
+			in.Practice = in.Practice || index > player.UnlockedIndex
 		}
-		if e = tx.Create(&d).Error; e != nil {
+		d = Debate{
+			UserID:     uid,
+			UserStance: in.UserStance,
+			Mode:       string(ai.ModeStandard4),
+			AIStyle:    in.AIStyle,
+			Difficulty: ai.NormalizeDifficulty(in.Difficulty),
+			Practice:   in.Practice,
+			CupStage:   in.CupStage,
+			Status:     "active",
+		}
+		if in.NeonOpponentID != nil {
+			var opponent neonOpponentRow
+			if err := readNeonCatalogEntry(tx, uid, *in.NeonOpponentID, false, &opponent); err != nil {
+				return err
+			}
+			d.NeonOpponentID = &opponent.ID
+			d.OpponentNameSnapshot, d.OpponentTagSnapshot = opponent.Name, opponent.Tag
+			d.OpponentPersonaSnapshot = &opponent.Persona
+			d.Difficulty = opponent.Difficulty
+		}
+		if in.NeonTopicID != nil {
+			var topic neonTopicRow
+			if err := readNeonCatalogEntry(tx, uid, *in.NeonTopicID, false, &topic); err != nil {
+				return err
+			}
+			d.NeonTopicID = &topic.ID
+			d.TopicTitleSnapshot, d.TopicDescriptionSnapshot = topic.Title, topic.Background
+		} else if in.CustomTopic != nil {
+			if in.TopicID != nil {
+				return ErrInvalidRequest
+			}
+			d.TopicTitleSnapshot = in.CustomTopic.Title
+			d.TopicDescriptionSnapshot = in.CustomTopic.Background
+		} else {
+			if in.TopicID == nil {
+				return ErrInvalidRequest
+			}
+			var topic struct {
+				ID          uint64
+				Title       string
+				Description string
+			}
+			e := tx.Table("topics").Clauses(clause.Locking{Strength: "SHARE"}).Where("id = ? AND enabled = ?", *in.TopicID, true).First(&topic).Error
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			if e != nil {
+				return dependency(e, false)
+			}
+			id := topic.ID
+			d.TopicID = &id
+			d.TopicTitleSnapshot = topic.Title
+			d.TopicDescriptionSnapshot = topic.Description
+		}
+		if e := tx.Create(&d).Error; e != nil {
 			return dependency(e, false)
 		}
 		return nil
@@ -118,8 +170,12 @@ func (r *Repository) List(ctx context.Context, uid uint64, page, pageSize int) (
 		if total == 0 || offset >= total {
 			return nil
 		}
-		if e := tx.Where("user_id = ?", uid).
-			Order("created_at DESC, id DESC").
+		if e := tx.Model(&Debate{}).
+			Select("debates.*, CASE WHEN reviews.status = 'completed' THEN 'completed' WHEN reviews.status = 'failed' OR (reviews.status IS NULL AND summaries.status = 'failed') THEN 'failed' ELSE 'pending' END AS review_status").
+			Joins("LEFT JOIN debate_reviews AS reviews ON reviews.debate_id = debates.id").
+			Joins("LEFT JOIN debate_summaries AS summaries ON summaries.debate_id = debates.id").
+			Where("debates.user_id = ?", uid).
+			Order("debates.created_at DESC, debates.id DESC").
 			Limit(pageSize).
 			Offset(int(offset)).
 			Find(&list.Items).Error; e != nil {
@@ -150,6 +206,16 @@ func (r *Repository) Detail(ctx context.Context, uid, id uint64) (d Detail, err 
 		if e != nil {
 			return e
 		}
+		// 训练赛使用独立的权威阶段模型：V1 轮次为空，进度与步骤改由 training 投影，
+		// 不读也不写 debate_turns，避免两套状态机互相踩踏。
+		if row.IsTraining() {
+			training, e := trainingDetailTx(tx, row)
+			if e != nil {
+				return e
+			}
+			d = Detail{Debate: row, Turns: []Turn{}, Training: &training}
+			return nil
+		}
 		d, e = readTurns(tx, row, "")
 		if e != nil {
 			return e
@@ -175,6 +241,10 @@ func (r *Repository) Claim(ctx context.Context, uid, id uint64, in SubmitInput, 
 		row, e := owned(tx, uid, id, true)
 		if e != nil {
 			return e
+		}
+		// 训练赛不走 V1 轮次认领；两套状态机不得互相推进。
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		existing, e := readTurns(tx, row, in.ClientRequestID)
 		if e != nil {
@@ -235,6 +305,9 @@ func (r *Repository) ClaimRetry(ctx context.Context, uid, debateID, turnID, expe
 		row, e := owned(tx, uid, debateID, true)
 		if e != nil {
 			return e
+		}
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		all, e := readTurns(tx, row, "")
 		if e != nil {
@@ -347,11 +420,17 @@ func metadata(usage ai.Usage, m ai.Metadata) map[string]any {
 	}
 	return values
 }
-func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn, result ai.Result) (detail Detail, err error) {
+
+// Complete 提交正式轮次。eligible 决定本次完成 UPDATE 是否同时写入批注资格：
+// 资格标志只是“本次切片允许生成批注”的标记，不参与轮次状态、完成轮数或会话状态的任何计算。
+func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn, result ai.Result, eligible bool) (detail Detail, err error) {
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
 		row, e := owned(tx, uid, d.ID, true)
 		if e != nil {
 			return e
+		}
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		if _, e = currentTurn(tx, row, t); e != nil {
 			return e
@@ -370,6 +449,12 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 		values := metadata(result.Usage, result.Metadata)
 		values["status"] = "completed"
 		values["error_code"] = nil
+		// 只为本次允许生成批注的轮次在同一 UPDATE 中设置资格标志。
+		// 该列不属于轮次状态机，也不参与 completed_rounds/status 的计算；
+		// 关闭切片时不设置，旧行保持原状因而不会凭空获得批注。
+		if eligible {
+			values["annotation_eligible"] = true
+		}
 		update := tx.Model(&Turn{}).Where("id = ? AND status = ? AND attempt_version = ?", t.ID, "generating", t.AttemptVersion).Updates(values)
 		if update.Error != nil {
 			return dependency(update.Error, false)
@@ -383,7 +468,11 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 			newStatus = "completed"
 		}
 		now := r.now()
-		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", t.RoundNo-1).Updates(map[string]any{"completed_rounds": newRounds, "status": newStatus, "updated_at": now})
+		changes := map[string]any{"completed_rounds": newRounds, "status": newStatus, "updated_at": now}
+		if result.Metadata.Model == "fake" {
+			changes["practice"] = true
+		}
+		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", t.RoundNo-1).Updates(changes)
 		if update.Error != nil {
 			return dependency(update.Error, false)
 		}
@@ -403,6 +492,9 @@ func (r *Repository) Fail(ctx context.Context, uid uint64, d Debate, t Turn, cod
 		row, e := owned(tx, uid, d.ID, true)
 		if e != nil {
 			return e
+		}
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		if saved, e = currentTurn(tx, row, t); e != nil {
 			return e
@@ -440,6 +532,11 @@ func (r *Repository) ClaimSummary(ctx context.Context, uid, debateID uint64, in 
 		row, e := owned(tx, uid, debateID, true)
 		if e != nil {
 			return e
+		}
+		// V1 结构化总结只针对 V1 轮次会话；训练赛的复盘属 V2-13，本任务不实现，
+		// 因此明确拒绝而不是用错误的轮次语义生成总结。
+		if row.IsTraining() {
+			return ErrRoundConflict
 		}
 		rounds, e := ai.RoundsFor(ai.Mode(row.Mode))
 		if e != nil {
@@ -695,7 +792,31 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context) (int, error) {
 		recovered += int(update.RowsAffected)
 	}
 	n, e := r.recoverStrategyLeases(ctx, now)
+	recovered += n
+	if e != nil {
+		return recovered, e
+	}
+	n, e = r.recoverAnnotationLeases(ctx, now)
+	recovered += n
+	if e != nil {
+		return recovered, e
+	}
+	n, e = r.recoverTrainingLeases(ctx, now)
 	return recovered + n, e
+}
+
+// RecoverExpiredReviewLeases 单独暴露复盘租约恢复。
+//
+// 刻意不从 RecoverExpiredLeases 内部调用：新表可能尚未部署，而复盘功能默认关闭。
+// 只有服务确认复盘能力已启用（显式开关 + 生成器支持）时才调用本方法，
+// 避免旧部署在功能关闭时被不存在的表拖慢或报错，也避免影响旧原文/旧总结的读取。
+func (r *Repository) RecoverExpiredReviewLeases(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return r.recoverReviewLeases(ctx, r.now())
 }
 
 var _ Store = (*Repository)(nil)

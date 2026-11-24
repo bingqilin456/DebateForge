@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>思弈阁 V2 页面设计演示图</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --surface:#fff; --border:#e3e6ea; --text:#1f2328; --muted:#6b7280;
+    --accent:#2f6fd0; --accent-soft:#eaf1fb;
+    --green-bg:#eef8ee; --green:#4a8f4a; --orange:#aa5415; --blue-bg:#edf4fb; --blue:#4a76a8; --purple:#6f4a9c;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+  .screen{width:1280px;padding:28px;background:var(--bg)}
+  .screen.mobile{width:390px;padding:0;background:#e9ebef}
+  h1,h2,h3,h4{margin:0}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px}
+  .brand{font-weight:700;letter-spacing:.5px}
+  .brand small{font-weight:400;color:var(--muted);margin-left:8px}
+  .nav{display:flex;gap:8px;align-items:center}
+  .tab{padding:6px 12px;border-radius:999px;color:var(--muted)}
+  .tab.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .user{color:var(--muted);margin-left:12px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+  .grid2{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+  .row{display:flex;gap:12px;align-items:flex-start}
+  .between{display:flex;align-items:center;justify-content:space-between}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border)}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .btn{display:inline-block;padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:default}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.ghost{background:transparent}
+  .btn[disabled]{opacity:.45}
+  .field{margin-top:12px}
+  .field label{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+  .input{border:1px solid var(--border);border-radius:8px;padding:9px 12px;background:#fcfcfd;color:var(--muted)}
+  .counter{font-size:12px;color:var(--muted);text-align:right;margin-top:2px}
+  .steps{display:flex;gap:8px;margin-bottom:14px}
+  .step{flex:1;padding:8px 12px;border-radius:8px;background:#f1f3f6;color:var(--muted);font-size:13px}
+  .step.done{background:var(--green-bg);color:var(--green)}
+  .step.now{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .choice{border:1px solid var(--border);border-radius:10px;padding:12px 14px;flex:1}
+  .choice.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  .choice h4{font-size:14px;display:flex;justify-content:space-between;align-items:center}
+  .dot{width:14px;height:14px;border-radius:50%;border:2px solid #c8ccd2;display:inline-block}
+  .dot.on{border-color:var(--accent);background:radial-gradient(circle at center,var(--accent) 0 4px,#fff 4px)}
+  .pane-title{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;text-transform:none}
+  /* 工作台 */
+  .phasetrack{display:flex;gap:0;align-items:center;background:#fbfcfd;border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+  .ph{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;white-space:nowrap}
+  .ph.done{color:var(--green)}
+  .ph.now{color:var(--accent);font-weight:700}
+  .ph + .ph::before{content:"→";color:#c8ccd2;margin:0 10px}
+  .nowline{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .msg{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#fff}
+  .msg.me{border-color:#cfdcf0;background:#fbfdff}
+  .msg h4{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+  .msg p{margin:0}
+  .marker{text-decoration-line:underline;text-underline-offset:.25em;text-decoration-thickness:2px;padding:0 1px}
+  .m-strength{background:var(--green-bg);text-decoration-style:solid;text-decoration-color:var(--green)}
+  .m-gap{text-decoration-style:wavy;text-decoration-color:var(--orange)}
+  .m-support{background:var(--blue-bg);text-decoration-style:dashed;text-decoration-color:var(--blue)}
+  .m-scope{text-decoration-style:solid;text-decoration-color:var(--purple)}
+  /* 批注栏 */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  .panel h3{font-size:14px;margin-bottom:4px}
+  .anno{border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-top:10px}
+  .anno .head{display:flex;gap:8px;align-items:center;font-size:12px}
+  .anno .quote{font-size:13px;color:var(--muted);margin-top:6px;font-style:normal}
+  .anno .body{font-size:13px;margin-top:6px}
+  .lbl{font-size:12px;font-weight:700}
+  .lbl.s{color:var(--green)} .lbl.g{color:var(--orange)} .lbl.p{color:var(--blue)} .lbl.c{color:var(--purple)}
+  .divider{height:1px;background:var(--border);margin:10px 0}
+  /* 四维 */
+  .dims{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .dim{border:1px solid var(--border);border-radius:10px;padding:12px}
+  .dim h4{font-size:13px;display:flex;justify-content:space-between}
+  .lv{border-radius:6px;padding:1px 8px;font-size:12px;background:var(--accent-soft);color:var(--accent);font-weight:700}
+  .lv.none{background:#f0f1f3;color:var(--muted)}
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  /* 移动 */
+  .phone{width:390px;background:var(--surface);min-height:844px;border-radius:0;overflow:hidden}
+  .phone-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#fbfcfd}
+  .phone-body{padding:14px 16px 24px}
+  .seg{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;margin-bottom:12px}
+  .seg div{flex:1;text-align:center;padding:7px 0;font-size:13px;color:var(--muted)}
+  .seg div.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+  .sheet{border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff}
+  .foot{margin-top:16px;color:var(--muted);font-size:12px;text-align:center}
+  .note{font-size:12px;color:var(--muted);margin-top:8px}
+  .switch{width:38px;height:22px;border-radius:999px;background:var(--accent);position:relative;flex:0 0 auto}
+  .switch::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px}
+  .switch.sm{width:32px;height:18px;vertical-align:middle;display:inline-block}
+  .switch.sm::after{width:14px;height:14px;top:2px;right:2px}
+</style>
+</head>
+<body>
+
+<!-- S1 训练入口 -->
+<div class="screen" id="s1">
+  <div class="topbar">
+    <div class="brand">思弈阁<small>文字辩论练习</small></div>
+    <div class="nav"><span class="tab active">开始练习</span><span class="tab">历史</span><span class="tab">设置</span><span class="user">朱同学 · 退出登录</span></div>
+  </div>
+  <div class="card">
+    <div class="steps">
+      <div class="step now">① 选择模式</div><div class="step">② 选择辩题</div><div class="step">③ 立场与强度</div><div class="step">④ 确认开局</div>
+    </div>
+    <h3 style="margin-bottom:4px">开始练习</h3>
+    <p class="muted small" style="margin-top:0">两种模式都有批注、争点卡与赛后复盘，差别只在节奏。</p>
+    <div class="row" style="margin-top:14px">
+      <div class="choice sel">
+        <h4>四轮轻量练习 <span class="dot on"></span></h4>
+        <p class="small muted" style="margin:6px 0 0">4 轮 8 条正式发言<br>赛后集中整理争点、统一看批注</p>
+      </div>
+      <div class="choice">
+        <h4>完整训练赛 <span class="dot"></span></h4>
+        <p class="small muted" style="margin:6px 0 0">四阶段 · 自由辩 1–10 回合<br>场中实时更新争点卡</p>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="row" style="gap:24px">
+      <div style="flex:1">
+        <div class="pane-title">② 辩题与背景</div>
+        <div class="row" style="gap:16px">
+          <label class="small"><span class="dot" style="width:12px;height:12px"></span> 预设辩题</label>
+          <label class="small"><span class="dot on" style="width:12px;height:12px"></span> 自定义辩题（仅本人可见）</label>
+        </div>
+        <div class="input" style="margin-top:10px">人工智能是否应当参与司法裁判</div>
+        <div class="counter">14/200</div>
+        <div class="input" style="margin-top:6px;color:#b0b6be">背景（选填）：……0/1000</div>
+        <p class="note">保留你的原文，不会自动改写或润色；自定义题不进入公共题库。</p>
+      </div>
+      <div style="flex:1">
+        <div class="pane-title">③ 立场与强度</div>
+        <div class="row" style="gap:16px">
+          <label class="small"><span class="dot on" style="width:12px;height:12px"></span> 正方</label>
+          <label class="small"><span class="dot" style="width:12px;height:12px"></span> 反方</label>
+        </div>
+        <p class="note">四轮轻量练习中，每轮由你先发言，AI 回复。</p>
+        <div class="row" style="gap:10px;margin-top:10px">
+          <span class="tag">入门</span><span class="tag" style="background:var(--accent-soft);color:var(--accent);border-color:var(--accent)">标准</span><span class="tag">进阶</span>
+        </div>
+        <p class="note">强度开局选择、本场保持，中途不可切换。三档都认真回应、允许合理让步、不编造证据。</p>
+      </div>
+      <div style="flex:1">
+        <div class="pane-title">④ 确认开局（尚未创建）</div>
+        <div class="small">模式：四轮轻量练习<br>辩题：人工智能是否应当参与司法裁判（自定义·仅本人可见）<br>立场：正方（你先立论）　强度：标准</div>
+        <p class="note">确认创建后以上四项固定，本场不可修改。创建本身不调用模型。</p>
+        <div class="row" style="justify-content:flex-end;margin-top:12px"><span class="btn">返回修改</span><span class="btn primary">确认创建</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="foot">创建后进入“可选赛前锦囊 → 开始发言”，锦囊必须由你点击才生成，失败不影响开赛。</p>
+</div>
+
+<!-- S2 工作台桌面 -->
+<div class="screen" id="s2">
+  <div class="topbar">
+    <div class="brand">思弈阁<small>文字辩论练习</small></div>
+    <div class="nav"><span class="tab">开始练习</span><span class="tab">历史</span><span class="tab">设置</span><span class="user">朱同学 · 退出登录</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="between" style="margin-bottom:10px">
+        <div><h3 style="font-size:16px">人工智能是否应当参与司法裁判</h3>
+        <p class="small muted" style="margin:2px 0 0">四轮轻量练习 · 你持正方 · 强度：标准 · 已保存 4 条正式发言</p></div>
+        <div class="row" style="align-items:center;gap:8px"><span class="small">显示批注</span><div class="switch"></div></div>
+      </div>
+      <div class="phasetrack">
+        <span class="ph done">立论 ✓</span><span class="ph done">驳立论 ✓</span><span class="ph now">自由辩</span><span class="ph">结辩</span>
+      </div>
+      <div class="nowline"><span class="badge">轮到你</span><span class="small muted">当前阶段：自由辩 · 你先发言，AI 尚未回应（四轮练习固定一次往返）</span></div>
+
+      <div class="msg me"><h4><span>［立论·步骤 1］你（正方）</span><span class="tag">批注 1</span></h4>
+        <p>辅助裁判不等于替代裁判。<span class="marker m-strength">模型只提供类案检索与量刑区间参考</span>，最终决定权仍在法官，<span class="marker m-support">责任链条没有被切断</span>。</p>
+      </div>
+      <div class="msg"><h4><span>［立论·步骤 2］AI（反方）</span><span class="tag">批注 2</span></h4>
+        <p>司法裁判的核心是<b>责任归属</b>。<span class="marker m-gap">一旦由模型给出量刑建议，错判的责任由谁承担？</span>现行制度没有为算法留出追责位置。</p>
+      </div>
+      <div class="divider"></div>
+      <div class="msg me"><h4><span>［驳立论·步骤 3］你（正方）</span><span class="tag">批注 1</span></h4>
+        <p>边界可以定义在“不给出结论性量刑”，只输出可核查的检索结果。这样法官仍要自己完成判断。</p>
+      </div>
+      <div class="msg"><h4><span>［驳立论·步骤 4］AI（反方）</span><span class="tag">批注 2</span></h4>
+        <p><span class="marker m-gap">你假设法官有能力识别错误建议</span>，但实际场景里，建议的呈现方式本身就会影响判断。<span class="marker m-scope">“辅助”这个边界从未被定义过。</span></p>
+      </div>
+      <div class="card" style="margin-top:10px;background:#fbfcfd">
+        <div class="between"><span class="small muted">下一步 · 自由辩（你先发言）</span><span class="small">已保存 4 条 · 最近更新 21:04</span></div>
+        <div class="input" style="margin-top:8px;color:#b0b6be">写下你的回应……</div>
+        <div class="counter">0/2000</div>
+        <div class="between" style="margin-top:8px">
+          <span class="small muted">四轮练习没有“进入结辩”按钮：自由辩固定一次往返后进入结辩</span>
+          <span><span class="btn">查询状态</span> <span class="btn primary">发送</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="between"><h3>原文批注</h3><span class="small muted">按轮分组</span></div>
+      <p class="small muted" style="margin:4px 0 0">解释默认折叠；四类标记都带文字标签，不只靠颜色。</p>
+      <div class="divider"></div>
+      <p class="small" style="font-weight:700;margin:0">第 1 轮 · 批注 3 条</p>
+      <p class="small muted" style="margin:2px 0 0">同一轮合计 0–3 条，示例取上限。</p>
+
+      <div class="anno">
+        <div class="head"><span class="lbl s">■ 论证有效</span><span class="tag">已展开</span></div>
+        <div class="quote">“模型只提供类案检索与量刑区间参考”</div>
+        <div class="body"><b>判断理由：</b>把协助范围限在可核查的检索结果上，责任主体仍是法官，回应了对方提出的追责难题。</div>
+        <div class="body"><b>改进方向：</b>补一句这个范围由谁核定、出错时如何追溯。</div>
+        <div class="small muted" style="margin-top:6px">［不同意此判断］</div>
+      </div>
+
+      <div class="anno">
+        <div class="head"><span class="lbl g">〰 可能的推理缺口</span><span class="tag">展开</span></div>
+        <div class="quote">“一旦由模型给出量刑建议，错判的责任由谁承担？”</div>
+        <div class="body"><b>判断理由：</b>把追责问题直接指向制度缺口，反击有力。</div>
+        <div class="body"><b>改进方向：</b>补一句现行制度里“谁为法官的错误负责”，再对比算法场景。</div>
+        <div class="small muted" style="margin-top:6px">［不同意此判断］</div>
+      </div>
+
+      <div class="anno">
+        <div class="head"><span class="lbl p">▨ 缺少支持</span><span class="tag">展开</span></div>
+        <div class="quote">“责任链条没有被切断”</div>
+        <div class="body"><b>判断理由：</b>这是结论，但本段没有说明法官如何核对建议。</div>
+        <div class="body"><b>改进方向：</b>补一个可核查的动作，例如要求法官书面记录采纳或驳回的理由。</div>
+        <div class="small muted" style="margin-top:6px">［不同意此判断］</div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="anno" style="background:#fbfcfd">
+        <div class="head"><span class="lbl c">＿ 概念与范围不清</span><span class="tag">原文待核对</span></div>
+        <div class="quote">“该引用在当前会话中不唯一，暂不高亮；类别与理由仍保留。”</div>
+        <div class="body small muted">定位失败时只降级为待核对，不猜位置。</div>
+      </div>
+      <p class="note">分析中显示“批注分析中，不阻塞发言”；失败只给轻提示和按轮补做，不影响提交与结辩。</p>
+    </div>
+  </div>
+</div>
+
+<!-- S3 复盘 -->
+<div class="screen" id="s3">
+  <div class="topbar">
+    <div class="brand">思弈阁<small>文字辩论练习</small></div>
+    <div class="nav"><span class="tab">开始练习</span><span class="tab">历史</span><span class="tab">设置</span><span class="user">朱同学 · 退出登录</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="between"><h3 style="font-size:16px">已完成 · 训练复盘</h3><span class="tag">复盘已生成</span></div>
+      <p class="small muted" style="margin:4px 0 14px">四轮轻量练习 · 你持正方 · 强度：标准 · 单场训练参考，不产生总分、胜负或排名。</p>
+      <div class="row" style="gap:18px;align-items:center">
+        <svg width="336" height="230" viewBox="0 0 336 230" style="flex:0 0 auto">
+          <g stroke="#e3e6ea" fill="none">
+            <polygon points="168,34 259,115 168,196 77,115"/>
+            <polygon points="168,61 232,115 168,169 104,115"/>
+            <polygon points="168,88 204,115 168,142 132,115"/>
+            <line x1="168" y1="34" x2="168" y2="196"/><line x1="77" y1="115" x2="259" y2="115"/>
+          </g>
+          <polygon points="168,52 214,115 168,169" fill="#2f6fd0" fill-opacity=".16" stroke="#2f6fd0" stroke-width="2"/>
+          <circle cx="168" cy="52" r="3.5" fill="#2f6fd0"/>
+          <circle cx="214" cy="115" r="3.5" fill="#2f6fd0"/>
+          <circle cx="168" cy="169" r="3.5" fill="#2f6fd0"/>
+          <circle cx="168" cy="115" r="4.5" fill="#fff" stroke="#c8ccd2" stroke-width="2"/>
+          <text x="168" y="22" text-anchor="middle" font-size="11" fill="#6b7280">论证结构 ③</text>
+          <text x="265" y="118" font-size="11" fill="#6b7280">回应针对性 ②</text>
+          <text x="168" y="214" text-anchor="middle" font-size="11" fill="#6b7280">概念与范围 ③</text>
+          <text x="71" y="112" text-anchor="end" font-size="11" fill="#6b7280">证据使用</text>
+          <text x="71" y="126" text-anchor="end" font-size="10" fill="#a0a6ae">观察不足</text>
+        </svg>
+        <div class="dims" style="flex:1">
+          <div class="dim"><h4>论证结构 <span class="lv">较稳 ③</span></h4><p class="small muted" style="margin:6px 0 0">提出了可核查的边界，但未说明谁来核定。</p><p class="small" style="margin:4px 0 0"><span class="tag">定位原句</span> <span class="tag">去重练</span></p></div>
+          <div class="dim"><h4>回应针对性 <span class="lv">发展中 ②</span></h4><p class="small muted" style="margin:6px 0 0">回应了追责问题，未回应“呈现方式影响判断”。</p><p class="small" style="margin:4px 0 0"><span class="tag">定位原句</span> <span class="tag">去重练</span></p></div>
+          <div class="dim"><h4>证据使用 <span class="lv none">观察不足</span></h4><p class="small muted" style="margin:6px 0 0">本场未出现可核查的外部依据，属正常取值，不按 1 档计。</p></div>
+          <div class="dim"><h4>概念与范围 <span class="lv">较稳 ③</span></h4><p class="small muted" style="margin:6px 0 0">把“辅助”限定为不给结论性量刑，边界清楚。</p><p class="small" style="margin:4px 0 0"><span class="tag">定位原句</span> <span class="tag">去重练</span></p></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="between"><div><b style="font-size:14px">主要争点</b><p class="small muted" style="margin:2px 0 0">共 4 张，人工改名/合并/移除优先于 AI 更新，冲突可见。</p></div><span class="tag">争点卡 4/5</span></div>
+      <table style="margin-top:8px">
+        <tr><th>争点</th><th>来源</th><th>仍待澄清</th><th>操作</th></tr>
+        <tr><td>算法建议的责任归属</td><td>自由辩第 2 回合 · AI 提出</td><td>核定者是谁</td><td><span class="tag">定位</span></td></tr>
+        <tr><td>“辅助”的边界如何界定</td><td>驳立论 · AI 提出</td><td>是否含结论性量刑</td><td><span class="tag">定位</span></td></tr>
+      </table>
+      <div class="row" style="justify-content:flex-end;margin-top:14px"><span class="btn">下载单场 PDF 战报</span><span class="btn primary">回看本场原文</span></div>
+      <p class="note">PDF 复用已保存的复盘结果，零新增模型调用；引用不承诺点回在线会话。</p>
+    </div>
+
+    <div class="panel">
+      <h3>局部重练 · 你的发言</h3>
+      <p class="small muted" style="margin:2px 0 10px">自由辩第 2 回合 · 只用于练习，不改写比赛记录</p>
+      <p class="small"><b>原句（只读）</b></p>
+      <div class="input small" style="color:var(--text)">边界可以定义在“不给出结论性量刑”，只输出可核查的检索结果。</div>
+      <p class="small" style="margin-top:10px"><b>原批注：</b>缺少支持 / 可能的推理缺口</p>
+      <div class="field"><label>想改善什么（选填）</label><div class="input small" style="color:#b0b6be">想让回应更有针对性……</div></div>
+      <div class="field"><label>你的改写</label><div class="input" style="color:#b0b6be;height:70px">……</div><div class="counter">0/2000</div></div>
+      <div class="row" style="justify-content:flex-end"><span class="btn primary">提交改写</span></div>
+      <div class="divider"></div>
+      <p class="small" style="font-weight:700;margin:0">反馈</p>
+      <p class="small muted" style="margin:4px 0 0">原问题是否改善 / 理由 / 是否引入新问题；不打分、不给整段范文。</p>
+      <p class="small" style="margin:8px 0 0">版本：v1（21:10） v2（21:14） <span class="tag">查看历史版本</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- S4 历史 -->
+<div class="screen" id="s4">
+  <div class="topbar">
+    <div class="brand">思弈阁<small>文字辩论练习</small></div>
+    <div class="nav"><span class="tab">开始练习</span><span class="tab active">历史</span><span class="tab">设置</span><span class="user">朱同学 · 退出登录</span></div>
+  </div>
+  <div class="card">
+    <div class="between"><h3 style="font-size:16px">历史会话</h3><span class="small muted">活动中的会话可继续；已完成可复盘与重练</span></div>
+    <table style="margin-top:12px">
+      <tr><th>辩题</th><th>模式</th><th>立场</th><th>时间</th><th>阶段 / 状态</th><th>操作</th></tr>
+      <tr><td>人工智能是否应当参与司法裁判</td><td>四轮轻量</td><td>正方</td><td>11-19 21:04</td><td>自由辩 · 进行中</td><td><span class="btn">继续</span></td></tr>
+      <tr><td>短视频是否削弱深度阅读</td><td>四轮轻量</td><td>反方</td><td>11-18 20:11</td><td>已完成</td><td><span class="btn">复盘</span> <span class="btn">重练</span> <span class="btn">PDF</span></td></tr>
+      <tr><td>大学排名是否应当取消</td><td>四轮轻量</td><td>正方</td><td>11-17 19:02</td><td><span class="tag" style="border-color:#e0b4b4;color:#a83a3a">已完成 · 复盘失败</span></td><td><span class="btn">查看复盘</span> <span class="btn">重试复盘</span></td></tr>
+      <tr><td>标准化考试是否仍有效</td><td>训练赛</td><td>反方</td><td>11-15 18:40</td><td>结辩 · 进行中</td><td><span class="btn">继续</span></td></tr>
+      <tr><td>旧版四轮标准赛（V1）</td><td>四轮标准赛</td><td>正方</td><td>10-30 15:22</td><td>已完成</td><td><span class="btn">查看原文</span></td></tr>
+    </table>
+    <p class="note">复盘失败单独标记，不显示为“未完成”；旧 V1 会话按原赛制可读、可继续，不重命名为 V2 模式，默认不开放 V2 专属入口。</p>
+    <div class="between" style="margin-top:14px"><span class="small muted">共 5 条</span><span><span class="btn">上一页</span> <span class="btn ghost">第 1 页</span> <span class="btn">下一页</span></span></div>
+  </div>
+</div>
+
+<!-- S5 设置 -->
+<div class="screen" id="s5">
+  <div class="topbar">
+    <div class="brand">思弈阁<small>文字辩论练习</small></div>
+    <div class="nav"><span class="tab">开始练习</span><span class="tab">历史</span><span class="tab active">设置</span><span class="user">朱同学 · 退出登录</span></div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="between"><h3 style="font-size:16px">设置 · 模型服务</h3><span class="badge">已配置</span></div>
+      <p class="small muted" style="margin:4px 0 12px">你填写自己的 API Key，模型调用费用由你承担；本应用不提供平台代付。</p>
+      <div class="field"><label>服务商</label><div class="input">DeepSeek ▾</div></div>
+      <div class="field"><label>API 地址</label><div class="input">https://api.deepseek.com/chat/completions</div></div>
+      <div class="field"><label>模型</label><div class="input">deepseek-chat</div></div>
+      <div class="field"><label>API Key</label><div class="input">••••••••••••（已配置，不再显示完整内容）</div>
+        <p class="note">Key 只提交到服务端并按用户隔离保管，本页不会再次显示完整内容。</p></div>
+      <div class="row" style="margin-top:16px"><span class="btn primary">保存</span><span class="btn">测试连接</span></div>
+      <p class="note">测试连接可能发起一次真实调用并产生费用，只能由你主动触发，不会自动执行或自动重试；保存与测试是两个独立状态。</p>
+      <div class="divider"></div>
+      <div class="row" style="gap:24px">
+        <div><p class="small muted" style="margin:0">保存状态</p><b>已保存</b></div>
+        <div><p class="small muted" style="margin:0">测试状态</p><b>未测试</b></div>
+        <div><p class="small muted" style="margin:0">配置变更</p><b class="small" style="font-weight:400">只影响后续调用，历史不变</b></div>
+      </div>
+      <p class="note">替换或移除配置不会改写已保存的历史、复盘、批注与重练版本；移除后新的生成调用会被阻止，历史仍可读。</p>
+    </div>
+
+    <div class="panel">
+      <h3>额度与用量（应用侧）</h3>
+      <p class="small muted" style="margin:2px 0 12px">这里只展示本应用能观测到的计数，不显示无法核实的供应商余额。</p>
+      <div class="anno" style="margin-top:0">
+        <div class="between"><span class="small">今日生成次数</span><b>7 / 20</b></div>
+        <div class="between" style="margin-top:8px"><span class="small">当前并发</span><b>0（单用户上限 1）</b></div>
+        <div class="between" style="margin-top:8px"><span class="small">全局并发</span><b>1 / 2</b></div>
+      </div>
+      <p class="note">自带 Key 的模型费用与应用侧次数/并发是两套约束，界面分开说明；两者都不会因自带 Key 而取消。</p>
+      <div class="divider"></div>
+      <p class="small" style="font-weight:700;margin:0">无有效配置时</p>
+      <p class="small muted" style="margin:4px 0 0">阻止新的模型调用（发言、批注、争点、复盘、重练、锦囊），并说明原因与去向；历史与会话详情仍可正常读取。</p>
+      <div class="divider"></div>
+      <p class="small" style="font-weight:700;margin:0">错因分开提示</p>
+      <p class="small muted" style="margin:4px 0 0">配置问题 / 应用额度或并发 / 供应商侧错误，三者不合并成一句“服务不可用”。</p>
+    </div>
+  </div>
+</div>
+
+<!-- S6 移动端 -->
+<div class="screen mobile" id="s6">
+  <div class="phone">
+    <div class="phone-head">
+      <div class="brand" style="font-size:14px">思弈阁</div>
+      <div class="small muted">历史 · 设置</div>
+    </div>
+    <div class="phone-body">
+      <h3 style="font-size:15px">人工智能是否应当参与司法裁判</h3>
+      <p class="small muted" style="margin:2px 0 12px">四轮轻量 · 你持正方 · 标准 · 已保存 4 条</p>
+      <div class="phasetrack" style="padding:8px 10px;overflow:hidden">
+        <span class="ph done" style="font-size:12px">立论 ✓</span><span class="ph done" style="font-size:12px">驳立论 ✓</span><span class="ph now" style="font-size:12px">自由辩</span><span class="ph" style="font-size:12px">结辩</span>
+      </div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span class="badge">轮到你</span><span class="small">显示批注 <span class="switch sm"></span></span>
+      </div>
+      <div class="msg me"><h4><span>［立论·1］你（正方）</span><span class="tag">批注 1</span></h4>
+        <p class="small"><span class="marker m-strength">模型只提供类案检索与量刑区间参考</span>，最终决定权仍在法官。</p></div>
+      <div class="msg"><h4><span>［立论·2］AI（反方）</span><span class="tag">批注 2</span></h4>
+        <p class="small"><span class="marker m-gap">一旦由模型给出量刑建议，错判的责任由谁承担？</span>现行制度没有为算法留出追责位置。</p></div>
+      <div class="input" style="margin-top:12px;color:#b0b6be">写下你的回应……</div>
+      <div class="between" style="margin-top:8px"><span class="small muted">0/2000</span><span class="btn primary">发送</span></div>
+      <div class="sheet" style="margin-top:14px">
+        <div class="between"><span class="small" style="font-weight:700">第 1 轮 · 批注 3 条</span><span class="small muted">折叠</span></div>
+        <div class="anno" style="margin-top:10px">
+          <div class="head"><span class="lbl s">■ 论证有效</span></div>
+          <div class="quote">“模型只提供类案检索与量刑区间参考”</div>
+          <div class="body small">判断理由：把协助范围限在可核查的检索结果，责任主体仍是法官。</div>
+          <div class="small muted" style="margin-top:6px">［不同意此判断］</div>
+        </div>
+      </div>
+      <p class="note">窄屏下批注面板堆在主卡片下方，点条目可滚回对应原文标记；关掉开关标记和面板一起隐藏，批注仍保存。</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

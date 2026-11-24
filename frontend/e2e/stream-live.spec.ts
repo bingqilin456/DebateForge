@@ -57,7 +57,7 @@ test('B2 真实 Fake：Vite 逐块显示、四轮提交、总结与刷新，双�
   let timing: { first_length: number; next_length: number; elapsed_ms: number } | null = null
   for (let round = 1; round <= 4; round++) {
     await page.locator('#first-content').fill(speech(round))
-    await page.getByRole('button', { name: round === 1 ? '发送首轮' : `发送第 ${round} 轮`, exact: true }).evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
+    await page.locator('form[data-first-turn] button[type="submit"]').evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
     await expect(page.locator('[data-stream-preview]')).toBeVisible()
     await expect(page.locator('[data-stream-text]')).not.toHaveText('正在等待首个回复片段…')
     await expect(page.locator('.message')).toHaveCount((round - 1) * 2)
@@ -113,7 +113,7 @@ test('B2 真实取消：断线先 GET，持久失败后按查询版本 JSON 重�
   let streams = 0
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/turns/stream')) streams++ })
   await page.locator('#first-content').fill(speech().repeat(3))
-  await page.getByRole('button', { name: '发送首轮', exact: true }).click()
+  await page.locator('form[data-first-turn] button[type="submit"]').click()
   await expect(page.locator('[data-stream-text]')).not.toHaveText('正在等待首个回复片段…')
   await page.getByRole('button', { name: '停止等待并查询', exact: true }).click()
   const retry = page.locator('[data-retry-turn]')
@@ -166,7 +166,7 @@ test('B2 真实 202 JSON：同键另一请求先认领，前端只 GET 恢复', 
   })
   await page.locator('#first-content').fill(speech().repeat(2))
   const replay = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === url)
-  await page.getByRole('button', { name: '发送首轮', exact: true }).click()
+  await page.locator('form[data-first-turn] button[type="submit"]').click()
   const pending = await replay
   expect(pending.status()).toBe(202)
   expect(pending.headers()['content-type']).toContain('application/json')
@@ -205,7 +205,7 @@ test('B2 真实提交后客户端丢 done：查询恢复完成，不重复发送
   let posts = 0
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/turns/stream')) posts++ })
   await page.locator('#first-content').fill(speech())
-  await page.getByRole('button', { name: '发送首轮', exact: true }).click()
+  await page.locator('form[data-first-turn] button[type="submit"]').click()
   await expect(page.locator('.message')).toHaveCount(2)
   await expect(page.locator('[data-stream-preview]')).toHaveCount(0)
   expect(posts).toBe(1)

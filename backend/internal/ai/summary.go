@@ -50,12 +50,16 @@ func SummaryMessageCount(m Mode) (int, error) {
 // 调用方可通过 Turns（每轮已完成对）或 Messages（有序 user/assistant 消息）传入历史；
 // 期望条数与合法轮号范围由 Mode 推导。
 type SummaryRequest struct {
+	ForceFake  bool
 	UserID     uint64
 	Mode       Mode
 	Topic      Topic
 	UserStance Stance
 	Turns      []CompletedTurn
 	Messages   []PromptMessage
+	// Custom 表示本场是私有自定义辩题：题目原文只作为第一条 user 消息的数据段，
+	// system 规则段不出现用户文本，并使用独立的 Prompt 版本。
+	Custom bool
 }
 
 // SummaryPoint 表示 strengths 或 issues 中的单条训练反馈。
@@ -109,11 +113,20 @@ func normalizeSummaryMessages(req SummaryRequest) ([]PromptMessage, error) {
 	if !utf8.ValidString(req.Topic.Title) || !utf8.ValidString(req.Topic.Description) {
 		return nil, invalidInput("输入必须是合法 UTF-8")
 	}
-	if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
-		return nil, err
-	}
-	if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
-		return nil, err
+	if req.Custom {
+		if err := validateText("自定义辩题", req.Topic.Title, MaxCustomTopicTitleCodepoints); err != nil {
+			return nil, err
+		}
+		if utf8.RuneCountInString(req.Topic.Description) > MaxCustomTopicBackgroundCodepoints {
+			return nil, invalidInput("自定义辩题背景最多 1000 个 Unicode 码点")
+		}
+	} else {
+		if err := validateText("辩题标题", req.Topic.Title, MaxTopicTitleCodepoints); err != nil {
+			return nil, err
+		}
+		if err := validateText("辩题描述", req.Topic.Description, MaxTopicDescriptionCodepoints); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := req.UserStance.Opposite(); err != nil {
 		return nil, err
@@ -200,6 +213,9 @@ func normalizeSummaryMessages(req SummaryRequest) ([]PromptMessage, error) {
 // 消息顺序固定为：system（训练反馈规则+辩题快照+双方立场+JSON Schema+防注入说明）
 // → 已持久化的有序 user/assistant 消息 → 服务端固定总结触发指令（user）。
 // 用户历史发言只保留在各自消息中，绝不拼入 system 规则段。
+//
+// 私有自定义辩题同样不把题目原文放进 system：题目数据段挂在第一条 user 消息前，
+// 并使用 CustomSummaryPromptVersion，便于按版本追溯实际外发结构。
 func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 	history, err := normalizeSummaryMessages(req)
 	if err != nil {
@@ -213,11 +229,18 @@ func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 	if err != nil {
 		return Prompt{}, err
 	}
+	if req.Custom {
+		if len(history) == 0 {
+			return Prompt{}, invalidInput("自定义辩题总结必须包含已完成的辩论消息")
+		}
+		// 与对辩一致：题目数据段固定在整场第一条 user 消息上。
+		history[0] = PromptMessage{Role: history[0].Role, Content: customTopicUserBlock(req.Topic) + history[0].Content}
+	}
 
 	messages := make([]PromptMessage, 0, 2+len(history))
 	messages = append(messages, PromptMessage{
 		Role:    RoleSystem,
-		Content: summarySystemPrompt(req.Topic, req.UserStance, aiStance, rounds),
+		Content: summarySystemPrompt(req.Topic, req.UserStance, aiStance, rounds, req.Custom),
 	})
 	messages = append(messages, history...)
 	messages = append(messages, PromptMessage{
@@ -225,22 +248,31 @@ func BuildSummaryPrompt(req SummaryRequest) (Prompt, error) {
 		Content: summaryTriggerPrompt(req.UserStance, rounds),
 	})
 
+	version := SummaryPromptVersion
+	if req.Custom {
+		version = CustomSummaryPromptVersion
+	}
 	return Prompt{
-		Version:  SummaryPromptVersion,
+		Version:  version,
 		Messages: messages,
 	}, nil
 }
 
-func summarySystemPrompt(topic Topic, userStance, aiStance Stance, rounds int) string {
+func summarySystemPrompt(topic Topic, userStance, aiStance Stance, rounds int, custom bool) string {
+	// 自定义辩题的题目是用户原文，只能作为 user 数据段外发。
+	topicBlock := "辩题：" + topic.Title + "\n" +
+		"辩题说明：" + topic.Description + "\n"
+	if custom {
+		topicBlock = customTopicSystemNote()
+	}
 	return "你是中文辩论训练中的“训练反馈者”，任务是基于已完成的 " + strconv.Itoa(rounds) + " 轮（共 " + strconv.Itoa(rounds*2) + " 条消息）辩论记录，聚焦用户（练习者）的论证表现提供结构化复盘反馈。\n\n" +
 		"【本场信息】\n" +
-		"辩题：" + topic.Title + "\n" +
-		"辩题说明：" + topic.Description + "\n" +
+		topicBlock +
 		"用户立场：" + userStance.label() + "；陪练 AI 立场：" + aiStance.label() + "。\n" +
 		"总轮数：" + strconv.Itoa(rounds) + " 轮（按第 1 轮至第 " + strconv.Itoa(rounds) + " 轮顺序，每轮依次为 user 发言与 assistant 回复）。\n\n" +
 		"【评估与输出规则】\n" +
 		"1. 聚焦用户在第 1 至第 " + strconv.Itoa(rounds) + " 轮中的论点、论据、逻辑推进与反驳质量，不做胜负判定、不打总分或排名。\n" +
-		"2. 只能输出一个合法的 JSON 对象（schema_version = 1），不得输出 Markdown 代码块标记（如 ```json）、前后缀解释或任何额外字段：\n" +
+		"2. 只能输出一个合法的 JSON 对象，顶层只允许 strengths、issues、suggestions 三个字段；不要输出任何版本字段（版本由服务端另行标注）。不得输出 Markdown 代码块标记（如 ```json）、前后缀解释或任何额外字段：\n" +
 		`{"strengths":[{"round_no":1,"point":"具体优点","reason":"与用户发言对应的依据"}],"issues":[{"round_no":2,"point":"具体问题","reason":"为什么影响论证"}],"suggestions":[{"round_no":2,"action":"可执行的改进动作","example":"针对原问题的表达示例"}]}` + "\n" +
 		"3. strengths、issues、suggestions 三类数组均必须存在且各包含 1 至 3 项；round_no 必须为 1 至 " + strconv.Itoa(rounds) + " 的整数；point、reason、action、example 每个文本字段必须为 1 至 300 个 Unicode 字符的非空中文文本；总 JSON 不超过 16 KiB。\n" +
 		"4. 不要伪造外部数据、法规或权威引用，不要声称已联网检索。\n" +
@@ -250,7 +282,7 @@ func summarySystemPrompt(topic Topic, userStance, aiStance Stance, rounds int) s
 
 func summaryTriggerPrompt(userStance Stance, rounds int) string {
 	return "请仅基于以上 " + strconv.Itoa(rounds) + " 轮共 " + strconv.Itoa(rounds*2) + " 条已持久化的辩论消息，针对" + userStance.label() +
-		"用户的论证表现生成 schema_version = 1 的结构化总结 JSON。只输出 JSON 对象本身。"
+		"用户的论证表现生成只含 strengths、issues、suggestions 三个顶层字段的结构化总结 JSON；不要输出版本字段（由服务端标注）。只输出 JSON 对象本身。"
 }
 
 // ValidateSummaryPrompt 预检总结 Prompt 与总结输出上限是否落在模型上下文窗口内。
@@ -605,11 +637,11 @@ func (a *OpenAIAdapter) GenerateSummary(ctx context.Context, req SummaryRequest)
 
 	prompt, err := BuildSummaryPrompt(req)
 	if err != nil {
-		a.logSummary(ctx, err, 0, Usage{})
+		a.logSummary(ctx, err, summaryReasonRequestInvalid, 0, Usage{})
 		return SummaryResult{}, err
 	}
 	if err := a.config.Window.ValidateSummaryPrompt(prompt); err != nil {
-		a.logSummary(ctx, err, 0, Usage{})
+		a.logSummary(ctx, err, summaryReasonRequestInvalid, 0, Usage{})
 		return SummaryResult{}, err
 	}
 
@@ -649,7 +681,13 @@ func (a *OpenAIAdapter) GenerateSummary(ctx context.Context, req SummaryRequest)
 		}
 		controlled.Metadata.Refused = observation.hasRefusal || observation.finishReason == "content_filter"
 		controlled.Metadata.FinishReason = observation.finishReason
-		a.logSummary(ctx, controlled, latency, usage)
+		// 调用失败时只有响应信封无法解析才归为 response_invalid，
+		// 其余（网络、限流、额度、状态码、中断）统一归为 provider_error。
+		reason := summaryReasonProviderError
+		if controlled.Code == CodeModelError {
+			reason = summaryReasonResponseInvalid
+		}
+		a.logSummary(ctx, controlled, reason, latency, usage)
 		return SummaryResult{}, controlled
 	}
 
@@ -667,18 +705,18 @@ func (a *OpenAIAdapter) GenerateSummary(ctx context.Context, req SummaryRequest)
 		content = message.Content
 	}
 
-	summary, failure := classifySummaryReply(content, observation)
+	summary, failure, reason := classifySummaryReply(content, observation)
 	if failure != nil {
 		failure.Usage = usage
 		failure.Metadata = metadata
-		a.logSummary(ctx, failure, latency, usage)
+		a.logSummary(ctx, failure, reason, latency, usage)
 		return SummaryResult{}, failure
 	}
 
 	canonicalJSON, err := json.Marshal(summary)
 	if err != nil || len(canonicalJSON) > MaxSummaryJSONBytes {
 		controlled := &Error{Code: CodeModelError, Message: "总结 JSON 序列化无效或超过大小上限", Usage: usage, Metadata: metadata}
-		a.logSummary(ctx, controlled, latency, usage)
+		a.logSummary(ctx, controlled, summaryReasonOutputTooLarge, latency, usage)
 		return SummaryResult{}, controlled
 	}
 
@@ -689,39 +727,54 @@ func (a *OpenAIAdapter) GenerateSummary(ctx context.Context, req SummaryRequest)
 		Usage:         usage,
 		Metadata:      metadata,
 	}
-	a.logSummary(ctx, nil, latency, usage)
+	a.logSummary(ctx, nil, summaryReasonOK, latency, usage)
 	return result, nil
 }
 
-func classifySummaryReply(content string, observation responseObservation) (Summary, *Error) {
+// 复盘日志的固定原因码：只说明失败发生在请求预检、供应商、响应信封、
+// 结束状态还是输出校验，不携带任何原始内容；新增码必须保持稳定且可枚举。
+const (
+	summaryReasonOK                 = "ok"
+	summaryReasonRequestInvalid     = "request_invalid"
+	summaryReasonProviderError      = "provider_error"
+	summaryReasonResponseInvalid    = "response_invalid"
+	summaryReasonResponseTruncated  = "response_truncated"
+	summaryReasonResponseIncomplete = "response_incomplete"
+	summaryReasonContentFiltered    = "content_filtered"
+	summaryReasonProviderRefused    = "provider_refused"
+	summaryReasonOutputInvalid      = "output_invalid"
+	summaryReasonOutputTooLarge     = "output_too_large"
+)
+
+func classifySummaryReply(content string, observation responseObservation) (Summary, *Error, string) {
 	switch {
 	case observation.invalidBody || observation.invalidUTF8:
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型响应格式或大小无效"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型响应格式或大小无效"}, summaryReasonResponseInvalid
 	case !observation.hasRole || observation.role != "assistant":
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型响应角色无效"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型响应角色无效"}, summaryReasonResponseInvalid
 	case observation.hasRefusal:
-		return Summary{}, &Error{Code: CodeModelRefused, Message: "模型拒绝回复本次内容"}
+		return Summary{}, &Error{Code: CodeModelRefused, Message: "模型拒绝回复本次内容"}, summaryReasonProviderRefused
 	case observation.hasToolCalls:
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型返回了不支持的工具调用输出"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型返回了不支持的工具调用输出"}, summaryReasonResponseInvalid
 	case observation.finishReason == "content_filter":
-		return Summary{}, &Error{Code: CodeModelRefused, Message: "模型回复被内容策略拦截"}
+		return Summary{}, &Error{Code: CodeModelRefused, Message: "模型回复被内容策略拦截"}, summaryReasonContentFiltered
 	case observation.finishReason == "length":
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型回复因输出上限被截断"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型回复因输出上限被截断"}, summaryReasonResponseTruncated
 	case !observation.hasFinishReason || observation.finishReason != "stop":
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型未正常结束回复"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型未正常结束回复"}, summaryReasonResponseIncomplete
 	}
 	summary, err := ParseSummary(content)
 	if err != nil {
 		var controlled *Error
 		if errors.As(err, &controlled) {
-			return Summary{}, controlled
+			return Summary{}, controlled, summaryReasonOutputInvalid
 		}
-		return Summary{}, &Error{Code: CodeModelError, Message: "模型总结结构无效"}
+		return Summary{}, &Error{Code: CodeModelError, Message: "模型总结结构无效"}, summaryReasonOutputInvalid
 	}
-	return summary, nil
+	return summary, nil, summaryReasonOK
 }
 
-func (a *OpenAIAdapter) logSummary(ctx context.Context, err error, latency time.Duration, usage Usage) {
+func (a *OpenAIAdapter) logSummary(ctx context.Context, err error, reason string, latency time.Duration, usage Usage) {
 	code := "ok"
 	if err != nil {
 		var controlled *Error
@@ -733,6 +786,7 @@ func (a *OpenAIAdapter) logSummary(ctx context.Context, err error, latency time.
 	}
 	attrs := []slog.Attr{
 		slog.String("error_code", code),
+		slog.String("reason_code", reason),
 		slog.String("model", a.config.Model),
 		slog.String("prompt_version", SummaryPromptVersion),
 		slog.Int("schema_version", SummarySchemaVersion),
@@ -772,6 +826,7 @@ func (f *Fake) GenerateSummary(ctx context.Context, req SummaryRequest) (Summary
 			Topic:      req.Topic,
 			UserStance: req.UserStance,
 			RoundNo:    MustRoundsFor(req.Mode),
+			Custom:     req.Custom,
 		},
 		Prompt: clonedPrompt,
 	})
@@ -817,7 +872,7 @@ func (f *Fake) GenerateSummary(ctx context.Context, req SummaryRequest) (Summary
 		SchemaVersion: SummarySchemaVersion,
 		Summary:       summary,
 		ContentJSON:   string(canonical),
-		Metadata:      Metadata{PromptVersion: SummaryPromptVersion, FinishReason: "stop"},
+		Metadata:      Metadata{PromptVersion: prompt.Version, FinishReason: "stop"},
 	}, nil
 }
 

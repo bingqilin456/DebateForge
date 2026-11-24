@@ -16,6 +16,7 @@ import (
 	"github.com/bingqilin456/DebateForge/backend/internal/debate"
 	"github.com/bingqilin456/DebateForge/backend/internal/platform"
 	"github.com/bingqilin456/DebateForge/backend/internal/topic"
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -79,19 +80,48 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("初始化认证失败: %w", err)
 	}
-	generator, err := configuredGenerator(ctx, logger)
+	generator, err := businessGenerator(ctx, logger, database.ORM)
 	if err != nil {
 		return err
 	}
 	topicHandler := topic.NewHandler(topic.NewService(topic.NewRepository(database.ORM)))
-	debateHandler := debate.NewHandler(debate.NewService(debate.NewRepository(database.ORM), generator, debate.NewGate(nil)))
+	debateRepository := debate.NewRepository(database.ORM)
+	debateService := debate.NewService(debateRepository, generator, debate.NewGate(nil), debate.WithLogger(logger))
+	// 批注默认关闭；只有显式本地 Fake 配置才打开能力，且从不改变既有 Gate 与状态机。
+	if _, err := applyAnnotationCapability(debateService, generator); err != nil {
+		return err
+	}
+	// 复盘同样是默认关闭的独立切片：关闭时不会访问 debate_reviews，旧部署不受影响。
+	if enabled, err := applyReviewCapability(debateService, generator); err != nil {
+		return err
+	} else if enabled {
+		debateService.EnableTrainingIssues(debateRepository, debate.NewFakeIssueCardAnalyzer())
+		debateService.EnableTrainingRepractice(debateRepository, func(ctx context.Context, _ debate.RepracticeInput) (debate.RepracticeFeedback, error) {
+			return debate.RepracticeFeedback{
+				Change:     "已保存这次改写。",
+				Reason:     "可对照原文检查结论与理由是否衔接。",
+				NewProblem: "再检查是否说明了主张的适用范围。",
+			}, ctx.Err()
+		})
+	}
+	if model, ok := generator.(*debate.PersonalModel); ok {
+		debateService.EnableAnnotations(true)
+		debateService.EnableReviews(true)
+		debateService.EnablePersonalModelRepractice(debateRepository, model)
+	}
+	debateHandler := debate.NewHandler(debateService)
+	sharing := debate.NewNeonShareHandler(debateRepository)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           platform.NewBusinessRouter(logger, database, authHandler, topicHandler, debateHandler),
+		Handler: platform.NewBusinessRouter(logger, database, authHandler, topicHandler, debateHandler,
+			debateRepository.RegisterNeonProfileRoutes, debateHandler.RegisterNeonDojoRoutes, func(api *gin.RouterGroup, a *auth.Handler) {
+				sharing.RegisterPublic(api)
+				sharing.RegisterProtected(api, a)
+			}),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      platform.HTTPWriteTimeout,

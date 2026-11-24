@@ -19,16 +19,18 @@ test('真实 Vite → Go → MySQL：空历史、双立场、分页、四轮总�
   await expect(page.getByText('暂无历史会话，前往辩题列表开始一次练习吧。')).toBeVisible()
 
   await page.locator('[data-view-tab="topics"]').click()
-  await expect(page.locator('[data-topic-id]')).toHaveCount(5)
+  await expect(page.locator('[data-topic-id]')).toHaveCount(6)
   await page.locator('[data-topic-id="1"] input').check()
   await page.locator('input[value="con"]').check()
   await page.getByRole('button', { name: '创建会话', exact: true }).click()
   await expect(page.getByText('已完成 0 / 4 轮')).toBeVisible()
   const debateId = new URL(page.url()).hash.replace('#debate=', '')
-  await expect(page.locator('[aria-label="首轮辩论面板"]')).toContainText('你：反方 · AI：正方')
+  const arena = page.getByRole('region', { name: '首轮辩论面板' })
+  await expect(arena.getByText('你 · 反方', { exact: true })).toBeVisible()
+  await expect(arena.getByText('AI · 正方', { exact: true })).toBeVisible()
   for (let round = 1; round <= 4; round++) {
     await page.locator('#first-content').fill(`第${round}轮：我认为这一主张需要考虑适用条件，并用可检验的事例支持论点。`)
-    await page.getByRole('button', { name: round === 1 ? '发送首轮' : `发送第 ${round} 轮`, exact: true }).click()
+    await page.locator('form[data-first-turn] button[type="submit"]').click()
     await expect(page.locator('[aria-label="首轮辩论面板"] > p.muted').filter({ hasText: `已完成 ${round} / 4 轮` })).toBeVisible()
     await expect(page.locator('.message')).toHaveCount(round * 2)
   }
@@ -37,7 +39,7 @@ test('真实 Vite → Go → MySQL：空历史、双立场、分页、四轮总�
   await expect(page.locator('.message')).toHaveCount(8)
   await expect(page.locator('[data-summary-completed]')).toBeVisible()
 
-  // 非生成的会话创建补齐 21 条本人历史，用真实分页验证 20 + 1。
+  // 非生成的会话创建补齐 11 条本人历史，用真实分页验证 10 + 1。
   const me = await page.request.get('/api/v1/auth/me')
   expect(me.status()).toBe(200)
   const session = await me.json()
@@ -47,13 +49,14 @@ test('真实 Vite → Go → MySQL：空历史、双立场、分页、四轮总�
   await page.locator('input[value="pro"]').check()
   await page.getByRole('button', { name: '创建会话', exact: true }).click()
   await expect(page.getByText('已完成 0 / 4 轮')).toBeVisible()
-  await expect(page.locator('[aria-label="首轮辩论面板"]')).toContainText('你：正方 · AI：反方')
-  for (let index = 0; index < 19; index++) {
+  await expect(arena.getByText('你 · 正方', { exact: true })).toBeVisible()
+  await expect(arena.getByText('AI · 反方', { exact: true })).toBeVisible()
+  for (let index = 0; index < 9; index++) {
     const created = await page.request.post('/api/v1/debates', { headers: writeHeaders, data: { topic_id: '1', user_stance: 'pro' } })
     expect(created.status()).toBe(201)
   }
   await page.locator('[data-view-tab="history"]').click()
-  await expect(page.locator('[data-history-id]')).toHaveCount(20)
+  await expect(page.locator('[data-history-id]')).toHaveCount(10)
   await page.getByRole('button', { name: '下一页', exact: true }).click()
   await expect(page.locator('[data-history-id]')).toHaveCount(1)
   await expect(page.locator(`[data-history-id="${debateId}"]`)).toContainText('4 / 4 轮')
@@ -66,7 +69,7 @@ test('真实 Vite → Go → MySQL：空历史、双立场、分页、四轮总�
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.locator('[data-view-tab="history"]').click()
-  await expect(page.locator('[data-history-id]')).toHaveCount(20)
+  await expect(page.locator('[data-history-id]')).toHaveCount(10)
   await page.getByRole('button', { name: '下一页', exact: true }).click()
   await page.locator(`[data-debate-id="${debateId}"]`).click()
   await expect(page.locator('.message')).toHaveCount(8)

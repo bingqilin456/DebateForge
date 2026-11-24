@@ -467,11 +467,11 @@ func TestT14StrategyDailyQuotaSharedWithTurnsAndReplayExemption(t *testing.T) {
 	expectStrategy(t, f.request(t, "POST", first, map[string]any{}), 200, "failed", 1)
 	other := strategyPath(f, t)
 	r := f.request(t, "POST", other, map[string]any{})
-	if r.status != 429 || r.errorCode() != "rate_limited" || r.header.Get("Retry-After") == "" {
+	if r.status != 429 || r.errorCode() != "daily_quota_exhausted" || r.header.Get("Retry-After") == "" {
 		t.Fatalf("quota %d %s", r.status, r.body)
 	}
 	r = f.request(t, "POST", strings.TrimSuffix(other, "/strategy")+"/turns", submit("轮次共享每日额度", uuid.NewString(), 1))
-	if r.status != 429 || fake.Calls() != 20 {
+	if r.status != 429 || r.errorCode() != "daily_quota_exhausted" || fake.Calls() != 20 {
 		t.Fatalf("turn quota %d %s", r.status, r.body)
 	}
 	s := strategyStatus(t, f.request(t, "GET", other, nil))

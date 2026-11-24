@@ -1,16 +1,17 @@
 # 思弈阁 API 契约
 
-## 当前 V1 契约与 V2 待设计的边界
+## V1 与完整训练赛的接口边界
 
-**本文描述的是当前 V1 的 HTTP 契约，处于冻结状态。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
+**本文描述现有 HTTP 接口及 V2-02 的完整训练赛增量。** 2026-11-17 负责人以 Q52 确认了产品 V2 的整体需求，规格见 [PRD V2](../product/PRD.md)。本节只说明边界，**不改动本文已实现的任何接口承诺**。
 
 - **V1 契约冻结**：下文的路径、方法、请求/响应字段、状态码、错误码、幂等与版本语义、SSE 事件均为当前有效契约，不因产品 V2 重构而修改。17 个已实现操作的实现状态不变。
-- **V2 尚未设计任何 HTTP 接口**：产品 V2 需要的自定义辩题、训练赛阶段与可变回合、批注、争点卡、局部重练、复盘与四维档级、PDF 战报等能力，**均未设计接口契约**。本文不为它们预设路径、字段或编号；OpenAPI 不为它们登记 planned 操作。
-- **不预先占用 V1 路由**：V2 是否新增端点、是否扩展既有 DTO，必须在实施阶段的独立契约设计后确定；在此之前任何「V2 接口草案」都不是契约。
+- **V2 已实现增量**：V2-03 私有自定义辩题扩展 `POST /api/v1/debates` 的 `custom_topic` 和会话快照的 `topic.id`。V2-04 批注契约见 §15，四轮练习的复盘和四维契约见 §16。
+- **V2 后续接口**：争点卡、局部重练和 PDF 等能力的接口在各自切片确定。
 - **`phase3-summary-v2` 不是产品 V2**：下文总结的 `schema_version = 2`（四维 0–100）属于 V1 基线下 Phase 3 的 P1 目标（T14-REPORT，未开始），与产品 V2 的 `v2-training-reference`（1–4 档）不是同一件事，两者不共享字段与取值，见 [ADR-027](../decisions/DECISIONS.md#adr-027-v2-需求基线与版本边界)。
+- **V2-13 复盘为本地可运行切片，未验收**：§16 的复盘接口是错误边界复用 V1、字段独立设计的新契约，默认关闭（`V2_REVIEW_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`）。关闭时不注册生成能力、不访问新表，既有 19 个操作的请求/响应语义保持不变；迁移 `00016` 仅新增正向 SQL 文件，未执行，编号需在整合时复核。
 - **V2 设计须沿用的既有约束**：所有权校验、`client_request_id` 幂等、`attempt_version`、租约、并发与额度、事务提交后才发 `done`、错误信封与越权 404 语义，均为 V1 已实现并要求 V2 继续遵守的约束；V2 不得为此另建第二套幂等。
 
-**产品 V2 未实现、未验收、未获开发阶段授权。** 本节的边界说明不代表已开始设计或排期。
+产品 V2 的整体开发与验收待安排。V2-03 已按本地隔离 MySQL、Fake 联调和前端 Mock 的证据范围签收。
 
 **T03 当前增量（2026 年 11 月 8 日）：四条认证接口已通过有条件独立审查与人工验收，原延期风险保留；T05 四接口无收费实现、累计验证与新会话独立复审 PASS，三关人工验收通过，无收费范围正式结项；真实模型链路仍待另行授权验证。** 当前 Cookie 名、配置及验证边界见下文和 [认证记录](../acceptance/T03_AUTH_ACCEPTANCE.md)。T01 业务字段、状态码、错误码和参数保持不变；历史“全部业务未实现”说明保留当时语境。
 
@@ -22,7 +23,7 @@
 
 **2026-11-14 T14-STYLE 后端增量：** 创建支持自主选择 `ai_style`，策略 GET/POST 已按 A1 定稿契约实现并使用 Fake 与隔离 MySQL 验证，见 [专项记录](../acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)。2026-11-15 A3 已交付 SSE 后端和本地代理；完整浏览器 AC12/AC16 待 B1/B2 交付后联调，真实体验未执行。
 
-以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 10 个辩论/历史/总结/策略/流式接口，共 17 个。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
+以下按当前工作区源码核对。真实启动入口向 [NewBusinessRouter](../../backend/internal/platform/business.go) 注入认证、辩题、辩论 Handler，注册 2 个健康接口、4 个认证接口、1 个辩题接口和 12 个辩论/历史/总结/策略/批注/流式接口，共 19 个；V2-13 复盘另新增 2 个独立接口（见 §16），默认关闭。**当前有效健康契约为 `/api/health/live`、`/api/health/ready`**。历史 `/health/live`、`/health/ready` 未注册，返回 `404 not_found`，不提供兼容别名。未注入认证 Handler 的两参构造只保留健康测试用途。
 
 | 方法 | 路径 | 用途 | 当前实现状态 | 成功状态（契约或 Handler） |
 | --- | --- | --- | --- | --- |
@@ -43,8 +44,12 @@
 | POST | `/api/v1/debates/{id}/summary` | 生成或显式重试结构化总结 | 已实现（T10） | 201、200、202 |
 | GET | `/api/v1/debates/{id}/summary` | 查询本人会话总结状态与结果 | 已实现（T10） | 200 |
 | GET | `/api/v1/debates/{id}` | 查询本人会话 | 已实现，无收费范围复审与人工验收通过 | 200 |
+| GET | `/api/v1/debates/{id}/annotations` | 只读本场原文批注批次 | 已实现（V2-04 切片，仅 Fake 与显式本地测试配置） | 200 |
+| POST | `/api/v1/debates/{id}/turns/{turn_id}/annotations/retry` | 手动补做未启动或已失败的批注 | 已实现（V2-04 切片，仅 Fake 与显式本地测试配置） | 201、200、202 |
 
-本文与 OpenAPI `paths` 记录 **17 个已实现操作**。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
+本文与 OpenAPI `paths` 记录 **19 个已实现操作**（其中 17 个为 V1 冻结契约，2 个为 V2-04 批注增量，后者仅在显式本地测试配置下启用）。T05 无收费范围独立复审 PASS、人工验收通过并正式结项；T09 轮次状态机、显式重试、租约恢复、T10 结构化总结与重试及 T11 本人历史分页接口已在后端实现；赛制驱动（`quick_3`/`standard_4`）已实现，默认四轮。真实模型验收仍待另行授权，未部署。首批契约与验收矩阵见 [Phase 3 A 整合 Spec](../planning/PHASE3_A_INTEGRATION_SPEC.md)。
+
+**V2-13 复盘另有 2 个已在代码中实现、默认关闭的接口**（见 §16）；本轮**未**把它们登记进 OpenAPI `paths`，登记属于整合事项，避免与并行分支争写同一份机器规范。
 
 本文与 OpenAPI 统一用 `{id}` 表示必填路径参数，对应 Gin 的 `:id`，只是文档表示法统一。没有给首批接口增加查询参数或分页。OpenAPI 的 `x-implementation-status` 区分 `implemented` 和 `planned`；`x-phase2-drafts` 只记录后续草案索引。
 
@@ -113,7 +118,10 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | --- | --- | --- | --- | --- |
 | `Credentials`（注册/登录复用） | `username` | string | 是 | trim 后转小写；归一化后 3–32 位 ASCII 字母、数字、下划线。限制作用于归一化值。 |
 | `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
-| `CreateDebateRequest` | `topic_id` | string | 是 | 辩题 ID，正整数十进制字符串。 |
+| `CreateDebateRequest` | `topic_id` | string | 二选一 | 预设题 ID，正整数十进制字符串。与 `custom_topic` **恰有一个出现**。 |
+| `CreateDebateRequest` | `custom_topic` | object | 二选一 | 私有自定义辩题，包含必填 `title` 和可选 `background`。与 `topic_id` 恰有一个出现。 |
+| `CreateDebateRequest.custom_topic` | `title` | string | 是 | 1–200 个 Unicode 码点，拒绝纯空白（Unicode White_Space 与 U+FEFF），保存原文不裁剪。 |
+| `CreateDebateRequest.custom_topic` | `background` | string | 否 | 0–1000 个 Unicode 码点，可省略或为空串，长度计算包含空白，保存原文。 |
 | `CreateDebateRequest` | `user_stance` | string | 是 | `pro` 正方或 `con` 反方。 |
 | `CreateDebateRequest` | `ai_style` | string | 否 | **Phase 3 计划增量**：精确枚举 logical/aggressive/empathic/data，省略默认 logical；null、空串、未知值、大小写不符或非字符串为 400 invalid_request，不写会话。创建后不可修改。 |
 | `SubmitTurnRequest` | `round_no` | integer | 是 | 正整数；须满足 `round_no = completed_rounds + 1` 且不超过该会话 `mode` 的轮数上限（`quick_3` 为 3、`standard_4` 为 4）；越界或状态/轮序不允许时 409 `round_conflict`。 |
@@ -134,7 +142,8 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | `User` | `id`: EntityId；`username`: string | 用户名为归一化小写值，不返回口令或哈希。 |
 | `AuthData` | `user`: User；`csrf_token`: string | 登录及当前用户复用；Session 原值不在 JSON 中。 |
 | `Topic` | `id`: EntityId；`title`: string；`description`: string | 辩题列表为当前启用题目；会话中的 topic 为创建时快照。 |
-| `Debate` | `id`: EntityId；`topic`: Topic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
+| `DebateTopic` | `id`: EntityId 或 null；`title`: string；`description`: string | **V2-03 起的会话快照**：预设题 `id` 为原字符串；私有自定义辩题 `id` 为 `null`。`title`/`description` 为该会话固定快照，缺失背景为空字符串。公共 `Topic` 类型仍要求字符串 ID。 |
+| `Debate` | `id`: EntityId；`topic`: DebateTopic；`user_stance`、`ai_stance`: string；`mode`: string；`ai_style`: string；`total_rounds`: integer；`status`: string；`completed_rounds`: integer；`created_at`、`updated_at`: string | 立场为 `pro/con` 且相反；`mode` 取 `quick_3`/`standard_4`，`ai_style` 取 `logical`/`aggressive`/`empathic`/`data`；`total_rounds` 由 `mode` 推导（3 或 4），前端以此作为轮次上限；状态为 `active/completed`；创建时 active、完成轮数 0，达到该赛制轮数上限的完整 AI 回复落库后 status 置为 completed。时间为 UTC RFC 3339。 |
 | `Turn` | `id`: EntityId；`round_no`: integer；`client_request_id`: string（UUID）；`status`: string；`attempt_version`: integer；`error_code`: string 或 null；`messages`: Message[] | 轮号和版本为正整数；状态 `generating/completed/failed`；错误枚举见详情节；按同轮 user、assistant 顺序返回消息。 |
 | `Message` | `id`: EntityId；`role`: string；`content`: string；`created_at`: string | role 仅 `user/assistant`；内容为原文或正式 AI 回复；时间为 UTC RFC 3339。 |
 | `SummaryStatus` | `status`: string；`attempt_version`: integer 或 null；可选 `error_code`: string、`schema_version`: integer、`content`: SummaryContent | 状态取 `not_started/generating/completed/failed`；未开始时 `attempt_version` 为 `null`，其余状态为正整数；失败时附 `error_code`，已完成时附 `schema_version`（`1` 或 `2`）与结构化 `content`（`schema_version=1` 为 `strengths`、`issues`、`suggestions`；`schema_version=2` 即 `phase3-summary-v2`，另含 `scores` 四维 0–100 参考值，属 T14-REPORT 目标设计、未实现）。客户端必须按 `schema_version` 分支渲染，不得把 `1` 判为格式错误。注意 `phase3-summary-v2` 不是产品 PRD V2，产品 V2 的四维 1–4 档尚无任何接口契约。 |
@@ -168,11 +177,11 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 | `GET /api/v1/topics` | 200 | 401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/debates` | 200 | 400 invalid_request；401 unauthenticated；500 internal_error；503 dependency_unavailable |
 | `POST /api/v1/debates` | 201 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；413 request_too_large；500 internal_error；503 dependency_unavailable |
-| `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
-| `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
-| `POST /api/v1/debates/{id}/summary` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/turns` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/idempotency_conflict/turn_failed；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/turns/{turn_id}/retry` | 200、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/summary` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}/strategy` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
-| `POST /api/v1/debates/{id}/strategy` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
+| `POST /api/v1/debates/{id}/strategy` | 200、201、202 | 400 invalid_request；401 unauthenticated；403 csrf_failed；404 not_found；409 round_conflict/attempt_version_conflict；413 request_too_large；429 rate_limited/generation_busy/daily_quota_exhausted；500 internal_error；502 model_error；503 dependency_unavailable/model_unavailable；504 model_timeout |
 | `GET /api/v1/debates/{id}/summary` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 | `GET /api/v1/debates/{id}` | 200 | 400 invalid_request；401 unauthenticated；404 not_found；500 internal_error；503 dependency_unavailable |
 
@@ -263,11 +272,48 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 
 **T14-STYLE 已实现契约：** 用户在创建前选择 `logical`（逻辑型）、`aggressive`（进攻型）、`empathic`（共情型）或 `data`（数据型）。可选请求字段 `ai_style` 省略时默认 `logical`，显式 null、空串、非字符串或非精确枚举值返回 `400 invalid_request`，校验失败不创建会话。Service 校验后由 Repository 在创建事务中写入 `debates.ai_style`，响应返回所保存值；详情/历史及后续 Prompt、策略卡统一读取会话值。创建后不可修改，无流派更新接口。`mode` 仍不接受客户端选择，传入不生效，统一 `standard_4`；流派不改变轮数、立场、状态机、配额或所有权规则。历史会话不回填、不切换。策略卡调用不合并到创建事务或创建请求，具体生成接口、配额和失败响应在实施前另行细化，不在本次新增已实现路径。
 
+**V2-03 私有自定义辩题（已实现）：** 请求严格二选一 —— `topic_id` 与 `custom_topic` **恰有一个出现**，以字段是否出现判定；显式 `null` 视为该字段出现，因此 `topic_id` 与 `null` 的 `custom_topic` 一起提交同样被拒。两者同时出现、都缺失、任一显式 `null`、自定义对象含未知/重复字段、`title` 缺失或非字符串、`background` 非字符串，均返回 `400 invalid_request` 且不写任何会话。
+
+顶层字段的严格程度按分支区分：**自定义分支**拒绝任何顶层未知字段与重复字段（新入口，避免混入赛制、归属或轮次）；**预设分支**沿用本接口既有行为——顶层未知与重复字段被忽略，重复键取最后一次赋值。无论哪条分支，`mode` 固定 `standard_4`、`user_id` 来自 Session。
+
+自定义题不进入公共题库：服务端跳过 `topics` 查询，把原文与登录用户 ID 一次写入会话快照，`debates.topic_id` 写 `NULL`。`GET /topics` 仍只返回启用的预设题；另一账号查不到该会话（跨账号详情沿用 `404 not_found`）。题目与背景长度按解码后的 Unicode 码点计算（组合字符计多个、补充平面字符计一个），标题 1–200、背景 0–1000；服务端只做判空与长度校验，持久化保留首尾空白、换行与原字符。创建不调用模型、不触发策略卡或审题，也没有编辑接口。客户端遇到传输故障不得自动重发创建请求。
+
+预设请求示例（旧示例继续有效）：
+
 ```json
 {"topic_id":"7","user_stance":"pro","ai_style":"aggressive"}
 ```
 
-上述为 Phase 3 目标请求；当前 Phase 2 客户端仍仅提交 topic_id/user_stance。以下为目标 `201` 响应示例，省略 ai_style 的兼容请求则返回 logical。
+自定义请求示例：
+
+```json
+{"custom_topic":{"title":"是否应把远程办公设为默认？","background":"讨论协作成本与人才半径"},"user_stance":"pro"}
+```
+
+自定义成功时 `topic` 为会话内快照，`id` 为 `null`：
+
+```json
+{
+  "data": {
+    "id": "124",
+    "topic": {"id":null,"title":"是否应把远程办公设为默认？","description":"讨论协作成本与人才半径"},
+    "user_stance": "pro",
+    "ai_stance": "con",
+    "mode": "standard_4",
+    "ai_style": "logical",
+    "total_rounds": 4,
+    "status": "active",
+    "completed_rounds": 0,
+    "created_at": "2026-11-18T08:00:00Z",
+    "updated_at": "2026-11-18T08:00:00Z"
+  },
+  "request_id": "req-create-custom"
+}
+```
+
+后续对辩（普通、SSE、重试）、策略卡与总结都从同一份会话快照取题。预设题 Prompt 保持旧结构（`debate-v1`/`summary-v1`/`strategy-v2`）；自定义题使用独立版本标识（`debate-custom-v1`/`summary-custom-v1`/`strategy-custom-v1`），system 规则段不含用户题目原文，题目以 JSON 数据段放在第一条 user 消息中，JSON 转义阻断伪造角色与规则段。既有计费准入、Prompt 窗口预检、生成认领与 SSE 事件契约不变。
+
+预设题 `201` 响应沿用以下形状（`topic.id` 仍为原字符串）：
 
 ```json
 {
@@ -551,6 +597,32 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 
 
 
+## 完整训练赛（V2-02）
+
+创建使用 `POST /api/v1/training-debates`，请求包含 `topic_id`、`user_stance`，以及可选的 `ai_style`。成功返回 201，赛制为 `training_v2`。列表识别该赛制。详情 `GET /api/v1/debates/{id}` 返回 `training.progress`、`training.steps` 和查询地址。旧会话继续通过原详情与轮次接口读取和续练。
+
+以下操作的路径相对于 `/api/v1/debates/{id}`。写入需要会话认证、所有权、Origin 和 CSRF 校验。
+
+| 操作 | 请求 |
+| --- | --- |
+| `POST /steps` | 发送 `client_request_id`、`expected_stage` 和 `expected_step`。用户步骤带 `content`，AI 步骤省略正文。首次成功 201，重放 200，生成中 202。 |
+| `POST /steps/stream` | 请求同上，且带 `Accept: text/event-stream`。复用提交入口。事件为 `start`、`delta`、`done` 或 `error`。`done` 在提交后发送，包含 `step`、`progress`、`debate_status`。生成中返回 JSON 202。 |
+| `POST /steps/{step_no}/retry` | 发送详情中的 `expected_attempt_version`，对当前失败认领重试。 |
+| `POST /free-debate/end` | 至少完成一回合才能结束。放弃当前已失败的回复时发送 `expected_failed_attempt_version`。成功或重放返回 200，从详情读取最新阶段。 |
+
+页面根据 `next_step_no`、`next_speaker` 和 `can_*` 字段开放操作。按阶段和步骤校验新发言。进度不合时返回 409 `round_conflict`，页面重查详情。同一幂等键更换原文或已提交步骤时返回 409 `idempotency_conflict`。断线后查询详情确认提交状态。放弃后已保存的用户原文和 AI 失败记录仍可见，自由辩完整回合数保持原值。
+
+### 训练赛批注、争点卡与赛后回看
+
+以下分析能力在隔离 Fake 环境验证。批注沿用 `V2_ANNOTATION_FAKE=1`，争点卡、复盘与重练随 `V2_REVIEW_FAKE=1` 启用。
+
+- 每次 AI 发言提交后触发批注。仍用 `GET /debates/{id}/annotations` 和批注补做入口。训练赛批次里的 `turn_id`、`round_no` 分别指 AI 发言的步骤 ID 与全局步骤号。两条同环节新增发言和 AI 独自先发分别由保存的步骤决定。批注忙或失败时可手动补做。
+- `GET /debates/{id}/issue-cards` 读取已保存卡片。双方驳立论、每个完整自由辩回合和结辩提交后，服务端依次整理。分析结果和已处理位置一同保存。返回 `pending: true` 时还有已提交位置待更新；手动补做走 `POST /debates/{id}/issue-cards/analyze`。失败后的显式重试提交 `retry: true` 与 `expected_attempt_version`。保留现有卡片编辑版本和锚点校验。
+- 完赛后沿用 §16 的 `GET/POST /debates/{id}/review`。训练赛复盘读取已提交步骤。失败只影响复盘，观察不足的维度返回 `level: null`。复盘、雷达和争点卡均用同一份原文及锚点。
+- `GET /debates/{id}/repractice` 读取已保存重练版本。`POST` 同路径提交 `client_request_id`、本人已保存原文的 `message_id`、码点区间 `start_cp` 与 `end_cp`、`quote`、`goal`、`rewrite`。原文与坐标逐字校验。重试用 `POST /debates/{id}/repractice/{version}/retry`，提交当前 `expected_attempt_version`。
+
+以上路径使用 `/api/v1` 前缀。读写统一校验会话所有权。写入沿用 Origin 与 CSRF 校验，刷新只读取保存的结果。
+
 ## 错误码与客户端恢复
 
 | HTTP | `error.code` | 适用情况 |
@@ -562,7 +634,7 @@ data: {"turn":{...},"completed_rounds":3,"status":"active"}
 | 405 | `method_not_allowed` | 路径不支持该方法。 |
 | 409 | `username_conflict`、`round_conflict`、`idempotency_conflict`、`turn_failed`、`attempt_version_conflict` | 分别为用户名占用、状态或轮序冲突、幂等内容冲突、已失败轮次重放、显式重试版本不匹配。 |
 | 413 | `request_too_large` | 请求体超过 32 KiB。 |
-| 429 | `rate_limited`、`generation_busy` | 请求频率或每日生成次数超限、模型并发槽满，带 `Retry-After` 秒数。 |
+| 429 | `rate_limited`、`generation_busy`、`daily_quota_exhausted` | 分钟防刷超限、模型并发槽满、每用户每日生成尝试用尽；均带 `Retry-After` 秒数。三类业务码不同，客户端可据此区分恢复动作（按秒重试、等待当前生成、查看历史并等待服务端开启下一个 UTC 日窗口）。 |
 | 500 | `internal_error` | 未分类内部错误。 |
 | 502 | `model_error` | 模型调用失败、输出无效或拒答。 |
 | 503 | `dependency_unavailable`、`model_unavailable` | 数据库不可用或提交结果不明、供应商容量或额度不可用。 |
@@ -609,6 +681,169 @@ generating 仅含 status/attempt_version；failed 增加受控 error_code（mode
 内容固定三键，每段 1–300 Unicode 码点非空白文本，arguments/risks 各 1–3 项，完整 JSON ≤8 KiB，拒绝额外字段/无效 UTF-8；前端转义显示。首次 Prompt 现为 `strategy-v2`（`strategy-v1` 为历史版本，仅出现在已保存记录中），输出 schema_version=1，历史读取保存版本。成功不可重生成。一次新认领最多一次调用，禁止自动重试/JSON 修复，失败不存成功内容。
 
 与轮次/总结共用 Gate：6/分钟、20/UTC 日、单用户并发 1、单进程全局 2；失败消耗认领额度，重放不消耗每日额度但受分钟限制。60 秒请求、45 秒模型、3 秒短事务、90 秒租约及版本条件写回；过期恢复同现有扫描。GET 不消费模型额度。标准 400/401/403/404/413/429/500 及模型 502/503/504 信封沿用；已确认失败或版本冲突附 `details:{status,attempt_version,query_url}`，query_url 为本策略 GET，无 turn_id；提交不明省略 details。策略接口不改变现有 Turn 错误结构。`AI_MODE=fake` 支持完整策略链路；disabled 和现有真实试运行包装器都受控不可用，后者未暴露策略能力，不能绕过专用费用账本。OpenAI 策略适配器仅用合成 Transport 验证，本轮没有真实调用或新的收费装配。
+
+## 15. GET /api/v1/debates/{id}/annotations 与 POST .../turns/{turn_id}/annotations/retry（V2-04）
+
+原文批注是 V2-04 的独立分析能力：在正式轮次提交成功之后，对本次双方新增原文生成 **0–3 条**带原句锚点的训练反馈。它与轮次、总结、策略各自拥有独立的状态、版本与表，**不改变** `debates.completed_rounds`、`debates.status`、轮次状态机、SSE 事件契约或任何既有响应字段。设计与锚点契约见 [V2-04 设计](../planning/V2_04_ANNOTATION_ANCHOR_DESIGN.md)。
+
+### 15.1 锚点契约
+
+- `message_id`：服务端已知、属于当前会话的正式消息 ID，JSON 为字符串。
+- `start_cp` / `end_cp`：从 0 开始的 **Unicode 码点**半开区间，按原始消息文本计数。
+- `quote`：对应的连续原文，**逐字符精确相等**；禁止 trim、归一化、大小写折叠和标点替换。
+- `resolved`：为 `false` 时表示引用在该消息中出现多次且没有可逐字复核的偏移。唯一的精确引用可在读取时重算坐标，已保存的批注不改写。此时 `start_cp`/`end_cp` 必须为 `null`，前端只显示“原文待核对”，**不得**按坐标高亮。
+
+服务端在落库前按原文重新解析坐标，不采信生成器给出的位置；同一句在原文出现两处（含重叠，例如“哈哈哈”中的“哈哈”）视为歧义。跨消息、未来轮、空引用、全空白、非法 UTF-8 与越界偏移一律拒绝，且不回显引用。
+
+### 15.2 读取
+
+`GET /api/v1/debates/{id}/annotations` 要求 Session 与所有权；不存在与越权统一 `404 not_found`。**无模型调用、不写库。**
+
+- 只返回「已开启本切片时提交的合格轮次」，按 `round_no` 升序；旧会话没有合格轮次，返回 `{"items":[]}`。
+- 批次 `status` 为 `not_started` / `generating` / `completed` / `failed`；未认领时 `attempt_version` 为 `0`。
+- `failed` 才带 `error_code`；`completed` 的 `items` 可以是空数组——没有批注不等于没有问题。
+
+```json
+{"data":{"items":[{"turn_id":"31","round_no":1,"status":"completed","attempt_version":1,"items":[{"category":"strength","label":"论证有效","reason":"该句把主张落在可检验的判断标准上，使后续交锋有明确落点。","improvement":"可以再补一句该标准为何适用于本场辩题。","anchor":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true},"turn_no":1,"role":"user"}]}]},"request_id":"req-annotation-list"}
+```
+
+旧会话：`{"data":{"items":[]},"request_id":"req-annotation-empty"}`。
+
+### 15.3 手动补做
+
+`POST /api/v1/debates/{id}/turns/{turn_id}/annotations/retry` 要求 Session、精确 Origin 与 CSRF，共用现有防刷前置。正文**只有**一个字段：
+
+```json
+{"expected_attempt_version":0}
+```
+
+- `0` 表示未认领的首次补做；正数表示期望的当前版本。
+- 未启动 → 认领并生成，成功 `201`；生成中 → `202` 与当前状态，**不排队**；已成功 → `200` 与已存结果。
+- 版本不符 → `409 attempt_version_conflict`，附 `details:{turn_id,status,attempt_version,query_url}`；`query_url` 是本场批注 GET。
+- 非合格轮（未开启切片时的旧轮、失败轮）→ `409 round_conflict`，不启动生成、不写批次。
+- **手动补做最多一次**：首次分析为 v1，唯一一次补做为 v2；此后失败批次保持失败，只允许查询。
+- 本切片未启用时该入口受控 `400 invalid_request`，不写任何批次行。
+
+### 15.4 生成与边界
+
+- 分析在正式轮次事务**之外**执行，有固定 10 秒期限；不继承浏览器取消，进程退出与重启都**不补跑**。
+- 有**一个非阻塞分析槽**：忙时不排队、不重放，保留资格供手动补做；它**不占用**正式发言与总结的 Gate 配额。
+- 输入只取当前会话触发轮及以前已提交的正式消息。慢批注重试时后轮可能已提交，因此按 `round_no` 过滤，绝不把尚未发生的发言当作依据。
+- 成功结果整体原子保存（包括空数组）；失败只保存受控错误码，不写入供应商原始响应。
+- 租约 90 秒，过期扫描与轮次/总结共用同一恢复循环；过期批次标记为失败后可由下一次限定范围的手动认领恢复。
+
+### 15.5 当前实现范围
+
+当前进程**只有 Fake 生成实现**，且由显式本地配置开启：`V2_ANNOTATION_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`，同时要求生成器实现批注能力。默认关闭时：`Complete` 不设置资格标志、不启动分析、不写批次，读取对旧会话返回空列表。`dev`/`demo`/`deploy` 一律拒绝开启。Fake 结果用于验证行为，**不验证输出质量**；真实供应商接入（模型、费用、总并发、前台优先与限额）属于另一项独立授权任务，现有 Demo 的真实模型额度不扩充。
+
+前端读取与展示：场中标记渲染在**正式消息流原文**上，侧栏（桌面右栏 / 移动底部面板）只放解释；“显示批注”开关同时控制正文标记和批注面板。关闭后仍生成并保存。坐标回读使用 `Array.from` 按码点切分，并用浏览器原生 `Intl.Segmenter` 排除切中字素簇的位置；缺少该 API 时只有整条原文这类安全端点可标，内部区间降级为待核对，避免切开 ZWJ 序列。
+
+## 16. GET /api/v1/debates/{id}/review 与 POST /api/v1/debates/{id}/review（V2-13 + V2-10 + V2-11）
+
+赛后复盘是 **V2 的独立生成能力**，与轮次、总结、策略、批注各自拥有独立的状态、版本与表。它不改变 `debates.status`、`debates.completed_rounds`、轮次状态机、SSE 事件契约、总结 `schema_version=1/2` 的既有语义或任何既有响应字段。
+
+- **与旧四维彻底分离**：`phase3-summary-v2`（`schema_version=2`，`argumentation/rebuttal/logic/presentation` 各 0–100）属 V1 基线的 P1 目标，本接口**不读取、不输出、不换算**这套字段；本契约的四维是 `argument_structure / responsiveness / evidence_use / concept_scope`，取值 1–4 或 `null`（观察不足），Schema 版本独立为 `review` 的 `schema_version=1`。
+- **比赛完成与复盘状态独立**：复盘失败只写受控错误码，不改会话完成状态，不要求重新辩论。
+
+### 16.1 读取
+
+`GET /api/v1/debates/{id}/review` 只要求 Session 与所有权；不存在与越权统一 `404 not_found`。**无模型调用、不写库。**
+
+- 状态：`not_started`（未开始，仅投影）、`generating`、`completed`、`failed`。
+- `attempt_version`：未开始时为 `null`，其余为 ≥1 的整数。
+- `available`：**可选**，仅当服务端未开启复盘切片时显式返回 `false`，且此时 `status` 恒为 `not_started`。客户端收到 `false` 必须隐藏复盘界面并禁止发起生成；省略该字段等价于“可用”，旧响应与旧 Mock 的 `not_started` 形状不变。功能启用时不输出该字段。
+- `failed` 才带 `error_code`（`model_error`/`model_timeout`/`model_unavailable`/`dependency_unavailable`/`generation_cancelled`/`content_invalid`）。
+- `completed` 才带 `schema_version`、`prompt_version` 与 `content`；已保存内容不可解析时读取投影为 `failed` + `content_invalid`，不在读取期改写数据库。
+
+功能关闭时的读取形状（仍做会话归属校验，不存在与越权为 `404`，且**不读取 `debate_reviews`**）：
+
+```json
+{"data":{"status":"not_started","attempt_version":null,"available":false},"request_id":"req-review-get"}
+```
+
+```json
+{"data":{"status":"completed","attempt_version":1,"schema_version":1,"prompt_version":"review-v1","content":{"dimensions":[{"key":"argument_structure","label":"论证结构","level":3,"level_label":"较稳","basis":"主要论证有理由支撑。","improvement":"补一句关键前提。","insufficient_reason":null,"quote":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true}},{"key":"responsiveness","label":"回应针对性","level":null,"level_label":null,"basis":"本场可观察机会有限。","improvement":"","insufficient_reason":"本场只有一轮完整交锋。","quote":null}],"key_issues":[{"text":"主要争点在于评价标准是否可检验。","quote":{"message_id":"21","quote":"标准应当可检验","start_cp":0,"end_cp":7,"resolved":true}}],"strengths":[{"text":"把主张落在可检验标准上。","quote":null}],"improvements":[{"text":"先回应标准质疑再收束主线。","quote":null}]}},"request_id":"req-review-get"}
+```
+
+维度契约：
+
+| 字段 | 约束 |
+| --- | --- |
+| `dimensions` | 恰好 4 项，顺序固定为 `argument_structure`、`responsiveness`、`evidence_use`、`concept_scope`；`label` 由服务端按固定映射派生，不采信模型文本 |
+| `level` | `1`/`2`/`3`/`4` 或 `null`（观察不足）；**0、5、字符串、浮点都非法**；`null` 不是 0 分、也不降到 1 档 |
+| `level_label` | 有档级时必须是 `起步`/`发展中`/`较稳`/`充分`；观察不足时必须为 `null` |
+| `insufficient_reason` | 观察不足必填（说明为什么观察不足）；有档级时必须为 `null` |
+| `quote` | 有档级必须有引用且可核对；观察不足必须为 `null` |
+| `basis` | 每维必须非空 |
+| `improvement` | 有档级必须非空；观察不足允许为空 |
+
+`quote.resolved`：`true` 表示在**唯一一条**本场正式消息中逐字定位成功，`start_cp`/`end_cp` 为 Unicode 码点半开区间；`false` 表示引用确实存在但跨消息歧义，此时坐标必须为 `null`，前端只显示“原文待核对”，**不按坐标高亮**。服务端只采信本场权威原文：外场引用、模型改写、无法逐字核对的引用**不得赋档**，该维降级为“观察不足”并写明原因（AC-V2-22“无依据不赋档”）。
+
+### 16.2 显式生成与重试
+
+`POST /api/v1/debates/{id}/review` 要求 Session、精确 Origin 与 CSRF，共用现有防刷前置。正文只有两种合法形状：
+
+```json
+{"retry":false}
+```
+```json
+{"retry":true,"expected_attempt_version":1}
+```
+
+- `{}` 等价于 `{"retry":false}`（与策略入口一致）；`retry` 与 `expected_attempt_version` 必须**同时出现或同时缺失**。
+- 未开始 → 首次生成，成功 `201`；生成中 → `202` 与当前状态；已成功 → **幂等 `200`** 与已保存内容，不重新生成、不覆盖结果（与总结/策略/批注的“成功批次重放”一致）。
+- 失败且带正确当前版本 → 重新生成，成功 `200`，尝试版本 +1；版本不符 → `409 attempt_version_conflict` + `details:{status,attempt_version,query_url}`；失败但未带重试形状 → `200` 与当前失败状态（只查询，不自动重试）。
+- 未完成结辩 → `409 round_conflict`，不生成完整复盘、不写复盘行（AC-V2-26）。
+- 本切片未启用时写入口受控 `400 invalid_request`，不写任何复盘行、不调用模型。
+- **没有任何自动触发**：不自动生成、不自动无限重试、不后台补跑；只有用户显式点击。
+
+### 16.3 失败、重试与持久化边界
+
+- 首版采用**整份复盘原子写入**：`completed` 时一次性保存 `content_json`；失败只保存受控错误码与 NULL 内容，不存半成品。因此失败重试是**重生成整份复盘**，不是“补失败段落”。若将来改为分段保存，必须显式记录已落库段落并只补失败部分，不得伪造局部恢复。
+- 复盘表 `debate_reviews` 与 `debate_summaries`、`turn_annotations`、`debate_turns` 分开：复盘失败/重试**从不写入或清空**已成功的总结、批注与人工编辑内容。
+- 租约 90 秒；过期 `generating` 复盘在**功能启用时**才扫描并标记为失败（`model_timeout`），使刷新后能恢复出可重试的独立失败状态。功能关闭时不访问新表，旧部署与旧原文/旧总结读取不受影响。
+- 与轮次/总结共用 Gate（分钟/日额度、单用户并发 1、单进程全局 2）；单次调用有 45 秒模型期限、60 秒请求预算、3 秒短事务。
+
+### 16.4 当前实现范围（待整合）
+
+- 只有 Fake 生成实现，并由显式本地配置开启：`V2_REVIEW_FAKE=1` + `AI_MODE=fake` + `APP_ENV=test`，且生成器实现复盘能力。`dev`/`demo`/`deploy` 一律拒绝开启。Fake 用于验证结构与恢复，**不验证输出质量**。
+- 关闭时写入口仍为受控 `400 invalid_request`；读入口返回 `not_started` + `available:false`，前端据此隐藏复盘界面且不暴露生成入口。
+- 迁移 `00016_create_debate_reviews.sql` 为**新增正向 SQL 文件**，本工作树**未执行**；并行迁移编号需在整合时重新核对（README 记录下一候选号）。
+- 前端：完赛后展示复盘面板；失败独立展示并可手动重试；四维卡片始终可读；雷达只用 1–4 档，观察不足轴留空。原文定位通过工作台消息 `data-message-id` 定位，图例按钮键盘可达。局部重练、争点卡与 PDF 入口按“待整合”并列显示，不接死链、不伪造能力。收到 `available:false` 时整个复盘区隐藏。
+
+## Neon 第二批
+
+- `POST /api/v1/debates` 接收可选 `difficulty`（`beginner`、`varsity`、`national`）和 `practice`。省略难度时为入门。主动传 `practice: true` 开本地练习局，返回及详情带上已保存的难度和练习标记。真实回复失败按现有状态恢复流程重试。改用本地练习时新开一局，旧局保持原来源。
+- `GET /api/v1/debates/{id}/arena` 读取本人对局的 `rounds`、`hints` 与 `practice`。每个已提交的双边轮次最多一条记录，包含双方消息 ID、要点、正方气势百分比和来源。样板气势为本地计算。该轮已有真实分析，且两方引用均能定位到各自原句时，图谱可使用模型选出的段落并标 `graph_source: ai`。其他图谱展示本地摘要。
+- `POST /api/v1/debates/{id}/arena` 以 `action` 选择 `hints`、`teammate` 或 `framework`。返回 `round_no`、`text` 和 `source`，均为当前轮提示或可编辑草稿。正式发言继续走 `/turns` 的认领与提交。已结束或有回复在途的状态按业务规则拒绝生成草稿；已有请求频率、调用额度和 Origin/CSRF 校验继续生效。
+- `GET /api/v1/settings/model` 读取本人的 `enabled`、`configured`、`verified`、`used` 及当前配置的别名和有效期。`POST` 同路径保存服务商、`model`、`alias`、`api_key` 和自定义服务的 `base_url`。服务商为 `deepseek`、`openai`、`doubao`、`custom`。`POST .../test` 只在用户点击时发起校验。`POST .../remove` 停用并移除该账号的配置。响应及日志中无明文密钥。
+- 个人模型需显式设 `AI_MODE=byok`，通过 `BYOK_MASTER_KEY_FILE` 读取服务端加密用秘密文件。自定义服务走已允许的公开 HTTPS 域名，服务端用 `BYOK_CUSTOM_HOSTS` 设置允许名单，拒绝内网目标和重定向。Key 经加密后入库，别名供 UI 展示。
+
+## Neon 第三批
+
+- `GET /api/v1/cup` 返回当前账号的 `elo`、`unlocked_stage`、`recommended_stage` 和四阶 `stages`。已有正式记录时返回 `rank`。积分相同按胜率排序。创建对局可传 `cup_stage` 为 `prelim`、`quarter`、`semi` 或 `final`。档位和推荐对手由服务端赛段决定，选择未解锁赛段时标记为练习。省略赛段可继续普通四轮训练。
+- `GET /api/v1/judges` 返回官方裁判、自己的裁判和公开裁判。`POST` 用 `name`、`role` 新建私密裁判。`GET /api/v1/judges/{id}` 对未公开且非本人的风格返回 404。`POST .../{id}/visibility` 由本人提交 `public` 显式公开或撤回。裁决开始时校验可见性，已保存的旧结果保留裁判名称和意见。
+- `GET /api/v1/judges/models` 返回本人的已保存别名与演示选项。`POST` 可使用同个人模型设置的保存参数独立添加席位模型。`POST .../models/{id}/remove` 移除自己的附加配置。保存后即可选择，发送密钥只在保存时发生。公开风格不会共享创建者的模型配置。
+- `GET /api/v1/debates/{id}/verdict` 读取已保存的报告。`POST` 同路径用 `seats` 提交 1～3 个不同裁判，每席指定 `judge_id` 和 `model_id`。响应给出裁决状态、各席来源和结果，以及可用的五维聚合。失败席可通过 `POST .../seats/{seat}/retry` 单独重试。模拟票与真实票隔离，已结算场次的胜负和积分固定，后续席位意见单独保存。
+- 正式积分只对符合条件的已完赛场次写一条流水，和正式裁决在同一事务提交。平局记 0，练习和演示裁决不计分。只有当前最高解锁赛段获胜才晋级。修订重评的原句、改写和前后参考分属于自己的重评版本。
+
+## Neon 第四批
+
+| 接口（前缀 `/api/v1`） | 说明 |
+| --- | --- |
+| `GET /neon-catalog/topics`、`GET /neon-catalog/opponents` | 登录后读取官方条目、本人条目和他人已公开条目。热度按完成至少一轮的不同账号计数。辩题以 `category` 区分科技伦理、校园生活、社会经济、哲学思辨。 |
+| `POST /neon-catalog/{topics 或 opponents}`、`POST /neon-catalog/{topics 或 opponents}/{id}` | 首次保存为私密，后者仅允许本人编辑。辩题接收 `title`、`background`、`category`，辩手接收 `name`、`tag`、`difficulty`、`persona`。 |
+| `POST /neon-catalog/{topics 或 opponents}/{id}/visibility` | 所有者提交 `{"public":true}` 确认公开，提交 `false` 撤回。既有对局保留其开赛快照。 |
+| `POST /debates` | 选题为 `topic_id`、`custom_topic`、`neon_topic_id` 三选一，可另传 `neon_opponent_id`。他人的私密或撤回条目无法用于新对局。 |
+| `GET/POST /debates/{id}/sharing`、`GET /debates/{id}/sharing/markdown` | 仅完赛对局所有者可读写分享状态或导出。写入接受 `action` 为 `prompt`（记录询问）、`publish` 或 `withdraw`。重复公开保持同一个链接，撤回后再公开会签发新链接。 |
+| `GET /public/reports`、`GET /public/reports/{share_id}`、`GET /public/reports/{share_id}/markdown` | 公开复盘列表至少提供 `topic_id` 或 `owner_id`，用 `page`、`page_size` 翻页。自定义辩题的查询键形如 `custom-{id}`。详情与 UTF-8 导出使用分享 UUID，撤回后返回 404。 |
+| `GET /dojo`、`POST /dojo/answer` | 读内置题与本人的答题记录。答题传 `question_id` 和 0–3 的 `choice`，返回正确项、解析、本次 ELO 变动和是否已领奖。 |
+| `POST /dojo/history-quiz`、`POST /dojo/techniques` | 请求生成历史排雷题或个性化技法，素材取自本人对局和可定位批注。素材不足可继续使用内置题与基础技法。 |
+| `GET/POST /profile` | 读取个人档案或保存昵称和头像。保存字段为 `nickname`、`avatar_kind`（`seal` / `image`）、`avatar_seal`、`avatar_image`。图片由前端压缩为 128×128 JPEG，后端重编码后保存。个人档案包含正式战绩、ELO 变化与高频漏洞。 |
+| `GET /leaderboard`、`GET /public/profiles/{user_id}` | 榜单登录可读，每页 10 人，按 ELO、胜率和稳定 ID 排序。公开个人资料只包含昵称、头像、段位、ELO、胜率和最高杯赛阶段，公开复盘用同一 ID 查询。 |
+| `GET /debates` | 保留本人历史分页，列表行增加 `review_status`，取值为 `pending`、`completed` 或 `failed`。示例和他人的公开复盘没有本人的对局行。 |
+
+写入沿用同源、Session 与 CSRF 校验。公开查询及导出均禁用缓存，导出只读已保存内容。道场每题首次答对才增加 5 ELO，且与积分变更一并提交。
 
 ## T01 文档任务的历史验证记录
 

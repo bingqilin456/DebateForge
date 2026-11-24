@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/bingqilin456/DebateForge/backend/internal/ai"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -14,17 +15,70 @@ type Service struct {
 	store         Store
 	generator     ai.Generator
 	gate          *Gate
+	logger        *slog.Logger
 	leaseInterval time.Duration
 	stopMu        sync.Mutex
 	stopLease     chan struct{}
 	startupDone   chan struct{}
+	// 批注是独立能力：自己的开关、单个非阻塞分析槽与后台任务等待组。
+	// 它与 Gate（正式发言/总结配额）完全分离，批注失败或繁忙绝不影响状态推进。
+	annotationMu      sync.Mutex
+	annotationEnabled bool
+	annotationSlot    sync.Mutex
+	annotationBusy    bool
+	background        sync.WaitGroup
+	// 复盘同样是独立能力：自己的开关，与批注、Gate 和后台任务完全分离。
+	// 它只在用户显式请求时生成，没有自动触发或后台补跑。
+	reviewMu           sync.Mutex
+	reviewEnabled      bool
+	trainingIssues     *IssueCardService
+	trainingRepractice *Repractice
 }
 
-func NewService(store Store, generator ai.Generator, gate *Gate) *Service {
+// ServiceOption 是服务构造选项，用于在不改动既有调用点的前提下装配可选依赖。
+type ServiceOption func(*Service)
+
+// WithLogger 注入服务启动配置的结构化日志器；nil 视为未配置，保持静默。
+func WithLogger(logger *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		if logger != nil {
+			s.logger = logger
+		}
+	}
+}
+
+func NewService(store Store, generator ai.Generator, gate *Gate, opts ...ServiceOption) *Service {
 	if gate == nil {
 		gate = NewGate(nil)
 	}
-	return &Service{store: store, generator: generator, gate: gate, leaseInterval: LeaseScanInterval}
+	service := &Service{store: store, generator: generator, gate: gate, leaseInterval: LeaseScanInterval}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(service)
+		}
+	}
+	return service
+}
+
+// logAnnotation 只记录固定原因码、固定计数与服务端自有标识，不写入原文、模型输出、
+// 模型给出的编号或理由、供应商字段或用户可控内容；未装配 logger 时静默。
+func (s *Service) logAnnotation(ctx context.Context, reason, code string, turnID uint64, latency time.Duration, fields annotationLogFields) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "模型批注调用",
+		slog.String("reason_code", reason),
+		slog.String("error_code", code),
+		slog.String("prompt_version", fields.promptVersion),
+		slog.Uint64("turn_id", turnID),
+		slog.Int("candidates", fields.candidates),
+		slog.Int("accepted", fields.accepted),
+		slog.Int("unknown_fragment", fields.unknownFragment),
+		slog.Int("invalid_fields", fields.invalidFields),
+		slog.Int("duplicate", fields.duplicate),
+		slog.Int("unselectable_fragments", fields.unselectableFragments),
+		slog.Int64("latency_ms", latency.Milliseconds()),
+	)
 }
 
 func (s *Service) SetLeaseScanInterval(d time.Duration) {
@@ -37,7 +91,17 @@ func (s *Service) RecoverExpiredLeases(ctx context.Context) (int, error) {
 	if s == nil || s.store == nil {
 		return 0, nil
 	}
-	return s.store.RecoverExpiredLeases(ctx)
+	n, err := s.store.RecoverExpiredLeases(ctx)
+	if err != nil {
+		return n, err
+	}
+	// 复盘表可能尚未部署，复盘功能也默认关闭：只有功能启用时才扫描这张新表，
+	// 避免旧部署因缺表而在启动或定期回收中失败，也不影响旧原文与总结的读取。
+	if !s.reviewsEnabled() {
+		return n, nil
+	}
+	recovered, reviewErr := s.store.RecoverExpiredReviewLeases(ctx)
+	return n + recovered, reviewErr
 }
 
 // StartLeaseRecovery 在服务启动时立即执行一次过期租约扫描，并按固定间隔（默认 30 秒）循环回收。
@@ -108,14 +172,20 @@ func (s *Service) waitStartupScan(ctx context.Context) error {
 	}
 }
 
-func (s *Service) Create(ctx context.Context, uid, tid uint64, stance, style string) (Debate, error) {
-	if uid == 0 || tid == 0 || (stance != "pro" && stance != "con") || !ai.AIStyle(style).Valid() {
+// Create 是创建会话的规则入口：严格二选一、立场与流派在调用仓储前校验；
+// 归属取自认证会话的 uid，赛制恒为服务端固定值，均不从请求接收。
+func (s *Service) Create(ctx context.Context, uid uint64, in CreateInput) (Debate, error) {
+	if uid == 0 {
 		return Debate{}, ErrInvalidRequest
+	}
+	in, err := ValidateCreateInput(in)
+	if err != nil {
+		return Debate{}, err
 	}
 	if err := s.waitStartupScan(ctx); err != nil {
 		return Debate{}, dependency(err, false)
 	}
-	return s.store.Create(ctx, uid, tid, stance, style)
+	return s.store.Create(ctx, uid, in)
 }
 func (s *Service) List(ctx context.Context, uid uint64, page, pageSize int) (DebateList, error) {
 	if uid == 0 || page < 1 || page > MaxPage || pageSize < 1 || pageSize > MaxPageSize {
@@ -192,19 +262,9 @@ func (s *Service) submitTurn(ctx context.Context, uid, id uint64, in SubmitInput
 	if err := s.waitStartupScan(ctx); err != nil {
 		return TurnData{}, 0, dependency(err, false)
 	}
-	var permit *Permit
-	consumed := false
-	// 覆盖认领失败、生成失败、取消、panic 和正常完成；不在锁内排队。
-	defer func() { permit.Finish(consumed) }()
-	d, fresh, err := s.store.Claim(ctx, uid, id, in, func() error { var e error; permit, e = s.gate.Acquire(uid); return e })
-	if err != nil {
-		var f *Failure
-		if errors.As(err, &f) && f.CommitUnknown {
-			consumed = true
-		}
-		return TurnData{}, 0, err
-	}
-	if !fresh {
+	return runClaimedTurn(s.gate, uid, func(admit func() error) (Detail, bool, error) {
+		return s.store.Claim(ctx, uid, id, in, admit)
+	}, func(d Detail) (TurnData, int, error) {
 		if len(d.Turns) != 1 {
 			return TurnData{}, 0, dependency(nil, false)
 		}
@@ -218,19 +278,43 @@ func (s *Service) submitTurn(ctx context.Context, uid, id uint64, in SubmitInput
 			return TurnData{}, 0, &Failure{Code: "turn_failed", Status: 409, Cause: ErrTurnFailed, Details: failedDetails(d.Debate, turn)}
 		}
 		return TurnData{}, 0, dependency(nil, false)
-	}
-	consumed = true
-	if stream != nil {
-		if len(d.Turns) == 0 {
-			return TurnData{}, 0, dependency(nil, false)
+	}, func(d Detail) (TurnData, int, error) {
+		if stream != nil {
+			if len(d.Turns) == 0 {
+				return TurnData{}, 0, dependency(nil, false)
+			}
+			turn := d.Turns[len(d.Turns)-1]
+			if err := stream.start(formatID(turn.ID)); err != nil {
+				return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, "generation_cancelled", 503, ai.Usage{}, ai.Metadata{}, err)
+			}
+			return s.runTurnGeneration(ctx, uid, d, 201, stream.delta)
 		}
-		turn := d.Turns[len(d.Turns)-1]
-		if err := stream.start(formatID(turn.ID)); err != nil {
-			return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, "generation_cancelled", 503, ai.Usage{}, ai.Metadata{}, err)
-		}
-		return s.runTurnGeneration(ctx, uid, d, 201, stream.delta)
+		return s.runTurnGeneration(ctx, uid, d, 201, nil)
+	})
+}
+
+// runClaimedTurn 是普通和流式发言共用的认领入口。各赛制在事务内定位自己的一步，
+// 这里统一处理认领、幂等重放、并发槽归还与提交结果未知时的额度。
+func runClaimedTurn[D, R any](gate *Gate, uid uint64, claim func(func() error) (D, bool, error), replay, complete func(D) (R, int, error)) (R, int, error) {
+	var permit *Permit
+	consumed := false
+	defer func() { permit.Finish(consumed) }()
+	data, fresh, err := claim(func() error {
+		var err error
+		permit, err = gate.Acquire(uid)
+		return err
+	})
+	if err != nil {
+		var failure *Failure
+		consumed = errors.As(err, &failure) && failure.CommitUnknown
+		var zero R
+		return zero, 0, err
 	}
-	return s.runTurnGeneration(ctx, uid, d, 201, nil)
+	consumed = fresh
+	if !fresh {
+		return replay(data)
+	}
+	return complete(data)
 }
 
 // retry 仅在 status=failed 且 expected_attempt_version 匹配时认领并复用已存原文重新生成。
@@ -341,12 +425,18 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 		})
 	}
 	result, genErr := s.generateSummary(ctx, ai.SummaryRequest{
+		ForceFake:  d.Debate.Practice || hasFakeArenaReply(d.Turns),
 		UserID:     uid,
 		Mode:       mode,
 		Topic:      ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
 		UserStance: ai.Stance(d.Debate.UserStance),
 		Turns:      completedTurns,
+		Custom:     d.Debate.Custom(),
 	})
+	if s.demoAnnotationsEnabled() {
+		// 等总结释放同一账号的调用槽。批注独立取证，能否调用仍由费用账本判定。
+		defer s.thenAnnotate(uid, d.Debate, d.Turns[rounds-1])
+	}
 	if genErr == nil {
 		var parsed ai.Summary
 		if result.ContentJSON != "" {
@@ -420,15 +510,25 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 			AssistantContent: pt.Messages[1].Content,
 		})
 	}
+	var opponentPersona string
+	if d.Debate.OpponentPersonaSnapshot != nil {
+		opponentPersona = *d.Debate.OpponentPersonaSnapshot
+	}
 	result, genErr := s.generateTurn(ctx, ai.Request{
-		UserID:         uid,
-		Mode:           ai.Mode(d.Debate.Mode),
-		AIStyle:        ai.AIStyle(d.Debate.AIStyle),
-		Topic:          ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
-		UserStance:     ai.Stance(d.Debate.UserStance),
-		RoundNo:        turn.RoundNo,
-		CompletedTurns: completedTurns,
-		UserContent:    turn.Messages[0].Content,
+		OpponentPersona: opponentPersona,
+		RequireReal:     hasRealArenaReply(d.Turns[:len(d.Turns)-1]),
+		ForceFake:       d.Debate.Practice || hasFakeArenaReply(d.Turns[:len(d.Turns)-1]),
+		UserID:          uid,
+		Mode:            ai.Mode(d.Debate.Mode),
+		AIStyle:         ai.AIStyle(d.Debate.AIStyle),
+		Difficulty:      d.Debate.Difficulty,
+		Topic:           ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
+		UserStance:      ai.Stance(d.Debate.UserStance),
+		RoundNo:         turn.RoundNo,
+		CompletedTurns:  completedTurns,
+		UserContent:     turn.Messages[0].Content,
+		// topic_id 为空即自定义语义：题目原文只作为 user 数据段外发。
+		Custom: d.Debate.Custom(),
 	}, emit)
 	if genErr == nil {
 		genErr = ai.ValidateReply(result.Content)
@@ -446,7 +546,7 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 		code, status, usage, meta := classifyFailure(ctx, genErr)
 		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, usage, meta, genErr)
 	}
-	completed, e := s.store.Complete(ctx, uid, d.Debate, turn, result)
+	completed, e := s.store.Complete(ctx, uid, d.Debate, turn, result, s.annotationsEnabled())
 	if e != nil {
 		var failure *Failure
 		if errors.As(e, &failure) && failure.CommitUnknown {
@@ -458,6 +558,10 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 			code, status, _, _ = classifyFailure(ctx, generationContextError(nil, result, ctx.Err()))
 		}
 		return TurnData{}, 0, s.saveFailure(ctx, uid, d.Debate, turn, code, status, result.Usage, result.Metadata, e)
+	}
+	// 批注只在最终事务提交成功之后安排一次；不阻塞响应，也不改变返回结果。
+	if !s.demoAnnotationsEnabled() || completed.Debate.Status != "completed" {
+		s.thenAnnotate(uid, completed.Debate, completed.Turns[0])
 	}
 	return turnData(completed, completed.Turns[0]), successStatus, nil
 }
@@ -480,13 +584,32 @@ func (s *Service) generateTurn(ctx context.Context, req ai.Request, emit func(st
 	if emit == nil {
 		result, err = s.generator.Generate(callCtx, req)
 	} else if generator, ok := s.generator.(ai.StreamGenerator); ok {
-		result, err = generator.Stream(callCtx, req, emit)
+		pending := ""
+		started := false
+		result, err = generator.Stream(callCtx, req, func(chunk string) error {
+			if started {
+				return emit(chunk)
+			}
+			pending += chunk
+			text, ready := cleanReplyPrefix(pending, false)
+			if !ready {
+				return nil
+			}
+			started = true
+			return emit(text)
+		})
+		if err == nil && !started {
+			if text, _ := cleanReplyPrefix(pending, true); text != "" {
+				err = emit(text)
+			}
+		}
 	} else {
 		err = &ai.Error{Code: ai.CodeModelUnavailable}
 	}
 	if callCtx.Err() != nil {
 		err = generationContextError(err, result, callCtx.Err())
 	}
+	result.Content, _ = cleanReplyPrefix(result.Content, true)
 	return
 }
 

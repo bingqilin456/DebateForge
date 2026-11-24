@@ -128,7 +128,7 @@ test('B3 Nginx 真链路：注册、反方数据流派、策略、四轮、总�
   for (let round = 1; round <= created.total_rounds; round++) {
     await page.locator('#first-content').fill(speech(round))
     const response = page.waitForResponse(postTo(`/api/v1/debates/${created.id}/turns/stream`))
-    await page.getByRole('button', { name: round === 1 ? '发送首轮' : `发送第 ${round} 轮`, exact: true }).evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
+    await page.locator('form[data-first-turn] button[type="submit"]').evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
     headers.push(await nginxStream(await response))
     await expect(page.locator('[data-stream-preview]')).toBeVisible()
     await expect(page.locator('[data-stream-text]')).not.toHaveText('正在等待首个回复片段…')
@@ -193,7 +193,7 @@ test('B3 Nginx 刷新中断：原键查询、持久失败、显式版本重试�
   // 策略可跳过；只发送一次首轮，页面刷新不能自动补发。
   await page.locator('#first-content').fill(speech(1).repeat(3))
   const response = page.waitForResponse(postTo(`/api/v1/debates/${created.id}/turns/stream`))
-  await page.getByRole('button', { name: '发送首轮', exact: true }).click()
+  await page.locator('form[data-first-turn] button[type="submit"]').click()
   const streaming = await response
   const header = await nginxStream(streaming)
   const original = streaming.request().postDataJSON() as { client_request_id: string }

@@ -108,6 +108,40 @@ describe('统一业务 client', () => {
     })
   })
 
+  // 429 三类原因各自有独立文案：分钟防刷可稍后重试，并发占用要等当前生成，
+  // 日额度用尽只保留受控提示。日额度由服务端按 UTC 日重置，“明天再试”在中国
+  // 时区 07:59 可能一分钟后即可用；Retry-After 只是额度窗口重开的秒数，
+  // 所以该码不拼接“N 秒后重试”，但仍把秒数保留在 metadata（不自动重试）。
+  it.each([
+    ['rate_limited', '请求过于频繁，请稍后手动重试。'],
+    ['generation_busy', '生成服务繁忙，请稍后手动重试。'],
+    ['daily_quota_exhausted', '今日生成次数已用完，可查看历史。'],
+  ])('429 无 Retry-After 时展示完整受控文案：%s', async (code, expected) => {
+    fetchMock.mockResolvedValue(failure(429, code))
+    await expect(createApiClient().request('/api/v1/example', ok)).rejects.toMatchObject({
+      kind: 'http', status: 429, code, retryAfterSeconds: undefined, message: expected,
+    })
+  })
+
+  it.each([
+    ['rate_limited', '请求过于频繁，请稍后手动重试。请在 12 秒后重试。', 12],
+    ['generation_busy', '生成服务繁忙，请稍后手动重试。请在 12 秒后重试。', 12],
+    ['daily_quota_exhausted', '今日生成次数已用完，可查看历史。', 12],
+  ])('429 带有效 Retry-After 时文案按业务码区分、秒数入 metadata：%s', async (code, expected, retryAfterSeconds) => {
+    fetchMock.mockResolvedValue(failure(429, code, { 'Retry-After': '12' }))
+    await expect(createApiClient().request('/api/v1/example', ok)).rejects.toMatchObject({
+      kind: 'http', status: 429, code, retryAfterSeconds, message: expected,
+    })
+  })
+
+  it('日额度用尽的 Retry-After 不合约时只忽略秒数，不改受控文案', async () => {
+    fetchMock.mockResolvedValue(failure(429, 'daily_quota_exhausted', { 'Retry-After': 'tomorrow' }))
+    await expect(createApiClient().request('/api/v1/example', ok)).rejects.toMatchObject({
+      kind: 'http', status: 429, code: 'daily_quota_exhausted', retryAfterSeconds: undefined,
+      message: '今日生成次数已用完，可查看历史。',
+    })
+  })
+
   it.each([
     [401, 'unauthenticated', true, 1],
     [401, 'invalid_credentials', false, 0],

@@ -269,7 +269,7 @@ func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
 			return
 		}
 		for _, uid := range f.userIDs {
-			for _, q := range []string{"DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_summaries s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_strategies s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
+			for _, q := range []string{"DELETE a FROM training_annotations a JOIN debates d ON a.debate_id=d.id WHERE d.user_id=?", "DELETE a FROM turn_annotations a JOIN debates d ON a.debate_id=d.id WHERE d.user_id=?", "DELETE r FROM debate_reviews r JOIN debates d ON r.debate_id=d.id WHERE d.user_id=?", "DELETE m FROM messages m JOIN debate_turns t ON m.turn_id=t.id JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE t FROM debate_turns t JOIN debates d ON t.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_summaries s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_strategies s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_step_claims s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE s FROM debate_steps s JOIN debates d ON s.debate_id=d.id WHERE d.user_id=?", "DELETE FROM debates WHERE user_id=?", "DELETE FROM auth_sessions WHERE user_id=?"} {
 				if e := db.ORM.WithContext(ctx).Exec(q, uid).Error; e != nil {
 					t.Error("T05 fixture cleanup failed")
 				}
@@ -291,18 +291,29 @@ func newDebateFixture(t *testing.T, g ai.Generator) *debateFixture {
 func (f *debateFixture) mount(t *testing.T, g ai.Generator) {
 	f.mountDB(t, g, f.db.ORM)
 }
-func (f *debateFixture) mountDB(t *testing.T, g ai.Generator, orm *gorm.DB) {
+func (f *debateFixture) mountDB(t *testing.T, g ai.Generator, orm *gorm.DB, configure ...func(*debate.Service, *debate.Repository)) {
 	t.Helper()
 	if f.service != nil {
 		f.service.StopLeaseRecovery()
 	}
 	f.server.Close()
-	f.service = debate.NewService(debate.NewRepository(orm), g, f.gate)
+	repo := debate.NewRepository(orm)
+	f.service = debate.NewService(repo, g, f.gate)
+	for _, setup := range configure {
+		setup(f.service, repo)
+	}
 	router := platform.NewBusinessRouter(slog.New(slog.NewJSONHandler(io.Discard, nil)), f.db, f.handler, topic.NewHandler(topic.NewService(topic.NewRepository(f.db.ORM))), debate.NewHandler(f.service))
 	f.server = httptest.NewUnstartedServer(router)
 	f.server.Config.WriteTimeout = platform.HTTPWriteTimeout
 	f.server.Start()
 }
+
+// topicIDEquals 比较会话快照中的题目 ID 与预设题 ID：
+// 快照 ID 对预设题为字符串，对私有自定义题为 null。
+func topicIDEquals(snapshot *string, want string) bool {
+	return snapshot != nil && *snapshot == want
+}
+
 func (f *debateFixture) request(t *testing.T, method, path string, body any) apiResult {
 	t.Helper()
 	s := ""

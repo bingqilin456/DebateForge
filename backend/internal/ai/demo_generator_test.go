@@ -12,6 +12,42 @@ import (
 	"time"
 )
 
+func TestDemoAnnotationsShareReservationAndDenyUnapprovedCalls(t *testing.T) {
+	l, _ := demoFixture(t, 1, func(a *DemoApproval) {
+		a.Annotations = true
+		a.Users = []uint64{1}
+		a.End = a.Start.Add(30 * time.Minute)
+	})
+	calls := 0
+	transport := trialStub(func(r *http.Request) (*http.Response, error) {
+		calls++
+		body := chatCompletionJSON(`{"items":[]}`, "stop", `{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}`)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	cfg := testConfig(nil)
+	cfg.MaxOutputTokens = 1024
+	cfg.Window.MaxOutputTokens = 1024
+	g, err := newDemoGenerator(context.Background(), cfg, l, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := annotationReq()
+	if _, err := g.GenerateAnnotations(context.Background(), req); err == nil {
+		t.Fatal("未批准的账号不得调用")
+	}
+	if _, err := g.GenerateStrategy(context.Background(), StrategyRequest{UserID: 1}); err == nil {
+		t.Fatal("本窗口不允许策略")
+	}
+	req.UserID = 1
+	got, err := g.GenerateAnnotations(context.Background(), req)
+	if err != nil || got.ContentJSON != `{"items":[]}` {
+		t.Fatalf("应走受控批注: %v", err)
+	}
+	if _, err := g.GenerateAnnotations(context.Background(), req); err == nil || calls != 1 || len(l.reservations) != 1 {
+		t.Fatalf("账本应阻止第二次出网，调用数 %d，错误 %v", calls, err)
+	}
+}
+
 func TestDemoAllCapabilitiesShareProtectedAdapter(t *testing.T) {
 	l, _ := demoFixture(t, 6)
 	calls := 0

@@ -378,6 +378,7 @@ paths:
       description: 从 Session 取 user_id；事务检查辩题并保存标题/描述快照，AI 立场与用户相反。不调用模型；每次成功创建独立会话，传输失败时不自动重发。
         T14-STYLE 已实现可选 ai_style，省略默认 logical，显式 null、空串、非字符串或未知/大小写不符的枚举为 400 invalid_request 且不创建；校验后与会话一起保存并在响应、详情和历史返回，创建后不可修改。
         mode 仍由服务端固定 standard_4，客户端传入不生效；流派不改变轮次、立场、状态机或配额。策略生成与创建分离，不隐式调用模型。
+        V2-03 新增私有自定义辩题。topic_id 与 custom_topic 按是否出现严格二选一，显式 null 也视为出现。自定义分支拒绝顶层及 custom_topic 对象中的未知与重复字段。自定义原文随会话快照保存，仅登录用户本人可通过会话读取。标题 1–200、背景 0–1000 个 Unicode 码点，拒绝纯空白标题，保留原文。
       tags:
       - 辩论
       x-implementation-status: implemented
@@ -443,6 +444,12 @@ paths:
               user_stance: pro
               ai_style: aggressive
             x-example-implementation-status: implemented
+            x-v2-03-custom-example:
+              custom_topic:
+                title: 是否应把远程办公设为默认？
+                background: 讨论协作成本与人才半径
+              user_stance: pro
+              x-example-implementation-status: implemented
   /api/v1/debates/{id}/turns:
     post:
       operationId: submitTurn
@@ -1330,6 +1337,817 @@ paths:
               schema:
                 $ref: '#/components/schemas/StrategyErrorResponse'
               examples: {}
+  /api/v1/debates/{id}/annotations:
+    get:
+      operationId: listAnnotations
+      summary: 只读本场原文批注批次
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: V2-04
+      description: 要求 Session 与所有权，不存在和非本人统一404。只返回已开启切片时提交的合格轮次，
+        按触发轮升序；旧会话返回空数组 items。无模型调用、不写库、不改变轮次或总结状态。
+        批次状态为 not_started/generating/completed/failed；未认领时 attempt_version 为 0。
+        条目含类别、标签、理由、改进方向与锚点；锚点坐标是从 0 开始的 Unicode 码点半开区间，
+        引用逐字相等，resolved=false 表示位置歧义或坐标失配，调用方不得按坐标高亮。
+      security:
+      - SessionCookie: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      responses:
+        '200':
+          description: 按触发轮排序的批次列表；无合格轮次时为空数组。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationListResponse'
+              examples:
+                completed:
+                  value:
+                    data:
+                      items:
+                      - turn_id: '31'
+                        round_no: 1
+                        status: completed
+                        attempt_version: 1
+                        items:
+                        - category: strength
+                          label: 论证有效
+                          reason: 该句把主张落在可检验的判断标准上，使后续交锋有明确落点。
+                          improvement: 可以再补一句该标准为何适用于本场辩题。
+                          anchor:
+                            message_id: '21'
+                            quote: 标准应当可检验
+                            start_cp: 0
+                            end_cp: 7
+                            resolved: true
+                          turn_no: 1
+                          role: user
+                    request_id: req-annotation-list
+                legacy_empty:
+                  value:
+                    data:
+                      items: []
+                    request_id: req-annotation-empty
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /api/v1/debates/{id}/turns/{turn_id}/annotations/retry:
+    post:
+      operationId: retryAnnotation
+      summary: 手动补做未启动或已失败的批注批次
+      tags:
+      - 辩论
+      x-implementation-status: implemented
+      x-task: V2-04
+      description: 要求 Session、精确 Origin 与 CSRF，不存在和非本人统一404，非法或非本人轮次同为404。
+        正文只接受 expected_attempt_version：0 表示未认领的首次补做，正数表示按当前版本补做。
+        只允许补做未认领或已失败的批次；生成中返回 202 与当前状态、已成功返回 200 与已存结果，
+        版本不符返回 409 并附只读查询地址。手动补做最多一次（首次 v1、补做 v2），
+        此后失败批次不再补做。非合格轮返回 409 round_conflict，不启动生成、不写批次。
+        分析与正式轮次事务分离，失败只保存受控错误码，不改变轮次、会话完成或总结状态。
+        不启用本切片时该入口受控拒绝，且不写任何批次行。
+      security:
+      - SessionCookie: []
+      - CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/DebateId'
+      - $ref: '#/components/parameters/TurnId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnnotationRetryRequest'
+            examples:
+              first_attempt:
+                value:
+                  expected_attempt_version: 0
+              retry_failed:
+                value:
+                  expected_attempt_version: 1
+      responses:
+        '200':
+          description: 已成功批次重放或版本不符后的只读状态。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+        '201':
+          description: 首次补做成功并保存结果（含空数组）。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+              examples:
+                completed:
+                  value:
+                    data:
+                      turn_id: '31'
+                      round_no: 1
+                      status: completed
+                      attempt_version: 2
+                      items: []
+                    request_id: req-annotation-retry
+        '202':
+          description: 生成中，返回当前状态而不排队。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationBatchResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfFailed'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 版本冲突或非合格轮；附只读查询地址。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                version_conflict:
+                  value:
+                    error:
+                      code: attempt_version_conflict
+                      message: 请求未完成，请查看会话状态后再操作
+                      details:
+                        turn_id: '31'
+                        status: failed
+                        attempt_version: 2
+                        query_url: /api/v1/debates/123/annotations
+                    request_id: req-annotation-conflict
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '502':
+          description: 生成结果无效，已确认失败时附 details。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '504':
+          description: 分析超时，已确认失败时附 details。
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /api/v1/debates/{id}/arena:
+    parameters:
+    - $ref: '#/components/parameters/DebateId'
+    get:
+      operationId: getDebateArena
+      summary: 读取本人的已完轮次、气势、图谱和锦囊
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 双方正式发言提交后才有该轮数据；同轮在刷新后仍只有一项。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, request_id]
+                properties:
+                  request_id: { type: string }
+                  data:
+                    type: object
+                    required: [rounds, hints, practice]
+                    properties:
+                      practice: { type: boolean }
+                      hints:
+                        type: array
+                        items: { $ref: '#/components/schemas/NeonArenaText' }
+                      rounds:
+                        type: array
+                        items:
+                          type: object
+                          required: [round_no, pro_percent, source, user_message_id, assistant_message_id, user_point, assistant_point]
+                          properties:
+                            round_no: { type: integer, minimum: 1 }
+                            pro_percent: { type: integer, minimum: 0, maximum: 100 }
+                            source: { type: string, enum: [local, ai] }
+                            graph_source: { type: string, enum: [local, ai] }
+                            user_message_id: { $ref: '#/components/schemas/EntityId' }
+                            assistant_message_id: { $ref: '#/components/schemas/EntityId' }
+                            user_point: { type: string }
+                            assistant_point: { type: string }
+        '404':
+          description: 无此对局或当前账号不可读。
+    post:
+      operationId: requestArenaText
+      summary: 生成当前轮的锦囊、队友草稿或三段论框架
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [hints, teammate, framework] }
+      responses:
+        '200':
+          description: 当前轮的辅助文本，不新增正式发言。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, request_id]
+                properties:
+                  request_id: { type: string }
+                  data: { $ref: '#/components/schemas/NeonArenaText' }
+        '404':
+          description: 无此对局或当前账号不可读。
+        '409':
+          description: 当前轮状态不允许生成辅助文本。
+        '429':
+          description: 请求过于频繁或达到生成额度。
+  /api/v1/settings/model:
+    get:
+      operationId: getPersonalModel
+      summary: 读取本账号的个人模型配置状态
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 配置状态和别名，响应没有密钥。
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NeonModelStatusResponse' }
+    post:
+      operationId: savePersonalModel
+      summary: 加密保存本账号的模型配置
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, model, alias, api_key]
+              properties:
+                provider: { type: string, enum: [deepseek, openai, doubao, custom] }
+                model: { type: string, minLength: 1, maxLength: 128 }
+                alias: { type: string, minLength: 1, maxLength: 128 }
+                base_url: { type: string, format: uri, maxLength: 512, description: 自定义服务填写允许的公开 HTTPS 地址。 }
+                api_key: { type: string, minLength: 16, maxLength: 256, writeOnly: true }
+      responses:
+        '200':
+          description: 已保存，连接和实际调用分别记录。
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NeonModelStatusResponse' }
+        '400':
+          description: 配置无效或当前环境未启用个人模型。
+  /api/v1/settings/model/test:
+    post:
+      operationId: testPersonalModel
+      summary: 主动检查已保存配置的连接
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      responses:
+        '200':
+          description: 连接验证通过，data.ok 为 true。
+  /api/v1/settings/model/remove:
+    post:
+      operationId: removePersonalModel
+      summary: 停用当前账号已保存的模型配置
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      responses:
+        '200':
+          description: 配置已移除，data.ok 为 true。
+  /api/v1/cup:
+    get:
+      operationId: getNeonCupStatus
+      summary: 读取自己的 ELO、名次、解锁与推荐赛段
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 四阶赛段和当前账号状态。正式场次为空时省略名次。
+  /api/v1/judges:
+    get:
+      operationId: listNeonJudges
+      summary: 读取官方、本人和已公开裁判
+      security:
+      - SessionCookie: []
+      responses:
+        '200': { description: 按当前账号可见范围返回裁判列表。 }
+    post:
+      operationId: createNeonJudge
+      summary: 新建私密裁判风格
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string }
+                role: { type: string }
+      responses:
+        '201': { description: 裁判已保存，仅本人可见。 }
+  /api/v1/judges/{id}:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getNeonJudge
+      summary: 按可见权限读取裁判风格
+      security:
+      - SessionCookie: []
+      responses:
+        '200': { description: 可查看的裁判风格。 }
+        '404': { description: 裁判不存在或当前账号不可查看。 }
+  /api/v1/judges/{id}/visibility:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: changeNeonJudgeVisibility
+      summary: 裁判所有者确认公开或撤回
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [public]
+              properties:
+                public: { type: boolean }
+      responses:
+        '200': { description: 已保存新的可见性。 }
+        '404': { description: 当前账号不可管理此裁判。 }
+  /api/v1/judges/models:
+    get:
+      operationId: listNeonJudgeModels
+      summary: 读取本人裁判模型别名与本地演示选项
+      security:
+      - SessionCookie: []
+      responses:
+        '200': { description: 席位模型 ID、别名和来源。 }
+    post:
+      operationId: createNeonJudgeModel
+      summary: 仅添加一份裁判席位模型配置
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        $ref: '#/paths/~1api~1v1~1settings~1model/post/requestBody'
+      responses:
+        '201': { description: 已保存席位模型，可直接按别名选用。 }
+  /api/v1/judges/models/{id}/remove:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: removeNeonJudgeModel
+      summary: 移除本人另存的席位模型配置
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      responses:
+        '200': { description: 已移除。 }
+  /api/v1/debates/{id}/verdict:
+    parameters:
+    - $ref: '#/components/parameters/DebateId'
+    get:
+      operationId: getNeonVerdict
+      summary: 读取本人对局的席位与已保存五维裁决
+      security:
+      - SessionCookie: []
+      responses:
+        '200': { description: 裁决状态、席位、可用五维评分和正式积分变动。 }
+        '404': { description: 对局不存在或不可读。 }
+    post:
+      operationId: requestNeonVerdict
+      summary: 为本人已完赛对局提交一到三个不同裁判席位
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seats]
+              properties:
+                seats:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    type: object
+                    required: [judge_id, model_id]
+                    properties:
+                      judge_id: { type: string }
+                      model_id: { type: string }
+      responses:
+        '200': { description: 返回已有或本次已处理的裁决。 }
+        '404': { description: 对局、裁判或席位模型不存在或不可读。 }
+        '409': { description: 当前对局或裁决状态不允许提交该组席位。 }
+  /api/v1/debates/{id}/verdict/seats/{seat}/retry:
+    parameters:
+    - $ref: '#/components/parameters/DebateId'
+    - { name: seat, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: retryNeonVerdictSeat
+      summary: 单独重试失败的裁判席位
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      responses:
+        '200': { description: 返回更新的席位与裁决状态，已正式结算的结果保持原值。 }
+  /api/v1/neon-catalog/topics:
+    get:
+      operationId: listNeonCatalogTopics
+      summary: 列出可用辩题与开辩热度
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 列出可用辩题与开辩热度。
+    post:
+      operationId: createNeonCatalogTopic
+      summary: 保存私密辩题
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [title, background, category], properties: { title: { type: string }, background: { type: string }, category: { enum: [technology, campus, society, philosophy] } } }
+      responses:
+        '201':
+          description: 保存私密辩题。
+  /api/v1/neon-catalog/topics/{id}:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: editNeonCatalogTopic
+      summary: 编辑本人辩题
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [title, background, category], properties: { title: { type: string }, background: { type: string }, category: { enum: [technology, campus, society, philosophy] } } }
+      responses:
+        '200':
+          description: 编辑本人辩题。
+  /api/v1/neon-catalog/topics/{id}/visibility:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: setNeonCatalogTopicVisibility
+      summary: 公开或撤回本人辩题
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [public], properties: { public: { type: boolean } } }
+      responses:
+        '200':
+          description: 公开或撤回本人辩题。
+  /api/v1/neon-catalog/opponents:
+    get:
+      operationId: listNeonCatalogOpponents
+      summary: 列出可用辩手与开辩热度
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 列出可用辩手与开辩热度。
+    post:
+      operationId: createNeonCatalogOpponent
+      summary: 保存私密辩手
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, tag, difficulty, persona], properties: { name: { type: string }, tag: { type: string }, difficulty: { enum: [beginner, varsity, national] }, persona: { type: string } } }
+      responses:
+        '201':
+          description: 保存私密辩手。
+  /api/v1/neon-catalog/opponents/{id}:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: editNeonCatalogOpponent
+      summary: 编辑本人辩手
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, tag, difficulty, persona], properties: { name: { type: string }, tag: { type: string }, difficulty: { enum: [beginner, varsity, national] }, persona: { type: string } } }
+      responses:
+        '200':
+          description: 编辑本人辩手。
+  /api/v1/neon-catalog/opponents/{id}/visibility:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      operationId: setNeonCatalogOpponentVisibility
+      summary: 公开或撤回本人辩手
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [public], properties: { public: { type: boolean } } }
+      responses:
+        '200':
+          description: 公开或撤回本人辩手。
+  /api/v1/debates/{id}/sharing:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getNeonReportSharing
+      summary: 读取本人完赛复盘的分享状态
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 读取本人完赛复盘的分享状态。
+    post:
+      operationId: changeNeonReportSharing
+      summary: 记录一次询问或更改公开状态
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [action], properties: { action: { enum: [prompt, publish, withdraw] } } }
+      responses:
+        '200':
+          description: 记录一次询问或更改公开状态。
+  /api/v1/debates/{id}/sharing/markdown:
+    parameters:
+    - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: exportOwnNeonReport
+      summary: 导出已保存复盘为 UTF-8 Markdown
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 导出已保存复盘为 UTF-8 Markdown。
+          content:
+            text/markdown:
+              schema: { type: string }
+  /api/v1/public/reports:
+    get:
+      operationId: listNeonPublicReports
+      summary: 按辩题或账号列出公开复盘
+      parameters:
+      - { name: topic_id, in: query, schema: { type: string } }
+      - { name: owner_id, in: query, schema: { type: string } }
+      - { name: page, in: query, schema: { type: integer } }
+      - { name: page_size, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: 按辩题或账号列出公开复盘。
+  /api/v1/public/reports/{share_id}:
+    parameters:
+    - { name: share_id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: readNeonPublicReport
+      summary: 读取公开复盘快照
+      responses:
+        '200':
+          description: 读取公开复盘快照。
+  /api/v1/public/reports/{share_id}/markdown:
+    parameters:
+    - { name: share_id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: exportPublicNeonReport
+      summary: 导出已保存复盘为 UTF-8 Markdown
+      responses:
+        '200':
+          description: 导出已保存复盘为 UTF-8 Markdown。
+          content:
+            text/markdown:
+              schema: { type: string }
+  /api/v1/dojo:
+    get:
+      operationId: getNeonDojo
+      summary: 读取道场题目和本人答题记录
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 读取道场题目和本人答题记录。
+  /api/v1/dojo/answer:
+    post:
+      operationId: answerNeonDojoQuestion
+      summary: 作答并结算一次性道场积分
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [question_id, choice], properties: { question_id: { type: string }, choice: { type: integer, minimum: 0, maximum: 3 } } }
+      responses:
+        '200':
+          description: 作答并结算一次性道场积分。
+  /api/v1/dojo/history-quiz:
+    post:
+      operationId: makeNeonDojoHistoryQuiz
+      summary: 按本人可定位的历史批注出题
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: 按本人可定位的历史批注出题。
+  /api/v1/dojo/techniques:
+    post:
+      operationId: makeNeonDojoTechnique
+      summary: 生成引用本人辩词的技法建议
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: 生成引用本人辩词的技法建议。
+  /api/v1/profile:
+    get:
+      operationId: getOwnNeonProfile
+      summary: 读取个人档案与积分轨迹
+      security:
+      - SessionCookie: []
+      responses:
+        '200':
+          description: 读取个人档案与积分轨迹。
+    post:
+      operationId: updateOwnNeonProfile
+      summary: 保存本人昵称及印章或图片头像
+      security:
+      - SessionCookie: []
+        CsrfToken: []
+      parameters:
+      - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [nickname, avatar_kind], properties: { nickname: { type: string, maxLength: 24 }, avatar_kind: { enum: [seal, image] }, avatar_seal: { type: string, maxLength: 1 }, avatar_image: { type: string, maxLength: 26000 } } }
+      responses:
+        '200':
+          description: 保存本人昵称及印章或图片头像。
+  /api/v1/leaderboard:
+    get:
+      operationId: getNeonLeaderboard
+      summary: 按 ELO 与胜率返回每页十条榜单
+      security:
+      - SessionCookie: []
+      parameters:
+      - { name: page, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: 按 ELO 与胜率返回每页十条榜单。
+  /api/v1/public/profiles/{user_id}:
+    parameters:
+    - { name: user_id, in: path, required: true, schema: { type: string } }
+    get:
+      operationId: getNeonPublicProfile
+      summary: 按稳定账号 ID 读取公开个人资料
+      responses:
+        '200':
+          description: 按稳定账号 ID 读取公开个人资料。
 components:
   securitySchemes:
     SessionCookie:
@@ -1406,6 +2224,38 @@ components:
       schema:
         type: string
   schemas:
+    NeonCupStageId:
+      type: string
+      enum: [prelim, quarter, semi, final]
+    NeonDifficulty:
+      type: string
+      enum: [beginner, varsity, national]
+      default: beginner
+    NeonArenaText:
+      type: object
+      required: [round_no, text, source]
+      properties:
+        round_no: { type: integer, minimum: 1 }
+        text: { type: string }
+        source: { type: string, enum: [local, ai] }
+    NeonModelStatusResponse:
+      type: object
+      required: [data, request_id]
+      properties:
+        request_id: { type: string }
+        data:
+          type: object
+          required: [enabled, configured, verified, used]
+          properties:
+            enabled: { type: boolean }
+            configured: { type: boolean }
+            verified: { type: boolean }
+            used: { type: boolean }
+            provider: { type: string, enum: [deepseek, openai, doubao, custom] }
+            model: { type: string }
+            alias: { type: string }
+            base_url: { type: string, format: uri }
+            expires_at: { $ref: '#/components/schemas/UtcTime' }
     EntityId:
       type: string
       pattern: ^[1-9][0-9]*$
@@ -1715,21 +2565,122 @@ components:
           - active
           - completed
     CreateDebateRequest:
+      description: 选择 topic_id、custom_topic 或 neon_topic_id 中一项。多项、缺失或显式 null 返回 400。选用条目不可见时返回 404。可另选 neon_opponent_id，服务端保存开赛快照。
+      oneOf:
+      - type: object
+        required:
+        - topic_id
+        - user_stance
+        not:
+          anyOf:
+          - required: [custom_topic]
+          - required: [neon_topic_id]
+        properties:
+          topic_id:
+            $ref: '#/components/schemas/EntityId'
+          neon_opponent_id:
+            $ref: '#/components/schemas/EntityId'
+          user_stance:
+            $ref: '#/components/schemas/Stance'
+          difficulty:
+            $ref: '#/components/schemas/NeonDifficulty'
+          practice:
+            type: boolean
+          cup_stage:
+            $ref: '#/components/schemas/NeonCupStageId'
+          ai_style:
+            $ref: '#/components/schemas/AIStyle'
+            default: logical
+            description: T14-STYLE 已实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
+            x-implementation-status: implemented
+            x-task: T14-STYLE
+        x-implementation-status: implemented
+      - type: object
+        additionalProperties: false
+        required:
+        - custom_topic
+        - user_stance
+        not:
+          required:
+          - topic_id
+        properties:
+          custom_topic:
+            $ref: '#/components/schemas/CustomTopic'
+          neon_opponent_id:
+            $ref: '#/components/schemas/EntityId'
+          user_stance:
+            $ref: '#/components/schemas/Stance'
+          difficulty:
+            $ref: '#/components/schemas/NeonDifficulty'
+          practice:
+            type: boolean
+          cup_stage:
+            $ref: '#/components/schemas/NeonCupStageId'
+          ai_style:
+            $ref: '#/components/schemas/AIStyle'
+            default: logical
+            description: 同预设分支：省略默认 logical，显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request。
+            x-implementation-status: implemented
+        x-implementation-status: implemented
+        x-task: V2-03
+      - type: object
+        additionalProperties: false
+        required: [neon_topic_id, user_stance]
+        properties:
+          neon_topic_id:
+            $ref: '#/components/schemas/EntityId'
+          neon_opponent_id:
+            $ref: '#/components/schemas/EntityId'
+          user_stance:
+            $ref: '#/components/schemas/Stance'
+          ai_style:
+            $ref: '#/components/schemas/AIStyle'
+          difficulty:
+            $ref: '#/components/schemas/NeonDifficulty'
+          practice:
+            type: boolean
+          cup_stage:
+            $ref: '#/components/schemas/NeonCupStageId'
+      x-task: V2-03
+    CustomTopic:
       type: object
+      additionalProperties: false
       required:
-      - topic_id
-      - user_stance
+      - title
       properties:
-        topic_id:
-          $ref: '#/components/schemas/EntityId'
-        user_stance:
-          $ref: '#/components/schemas/Stance'
-        ai_style:
-          $ref: '#/components/schemas/AIStyle'
-          default: logical
-          description: T14-STYLE 已实现。仅省略时默认 logical；显式 null、空串、非字符串、未知值或大小写不符为 400 invalid_request，不创建会话；成功后持久化且不可修改。
-          x-implementation-status: implemented
-          x-task: T14-STYLE
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '[^\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]'
+          description: 必填，1–200 个 Unicode 码点，拒绝纯空白（Unicode White_Space 与 U+FEFF），保存原文。
+        background:
+          type: string
+          maxLength: 1000
+          description: 选填，0–1000 个 Unicode 码点，可省略或为空串，长度包含空白，保存原文。
+      description: 私有自定义辩题原文，只存在于本场会话快照；不进入公共题库，也没有编辑接口。仅 title 必填，background 可省略。
+      x-implementation-status: implemented
+    DebateTopic:
+      description: 会话快照中的辩题。预设题 id 为原字符串；私有自定义辩题 id 为 null，title/description 为该会话固定快照（缺失背景为空字符串）。公共 Topic 类型仍要求字符串 ID。
+      oneOf:
+      - $ref: '#/components/schemas/Topic'
+      - type: object
+        required:
+        - id
+        - title
+        - description
+        properties:
+          id:
+            type: 'null'
+          title:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description:
+            type: string
+            maxLength: 1000
+        x-implementation-status: implemented
+        x-task: V2-03
     Debate:
       type: object
       required:
@@ -1748,7 +2699,7 @@ components:
         id:
           $ref: '#/components/schemas/EntityId'
         topic:
-          $ref: '#/components/schemas/Topic'
+          $ref: '#/components/schemas/DebateTopic'
         user_stance:
           $ref: '#/components/schemas/Stance'
         ai_stance:
@@ -1757,6 +2708,16 @@ components:
           $ref: '#/components/schemas/DebateMode'
         ai_style:
           $ref: '#/components/schemas/AIStyle'
+        opponent_name:
+          type: string
+        opponent_tag:
+          type: string
+        difficulty:
+          $ref: '#/components/schemas/NeonDifficulty'
+        practice:
+          type: boolean
+        cup_stage:
+          $ref: '#/components/schemas/NeonCupStageId'
         total_rounds:
           type: integer
           minimum: 1
@@ -1770,6 +2731,9 @@ components:
           description: 创建为 active；达到该赛制轮数上限后成为 completed（quick_3 第 3 轮、standard_4 第 4 轮）。
         completed_rounds:
           $ref: '#/components/schemas/CompletedRounds'
+        review_status:
+          enum: [pending, completed, failed]
+          description: 仅本人历史列表返回，区分已生成、失败及待生成的复盘。
         created_at:
           $ref: '#/components/schemas/UtcTime'
         updated_at:
@@ -2068,6 +3032,7 @@ components:
               - request_too_large
               - rate_limited
               - generation_busy
+              - daily_quota_exhausted
               - internal_error
               - model_error
               - dependency_unavailable
@@ -2184,6 +3149,158 @@ components:
           $ref: '#/components/schemas/DebateListData'
         request_id:
           $ref: '#/components/schemas/RequestId'
+    AnnotationAnchor:
+      type: object
+      description: 原文锚点。message_id 是服务端正式消息 ID；坐标是从 0 开始的 Unicode 码点半开区间，
+        按服务端保存的原始消息文本计数。引用必须逐字相等，禁止 trim、归一化与大小写折叠。
+        resolved=false 表示引用在原文中不唯一或坐标失配，调用方只显示“原文待核对”，不得按坐标高亮。
+      required:
+      - message_id
+      - quote
+      - start_cp
+      - end_cp
+      - resolved
+      properties:
+        message_id:
+          type: string
+          pattern: '^[1-9][0-9]{0,19}$'
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 300
+        start_cp:
+          type: integer
+          minimum: 0
+          nullable: true
+        end_cp:
+          type: integer
+          minimum: 0
+          nullable: true
+        resolved:
+          type: boolean
+    AnnotationItem:
+      type: object
+      required:
+      - category
+      - label
+      - reason
+      - improvement
+      - anchor
+      - turn_no
+      - role
+      properties:
+        category:
+          type: string
+          enum:
+          - strength
+          - possible_logic_gap
+          - insufficient_support
+          - unclear_scope
+          - opponent_weakness
+          - opponent_strength
+        label:
+          type: string
+          minLength: 1
+          maxLength: 40
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 300
+        improvement:
+          type: string
+          minLength: 1
+          maxLength: 300
+        anchor:
+          $ref: '#/components/schemas/AnnotationAnchor'
+        turn_no:
+          type: integer
+          minimum: 1
+          maximum: 6
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+    AnnotationBatch:
+      type: object
+      required:
+      - turn_id
+      - round_no
+      - status
+      - attempt_version
+      - items
+      properties:
+        turn_id:
+          type: string
+          pattern: '^[1-9][0-9]{0,19}$'
+        round_no:
+          type: integer
+          minimum: 1
+          maximum: 6
+        status:
+          type: string
+          enum:
+          - not_started
+          - generating
+          - completed
+          - failed
+        attempt_version:
+          type: integer
+          minimum: 0
+          description: 未认领为 0；首次分析为 1，唯一一次手动补做为 2。
+        items:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/AnnotationItem'
+        error_code:
+          type: string
+          enum:
+          - model_error
+          - model_timeout
+          - model_unavailable
+          - dependency_unavailable
+          - generation_cancelled
+          - content_invalid
+    AnnotationListData:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnnotationBatch'
+    AnnotationListResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/AnnotationListData'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    AnnotationBatchResponse:
+      type: object
+      required:
+      - data
+      - request_id
+      properties:
+        data:
+          $ref: '#/components/schemas/AnnotationBatch'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+    AnnotationRetryRequest:
+      type: object
+      description: 手动补做批注的唯一字段。0 表示未认领的首次补做；正数表示期望的当前版本。
+      required:
+      - expected_attempt_version
+      additionalProperties: false
+      properties:
+        expected_attempt_version:
+          type: integer
+          minimum: 0
     TurnResponse:
       type: object
       required:
@@ -2447,7 +3564,7 @@ components:
       x-error-codes:
       - rate_limited
     GenerationLimited:
-      description: 请求频率/每日生成次数超限或用户/全局模型并发槽满；带 Retry-After 秒数。
+      description: 请求频率/每日生成次数超限或用户/全局模型并发槽满；带 Retry-After 秒数。三种原因用不同业务码区分：分钟防刷为 rate_limited，并发槽满为 generation_busy，每用户每日生成尝试用尽为 daily_quota_exhausted。
       headers:
         X-Request-ID:
           $ref: '#/components/headers/RequestId'
@@ -2467,9 +3584,11 @@ components:
                       enum:
                       - rate_limited
                       - generation_busy
+                      - daily_quota_exhausted
       x-error-codes:
       - rate_limited
       - generation_busy
+      - daily_quota_exhausted
     InternalError:
       description: 受控内部错误，不回传堆栈或内部细节。
       headers:

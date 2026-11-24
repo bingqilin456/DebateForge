@@ -142,7 +142,7 @@ func TestPhase2EndToEndAC01ToAC08(t *testing.T) {
 		t.Fatal(err)
 	}
 	if debatePro.UserStance != "pro" || debatePro.AIStance != "con" || debatePro.Status != "active" || debatePro.CompletedRounds != 0 ||
-		debatePro.Topic.ID != topics[0].ID || debatePro.Topic.Title != topics[0].Title || debatePro.Topic.Description != topics[0].Description {
+		!topicIDEquals(debatePro.Topic.ID, topics[0].ID) || debatePro.Topic.Title != topics[0].Title || debatePro.Topic.Description != topics[0].Description {
 		t.Fatalf("unexpected pro debate DTO: %+v", debatePro)
 	}
 	// AC03/AC04/AC05/AC06 验证的是历史 quick_3 语义（三轮六条消息、第 4 轮 409）。
@@ -158,7 +158,7 @@ func TestPhase2EndToEndAC01ToAC08(t *testing.T) {
 		t.Fatal(err)
 	}
 	if debateCon.UserStance != "con" || debateCon.AIStance != "pro" || debateCon.Status != "active" || debateCon.CompletedRounds != 0 ||
-		debateCon.Topic.ID != topics[1].ID || debateCon.Topic.Title != topics[1].Title {
+		!topicIDEquals(debateCon.Topic.ID, topics[1].ID) || debateCon.Topic.Title != topics[1].Title {
 		t.Fatalf("unexpected con debate DTO: %+v", debateCon)
 	}
 	if turnCalls.Load() != 0 {

@@ -39,7 +39,14 @@ async function mount() {
   return { frame, posts: () => posts, finish() { saved = { ...saved, debate: { ...saved.debate, completed_rounds: 1 }, turns: [turn('completed')] }; frame('done', { turn: saved.turns[0], completed_rounds: 1, status: 'active' }); controller.close() } }
 }
 function button(text: string) { const found = [...host.querySelectorAll('button')].find(value => value.textContent?.trim() === text); if (!found) throw new Error(`缺少按钮 ${text}`); return found }
-async function submit() { const input = host.querySelector<HTMLTextAreaElement>('#first-content')!; input.value = '用户的原文'; input.dispatchEvent(new Event('input', { bubbles: true })); await nextTick(); button('发送首轮').click(); await vi.waitFor(() => expect(host.querySelector('[data-stream-preview]')).not.toBeNull()) }
+async function submit() {
+  const input = host.querySelector<HTMLTextAreaElement>('#first-content')!
+  input.value = '用户的原文'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(host.querySelector('[data-stream-preview]')).not.toBeNull())
+}
 beforeEach(() => { fetcher.mockReset(); vi.stubGlobal('fetch', fetcher); history.replaceState(null, '', '/#debate=123') })
 afterEach(() => { app?.unmount(); host?.remove(); vi.unstubAllGlobals() })
 

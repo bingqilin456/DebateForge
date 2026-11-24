@@ -32,13 +32,14 @@ type DemoApproval struct {
 	OutputMicroCNYPerMillion int64     `json:"output_micro_cny_per_million"`
 	PerCallInputTokens       int64     `json:"per_call_input_tokens"`
 	PerCallOutputTokens      int64     `json:"per_call_output_tokens"`
+	Annotations              bool      `json:"annotations,omitempty"`
 }
 
 func (a DemoApproval) valid() bool {
 	_, s := a.Start.Zone()
 	_, e := a.End.Zone()
 	return a.ID != "" && len(a.ID) <= 128 && a.Model == "deepseek-flash" &&
-		len(a.Users) == 2 && a.Users[0] > 0 && a.Users[1] > 0 && a.Users[0] != a.Users[1] &&
+		a.validUsers() &&
 		s == 0 && e == 0 && a.End.After(a.Start) && a.End.Sub(a.Start) <= 72*time.Hour &&
 		a.MaxCalls > 0 && a.MaxCalls <= 1000 &&
 		a.MaxInputTokens > 0 && a.MaxInputTokens <= 1000000000 &&
@@ -48,6 +49,14 @@ func (a DemoApproval) valid() bool {
 		a.OutputMicroCNYPerMillion > 0 && a.OutputMicroCNYPerMillion <= 1000000000 &&
 		a.PerCallInputTokens > 1024 && a.PerCallInputTokens <= 200000 &&
 		a.PerCallOutputTokens >= 1024 && a.PerCallOutputTokens <= 8192
+}
+
+func (a DemoApproval) validUsers() bool {
+	if a.Annotations {
+		return len(a.Users) == 1 && a.Users[0] > 0 && a.End.Sub(a.Start) <= 30*time.Minute &&
+			a.MaxCalls <= 18 && a.MaxCostMicroCNY <= 3000000
+	}
+	return len(a.Users) == 2 && a.Users[0] > 0 && a.Users[1] > 0 && a.Users[0] != a.Users[1]
 }
 
 type demoReservation struct {

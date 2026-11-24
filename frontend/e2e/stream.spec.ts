@@ -66,7 +66,7 @@ test.beforeEach(async ({ page }) => {
   }, { initial, date })
   await page.goto('/#debate=123')
   await page.locator('#first-content').fill('浏览器原文😀')
-  await page.getByRole('button', { name: '发送首轮', exact: true }).evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
+  await page.locator('form[data-first-turn] button[type="submit"]').evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
   await expect(page.locator('[data-stream-preview]')).toBeVisible()
 })
 

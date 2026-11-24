@@ -132,7 +132,7 @@ func (g *demoGenerator) Generate(ctx context.Context, req Request) (Result, erro
 	}
 	defer close()
 	defer g.abandon(c)
-	c.messages = 2 * req.RoundNo
+	c.messages = PromptMessageCount(req)
 	r, err := g.adapter.Generate(cctx, req)
 	if err = g.settle(cctx, c, r.Usage, err); err != nil {
 		return Result{}, err
@@ -146,7 +146,7 @@ func (g *demoGenerator) Stream(ctx context.Context, req Request, emit func(strin
 	}
 	defer close()
 	defer g.abandon(c)
-	c.messages = 2 * req.RoundNo
+	c.messages = PromptMessageCount(req)
 	r, err := g.adapter.Stream(cctx, req, emit)
 	if err = g.settle(cctx, c, r.Usage, err); err != nil {
 		return Result{}, err
@@ -154,6 +154,9 @@ func (g *demoGenerator) Stream(ctx context.Context, req Request, emit func(strin
 	return r, nil
 }
 func (g *demoGenerator) GenerateStrategy(ctx context.Context, req StrategyRequest) (StrategyResult, error) {
+	if g.DemoAnnotationsEnabled() {
+		return StrategyResult{}, demoError(errDemoDenied)
+	}
 	cctx, c, close, err := g.call(ctx, req.UserID)
 	if err != nil {
 		return StrategyResult{}, demoError(err)
@@ -167,6 +170,30 @@ func (g *demoGenerator) GenerateStrategy(ctx context.Context, req StrategyReques
 	}
 	return r, nil
 }
+func (g *demoGenerator) DemoAnnotationsEnabled() bool {
+	return g.ledger.approval.Annotations
+}
+
+func (g *demoGenerator) GenerateAnnotations(ctx context.Context, req AnnotationRequest) (AnnotationResult, error) {
+	if !g.DemoAnnotationsEnabled() {
+		return AnnotationResult{}, demoError(errDemoDenied)
+	}
+	cctx, c, close, err := g.call(ctx, req.UserID)
+	if err != nil {
+		return AnnotationResult{}, demoError(err)
+	}
+	defer close()
+	defer g.abandon(c)
+	c.messages = len(req.Messages) + 2
+	r, err := g.adapter.GenerateAnnotations(cctx, req)
+	if err = g.settle(cctx, c, r.Usage, err); err != nil {
+		// 保留候选与弃置计数：上层仍要按固定类别记录脱敏日志，
+		// 不能因为结算失败就把这一次调用的统计清空。
+		return r, err
+	}
+	return r, nil
+}
+
 func (g *demoGenerator) GenerateSummary(ctx context.Context, req SummaryRequest) (SummaryResult, error) {
 	cctx, c, close, err := g.call(ctx, req.UserID)
 	if err != nil {
@@ -189,6 +216,16 @@ func demoError(err error) *Error {
 	return (&Error{Code: CodeModelUnavailable, Message: "本地 Demo 真实入口未获准或已停止"}).WithCause(err)
 }
 
+// errDemoInputBudget 单独标记“实际请求序列化超过单次输入预留”的拒绝，
+// 便于与授权/账本不可用区分，并在出网前按预算分类拒绝（设计 §6）。
+var errDemoInputBudget = errors.New("本地 Demo 单次输入超过预算上限")
+
+// demoInputWithinApproval 判断实际请求 JSON 字节加 1024 预留是否在单次输入上限内。
+// 计量口径必须与 Demo 审批一致，否则测得的“可出网”结论不可信。
+func demoInputWithinApproval(a DemoApproval, requestBytes int64) bool {
+	return requestBytes+1024 <= a.PerCallInputTokens
+}
+
 type demoTransport struct {
 	base   http.RoundTripper
 	ledger *demoLedger
@@ -204,7 +241,13 @@ func (t demoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, errDemoDenied
 	}
 	raw, err := io.ReadAll(io.LimitReader(req.Body, t.ledger.approval.PerCallInputTokens-1024+1))
-	if err != nil || int64(len(raw))+1024 > t.ledger.approval.PerCallInputTokens || !validDemoPayload(raw, t.ledger.approval, c.messages) {
+	if err != nil {
+		return nil, errDemoDenied
+	}
+	if !demoInputWithinApproval(t.ledger.approval, int64(len(raw))) {
+		return nil, errDemoInputBudget
+	}
+	if !validDemoPayload(raw, t.ledger.approval, c.messages) {
 		return nil, errDemoDenied
 	}
 	if err := t.ledger.reserve(req.Context(), c, int64(len(raw))+1024); err != nil {
@@ -296,3 +339,4 @@ var _ Generator = (*demoGenerator)(nil)
 var _ StreamGenerator = (*demoGenerator)(nil)
 var _ SummaryGenerator = (*demoGenerator)(nil)
 var _ StrategyGenerator = (*demoGenerator)(nil)
+var _ AnnotationGenerator = (*demoGenerator)(nil)

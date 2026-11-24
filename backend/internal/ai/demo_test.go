@@ -12,13 +12,16 @@ import (
 	"time"
 )
 
-func demoFixture(t *testing.T, calls int) (*demoLedger, DemoApproval) {
+func demoFixture(t *testing.T, calls int, configure ...func(*DemoApproval)) (*demoLedger, DemoApproval) {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("持久账本只支持 Linux，须在 Linux 容器实测")
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	a := DemoApproval{ID: "fake-approval", Model: "deepseek-flash", Users: []uint64{1, 2}, Start: now.Add(-time.Minute), End: now.Add(time.Hour), MaxCalls: calls, MaxInputTokens: 1000000, MaxOutputTokens: 100000, MaxCostMicroCNY: 1000000, InputMicroCNYPerMillion: 2000000, OutputMicroCNYPerMillion: 8000000, PerCallInputTokens: 100000, PerCallOutputTokens: 1024}
+	for _, apply := range configure {
+		apply(&a)
+	}
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)

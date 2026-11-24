@@ -3,13 +3,19 @@ import { computed, onUnmounted, ref, useId, watch } from 'vue'
 import { Alert, Button } from '@arco-design/web-vue'
 import { authState, type AuthState } from '../auth/state'
 import { createDebate, listTopics } from '../api/debate'
+import { cupStageIds, type CupStageId, type CupStatus } from '../api/cup'
 import { ApiError } from '../api/client'
+import { createNeonCatalogApi, neonCategoryLabels, neonTopicKey } from '../api/neonCatalog'
+import NeonCatalogEditor from '../components/debate/NeonCatalogEditor.vue'
+import TopicPublicReports from '../components/debate/TopicPublicReports.vue'
 import { AI_STYLE_LABELS, DEFAULT_AI_STYLE } from '../debate/styles'
-import type { AIStyle, Debate, Stance, Topic } from '../types/api'
+import { CUSTOM_TOPIC_BACKGROUND_MAX_CHARS, CUSTOM_TOPIC_TITLE_MAX_CHARS } from '../shared/limits'
+import type { AIStyle, Debate, DebateDifficulty, DebateTopic, NeonOpponent, NeonTopic, NeonTopicCategory, Stance, Topic } from '../types/api'
 
 export interface TopicsViewProps {
   auth?: AuthState
   disabled?: boolean
+  cup?: CupStatus
 }
 const props = withDefaults(defineProps<TopicsViewProps>(), { disabled: false })
 const emit = defineEmits<{
@@ -28,8 +34,64 @@ const authenticated = computed(() => currentAuth.value.state.status === 'authent
 const blocked = computed(() => props.disabled || currentAuth.value.state.pending || !authenticated.value)
 const topics = ref<Topic[]>([])
 const selectedTopicId = ref('')
+const catalogTopics = ref<NeonTopic[] | null>(null)
+const opponents = ref<NeonOpponent[]>([])
+const catalogLoading = ref(false)
+const topicFilter = ref<NeonTopicCategory | 'all' | 'hot'>('all')
+const opponentId = ref('')
+const selectedOpponent = computed(() => opponents.value.find(item => !item.official && item.id === opponentId.value))
+const visibleTopics = computed<(Topic & { item?: NeonTopic })[]>(() => {
+  const items = catalogTopics.value
+  if (!items) return topics.value
+  const filtered = topicFilter.value === 'hot' ? items.filter(item => item.public).sort((a, b) => b.heat - a.heat)
+    : items.filter(item => topicFilter.value === 'all' || item.category === topicFilter.value)
+  return filtered.map(item => ({ id: neonTopicKey(item), title: item.title, description: item.background, item }))
+})
+const selectedCatalogTopic = computed(() => catalogTopics.value?.find(item => neonTopicKey(item) === selectedTopicId.value))
+const availableOpponents = computed(() => opponents.value.filter(item => !item.official).sort((a, b) => b.heat - a.heat))
+const opponentChoice = computed({
+  get: () => opponentId.value ? `custom-${opponentId.value}` : aiStyle.value,
+  set(value: string) {
+    if (value.startsWith('custom-')) {
+      opponentId.value = value.slice(7)
+      aiStyle.value = DEFAULT_AI_STYLE
+      if (selectedOpponent.value) difficulty.value = selectedOpponent.value.difficulty
+      return
+    }
+    opponentId.value = ''
+    aiStyle.value = value as AIStyle
+    const official = opponents.value.find(item => item.official && item.style === value)
+    if (official) difficulty.value = official.difficulty
+  },
+})
+// 选题来源：预设与自定义严格二选一，与后端请求形状一致。
+const source = ref<'preset' | 'custom'>('preset')
+const customTitle = ref('')
+const customBackground = ref('')
 const stance = ref<Stance>('pro')
 const aiStyle = ref<AIStyle>(DEFAULT_AI_STYLE)
+const difficulty = ref<DebateDifficulty>('beginner')
+const practice = ref(false)
+const cupStage = ref<CupStageId>()
+const difficultyLabels: Record<DebateDifficulty, string> = {
+  beginner: '入门 · 600–800 字',
+  varsity: '校队 · 800–1100 字',
+  national: '国赛级 · 1000–1400 字',
+}
+const cupDifficulty: Record<DebateDifficulty, string> = { beginner: '入门', varsity: '校队', national: '国赛级' }
+const selectedCupStage = computed(() => props.cup?.stages.find(stage => stage.id === cupStage.value))
+function cupStageLocked(stage: CupStageId) {
+  return !!props.cup && cupStageIds.indexOf(stage) > cupStageIds.indexOf(props.cup.unlocked_stage)
+}
+function selectCupStage(id?: CupStageId) {
+  const stage = props.cup?.stages.find(item => item.id === id)
+  cupStage.value = stage?.id
+  if (stage) {
+    opponentId.value = ''
+    difficulty.value = stage.difficulty
+    aiStyle.value = stage.ai_style
+  }
+}
 const loading = ref(false)
 const loaded = ref(false)
 const creating = ref(false)
@@ -40,11 +102,47 @@ const creationUncertain = ref(false)
 const id = useId()
 const formDisabled = computed(() => blocked.value || loading.value || creating.value || !!createdDebate.value || creationUncertain.value)
 const navigationDisabled = computed(() => blocked.value || creating.value || !!createdDebate.value)
+
+// 计数按解码后的 Unicode 码点，与后端一致：补充平面字符算一个，组合字符算多个。
+// 不使用 .length（UTF-16 码元），也不使用会截断输入的 maxlength。
+const titleCount = computed(() => [...customTitle.value].length)
+const backgroundCount = computed(() => [...customBackground.value].length)
+const titleBlank = computed(() => !/[^\p{White_Space}\u{FEFF}]/u.test(customTitle.value))
+const titleInvalid = computed(() => titleBlank.value || titleCount.value > CUSTOM_TOPIC_TITLE_MAX_CHARS)
+const backgroundInvalid = computed(() => backgroundCount.value > CUSTOM_TOPIC_BACKGROUND_MAX_CHARS)
+const customInvalid = computed(() => titleInvalid.value || backgroundInvalid.value)
+const canSubmit = computed(() => {
+  if (formDisabled.value) return false
+  if (source.value === 'custom') return !customInvalid.value
+  return !!selectedTopicId.value && (catalogTopics.value
+    ? !!selectedCatalogTopic.value : topics.value.some(topic => topic.id === selectedTopicId.value))
+})
 watch(creating, value => emit('creating', value), { flush: 'sync' })
 watch(creationUncertain, value => emit('uncertain', value), { flush: 'sync' })
 let version = 0
+let catalogVersion = 0
+let catalogAccount = 0
 let disposed = false
 function current(request: number) { return !disposed && request === version }
+
+async function loadCatalog() {
+  const latest = ++catalogVersion
+  const account = catalogAccount
+  catalogLoading.value = true
+  const catalog = createNeonCatalogApi(currentAuth.value.client)
+  try {
+    const [newTopics, newOpponents] = await Promise.all([catalog.topics(), catalog.opponents()])
+    if (disposed || latest !== catalogVersion || account !== catalogAccount) return
+    catalogTopics.value = newTopics.items
+    opponents.value = newOpponents.items
+    if (selectedTopicId.value && !selectedCatalogTopic.value) selectedTopicId.value = ''
+    if (opponentId.value && !selectedOpponent.value) opponentId.value = ''
+  } catch {
+    // 保留已读取的目录和临时题表单；下次刷新可重试。
+  } finally {
+    if (!disposed && latest === catalogVersion && account === catalogAccount) catalogLoading.value = false
+  }
+}
 
 async function loadTopics() {
   if (formDisabled.value) return
@@ -56,30 +154,46 @@ async function loadTopics() {
     const items = await listTopics(currentAuth.value.client)
     if (!current(request)) return
     topics.value = items
-    if (!items.some(topic => topic.id === selectedTopicId.value)) selectedTopicId.value = ''
+    if (!catalogTopics.value && !items.some(topic => topic.id === selectedTopicId.value)) selectedTopicId.value = ''
   } catch (error) {
     if (!current(request)) return
+    // 题库加载失败不清空草稿：自定义题仍可填写并提交。
     topics.value = []
     selectedTopicId.value = ''
     loadError.value = error instanceof ApiError ? error.message : '辩题加载失败，请手动重试。'
   } finally {
-    if (current(request)) { loading.value = false; loaded.value = true }
+    if (current(request)) { loading.value = false; loaded.value = true; void loadCatalog() }
   }
 }
 
+function selectSource(value: 'preset' | 'custom') {
+  if (formDisabled.value) return
+  source.value = value
+}
+
 async function create() {
-  if (formDisabled.value || !topics.value.some(topic => topic.id === selectedTopicId.value)) return
+  if (!canSubmit.value) return
   // 同步置位：DOM 更新 disabled 前连续提交也不能创建两个不同会话。
   creating.value = true
   createError.value = ''
   const request = ++version
   try {
-    const debate = await createDebate({ topic_id: selectedTopicId.value, user_stance: stance.value, ai_style: aiStyle.value }, currentAuth.value.client)
+    const topic = source.value === 'custom'
+      ? { custom_topic: { title: customTitle.value, background: customBackground.value } }
+      : selectedCatalogTopic.value && !selectedCatalogTopic.value.official
+        ? { neon_topic_id: selectedCatalogTopic.value.id }
+        : { topic_id: selectedTopicId.value }
+    const debate = await createDebate({ ...topic, user_stance: stance.value, ai_style: aiStyle.value,
+      ...(difficulty.value === 'beginner' ? {} : { difficulty: difficulty.value }),
+      ...(practice.value ? { practice: true } : {}),
+      ...(cupStage.value ? { cup_stage: cupStage.value } : {}),
+      ...(selectedOpponent.value ? { neon_opponent_id: selectedOpponent.value.id } : {}) }, currentAuth.value.client)
     if (!current(request)) return
     createdDebate.value = debate
     emit('created', debate)
   } catch (error) {
     if (!current(request)) return
+    // 草稿保留在表单内：超长、服务端错误与结果不明都不清空用户输入。
     createError.value = error instanceof ApiError ? error.message : '创建会话未获确认。'
     // 创建不是幂等操作；仅明确在创建前拒绝的状态允许修正/手动重提，其余先查历史。
     creationUncertain.value = !(error instanceof ApiError) || error.kind !== 'http'
@@ -90,10 +204,29 @@ async function create() {
 function openHistory() { if (!navigationDisabled.value) emit('open-history') }
 function back() { if (!navigationDisabled.value) emit('back-to-debate') }
 
+// 当前来源下用于展示的题目预览：预设题与自定义题共用同一套会话快照文本。
+const previewTopic = computed<DebateTopic | null>(() => {
+  if (source.value === 'custom') {
+    return customTitle.value || customBackground.value
+      ? { id: null, title: customTitle.value, description: customBackground.value }
+      : null
+  }
+  const selected = selectedCatalogTopic.value
+  if (selected) return { id: selectedTopicId.value, title: selected.title, description: selected.background }
+  const preset = topics.value.find(topic => topic.id === selectedTopicId.value)
+  return preset ?? null
+})
+
 watch([() => currentAuth.value, () => currentAuth.value.state.status, () => currentAuth.value.state.user?.id], () => {
-  // 账号变化立即作废在途响应，旧用户的结果不能回填到新视图。
+  // 账号变化立即作废在途响应，旧用户的结果不能回填到新视图；草稿随账号清理。
   version++
+  catalogAccount++
+  catalogTopics.value = null; opponents.value = []; opponentId.value = ''; catalogLoading.value = false; topicFilter.value = 'all'
   topics.value = []; selectedTopicId.value = ''; stance.value = 'pro'; aiStyle.value = DEFAULT_AI_STYLE
+  difficulty.value = 'beginner'
+  practice.value = false
+  cupStage.value = undefined
+  source.value = 'preset'; customTitle.value = ''; customBackground.value = ''
   loading.value = false; loaded.value = false; creating.value = false
   loadError.value = ''; createError.value = ''; createdDebate.value = null; creationUncertain.value = false
   void loadTopics()
@@ -108,19 +241,97 @@ onUnmounted(() => { disposed = true; version++ })
       <h2>辩题列表与立场选择</h2>
       <Button :disabled="formDisabled" @click="loadTopics">{{ loading ? '加载中…' : loadError ? '重试加载辩题' : '刷新辩题' }}</Button>
     </div>
-    <p class="muted">当前用户：{{ currentAuth.state.user?.username ?? '未确认' }}。选定辩题和立场后创建会话，创建时不会调用模型。</p>
+    <p class="muted">单场四轮 · 立论 / 攻辩 / 交锋 / 结辩</p>
+    <section v-if="cup" class="cup-preview" aria-label="思弈杯">
+      <div class="cup-heading">
+        <strong>思弈杯 <span>ELO {{ cup.elo }}<template v-if="cup.rank"> · 第 {{ cup.rank }} 名</template></span></strong>
+        <Button :disabled="formDisabled" @click="selectCupStage(cup.recommended_stage)">按我的 ELO 智能匹配难度</Button>
+      </div>
+      <div class="cup-stages">
+        <button v-for="stage in cup.stages" :key="stage.id" type="button" :aria-pressed="cupStage === stage.id"
+          :disabled="formDisabled" :data-cup-stage="stage.id" @click="selectCupStage(stage.id)">
+          <strong>{{ stage.name }}</strong>
+          <small>{{ cupDifficulty[stage.difficulty] }} · {{ cupStageLocked(stage.id) ? '可练手' : '已解锁' }}</small>
+        </button>
+      </div>
+      <div v-if="selectedCupStage" class="cup-heading">
+        <p>{{ selectedCupStage.name }} · {{ cupDifficulty[selectedCupStage.difficulty] }} · {{ AI_STYLE_LABELS[selectedCupStage.ai_style] }}。{{ selectedCupStage.explanation }}
+          <strong v-if="cupStageLocked(selectedCupStage.id)">该赛段当前只用于练手。</strong></p>
+        <Button type="text" :disabled="formDisabled" @click="selectCupStage()">切回普通练习</Button>
+      </div>
+    </section>
     <p v-if="!authenticated" role="status">请先登录，再选择辩题。</p>
     <p v-else-if="loading" role="status">正在加载辩题…</p>
     <Alert v-if="loadError" type="error" :title="loadError" role="alert" />
+    <!-- 题库为空或加载失败时不清空表单：自定义辩题仍可填写并提交。
+         保留原提示文案，避免改动既有页面契约与浏览器回归断言。 -->
     <p v-if="authenticated && loaded && !loading && !loadError && !topics.length" role="status">暂无可用辩题，请稍后刷新。</p>
+    <NeonCatalogEditor v-if="authenticated && catalogTopics" :key="currentAuth.state.user?.id"
+      :client="currentAuth.client" :topics="catalogTopics" :opponents="opponents"
+      :disabled="formDisabled || catalogLoading" @changed="loadCatalog" />
     <form v-if="authenticated" @submit.prevent="create">
-      <fieldset :disabled="formDisabled" class="topic-options">
-        <legend>选择辩题</legend>
-        <label v-for="topic in topics" :key="topic.id" class="topic-option" :class="{ selected: selectedTopicId === topic.id }" :data-topic-id="topic.id">
-          <input v-model="selectedTopicId" type="radio" :name="`${id}-topic`" :value="topic.id">
-          <span><strong>{{ topic.title }}</strong><span class="description">{{ topic.description }}</span></span>
-        </label>
+      <fieldset :disabled="formDisabled" class="source-options" data-source-options>
+        <legend>辩题来源</legend>
+        <label><input :checked="source === 'preset'" type="radio" :name="`${id}-source`" value="preset" data-source="preset" @change="selectSource('preset')">从公共题库选择</label>
+        <label><input :checked="source === 'custom'" type="radio" :name="`${id}-source`" value="custom" data-source="custom" @change="selectSource('custom')">自定义辩题（仅本人可见）</label>
       </fieldset>
+      <fieldset v-if="source === 'preset'" :disabled="formDisabled" class="topic-options">
+        <legend>选择辩题</legend>
+        <div v-if="catalogTopics" class="topic-filters" aria-label="辩题主题">
+          <button type="button" :aria-pressed="topicFilter === 'hot'" @click="topicFilter = 'hot'">热门榜</button>
+          <button type="button" :aria-pressed="topicFilter === 'all'" @click="topicFilter = 'all'">全部</button>
+          <button v-for="(label, category) in neonCategoryLabels" :key="category" type="button"
+            :aria-pressed="topicFilter === category" @click="topicFilter = category">{{ label }}</button>
+        </div>
+        <p v-if="catalogTopics && !visibleTopics.length">这个主题暂无辩题。</p>
+        <article v-for="topic in visibleTopics" :key="topic.id" class="topic-option" :class="{ selected: selectedTopicId === topic.id }" :data-topic-id="topic.id">
+          <label>
+            <input v-model="selectedTopicId" type="radio" :name="`${id}-topic`" :value="topic.id">
+            <span><strong>{{ topic.title }}</strong><span class="description">{{ topic.description }}</span>
+              <small v-if="topic.item">{{ neonCategoryLabels[topic.item.category] }} · {{ topic.item.public ? `${topic.item.heat} 人交锋` : '仅本人可见' }}</small>
+            </span>
+          </label>
+          <TopicPublicReports v-if="topic.item?.public" :topic-id="topic.id" />
+        </article>
+      </fieldset>
+      <!-- 未选自定义时不渲染输入框：既避免隐藏控件参与表单查询，
+           也保证草稿仍保存在组件状态里，切换来源不会丢输入。 -->
+      <div v-if="source === 'custom'" class="custom-topic" data-custom-topic>
+        <p class="muted">自定义辩题仅你可在本站查看，不会进入公共题库；创建后题目与立场固定，不可修改。</p>
+        <div class="custom-field">
+          <label :for="`${id}-custom-title`">辩题（必填，1–200 字）</label>
+          <textarea
+            :id="`${id}-custom-title`"
+            v-model="customTitle"
+            name="custom_title"
+            rows="2"
+            :disabled="formDisabled"
+            data-custom-title
+            :aria-describedby="`${id}-custom-title-count`"
+          ></textarea>
+          <p :id="`${id}-custom-title-count`" class="counter" :class="{ invalid: titleInvalid }" data-custom-title-count>
+            {{ titleCount }} / {{ CUSTOM_TOPIC_TITLE_MAX_CHARS }}
+            <span v-if="titleBlank && customTitle.length > 0">题目不能为纯空白</span>
+            <span v-else-if="titleCount > CUSTOM_TOPIC_TITLE_MAX_CHARS">超出上限，请删减后再提交</span>
+          </p>
+        </div>
+        <div class="custom-field">
+          <label :for="`${id}-custom-background`">背景（选填，0–{{ CUSTOM_TOPIC_BACKGROUND_MAX_CHARS }} 字）</label>
+          <textarea
+            :id="`${id}-custom-background`"
+            v-model="customBackground"
+            name="custom_background"
+            rows="4"
+            :disabled="formDisabled"
+            data-custom-background
+            :aria-describedby="`${id}-custom-background-count`"
+          ></textarea>
+          <p :id="`${id}-custom-background-count`" class="counter" :class="{ invalid: backgroundInvalid }" data-custom-background-count>
+            {{ backgroundCount }} / {{ CUSTOM_TOPIC_BACKGROUND_MAX_CHARS }}
+            <span v-if="backgroundInvalid">超出上限，请删减后再提交</span>
+          </p>
+        </div>
+      </div>
       <fieldset :disabled="formDisabled" class="stance-options">
         <legend>选择你的立场</legend>
         <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
@@ -128,16 +339,33 @@ onUnmounted(() => { disposed = true; version++ })
       </fieldset>
       <div class="style-field">
         <label :for="`${id}-ai-style`">AI 陪练流派</label>
-        <select :id="`${id}-ai-style`" v-model="aiStyle" name="ai_style" :disabled="formDisabled">
-          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ label }}</option>
+        <select :id="`${id}-ai-style`" v-model="opponentChoice" name="ai_style" :disabled="formDisabled || !!selectedCupStage">
+          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ opponents.find(item => item.official && item.style === value)?.name ?? label }}</option>
+          <option v-for="opponent in availableOpponents" :key="opponent.id" :value="`custom-${opponent.id}`">{{ opponent.name }} · {{ opponent.tag }}</option>
         </select>
-        <p class="muted">默认逻辑型。创建后流派固定，历史和策略均以服务端保存值为准。</p>
+        <p v-if="selectedOpponent" class="muted">{{ selectedOpponent.persona }}</p>
+        <p v-else class="muted">默认逻辑型。开赛后保存当时的辩手配置。</p>
       </div>
-      <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。请选择一个辩题后创建会话。</p>
+      <div class="style-field">
+        <label :for="`${id}-difficulty`">交锋难度</label>
+        <select :id="`${id}-difficulty`" v-model="difficulty" name="difficulty" :disabled="formDisabled || !!selectedCupStage || !!selectedOpponent">
+          <option v-for="(label, value) in difficultyLabels" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </div>
+      <div v-if="previewTopic" class="topic-preview" data-topic-preview>
+        <p class="muted">本场题目预览（按纯文本展示，创建后保存为快照）</p>
+        <h3>{{ previewTopic.title }}</h3>
+        <p v-if="previewTopic.description" class="description">{{ previewTopic.description }}</p>
+      </div>
+      <label class="practice-option" :for="`${id}-practice`">
+        <input :id="`${id}-practice`" v-model="practice" type="checkbox" :disabled="formDisabled" />
+        使用本地演示开练习局（不计正式积分）
+      </label>
+      <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。{{ source === 'custom' ? '请填写辩题后创建会话。' : '请选择一个辩题后创建会话。' }}</p>
       <Alert v-if="createError" type="error" :title="createError" role="alert" />
       <p v-if="creationUncertain" role="status">创建结果尚未确认。请先查看历史会话，核实是否已创建，避免重复创建。</p>
       <p v-if="createdDebate" role="status">会话已创建。</p>
-      <Button type="primary" html-type="submit" :loading="creating" :disabled="formDisabled || !selectedTopicId">{{ creating ? '创建中…' : '创建会话' }}</Button>
+      <Button type="primary" html-type="submit" :loading="creating" :disabled="!canSubmit">{{ creating ? '创建中…' : '创建会话' }}</Button>
     </form>
     <div class="view-actions">
       <Button type="outline" data-nav-debate :disabled="navigationDisabled" @click="back">返回辩论主视图</Button>
@@ -147,20 +375,40 @@ onUnmounted(() => { disposed = true; version++ })
 </template>
 
 <style scoped>
-.view-header, .view-actions, .stance-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.view-header, .view-actions, .stance-options, .source-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .view-header { justify-content: space-between; }
-.view-header h2 { margin-bottom: 0; }
+.view-header h2 { margin-bottom: 0; font-family: var(--app-serif); }
+.cup-preview { display: grid; gap: 10px; padding: 14px; color: #6e4e18; background: #fff8e8; border: 1px solid #ead7a8; border-radius: var(--app-radius-panel); }
+.cup-preview strong span { font-size: 12px; font-weight: 500; }
+.cup-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cup-heading p { margin: 0; font-size: 13px; }
+.cup-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px; }
+.cup-stages button { display: grid; gap: 4px; padding: 9px 8px; border: 1px solid #ead7a8; background: #fffcf4; color: inherit; border-radius: 8px; text-align: left; }
+.cup-stages button[aria-pressed='true'] { border-color: #946725; background: #fcebc3; }
 .muted, .description { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
 fieldset { min-width: 0; padding: 0; margin: 20px 0; border: 0; }
 legend { margin-bottom: 12px; font-weight: 600; }
+.source-options label { display: inline-flex; gap: 8px; align-items: center; }
 .topic-options { display: grid; gap: 10px; }
-.topic-option { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.topic-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.topic-filters button { padding: 5px 10px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
+.topic-filters button[aria-pressed="true"] { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
+.topic-option { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .topic-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
+.topic-option label { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
 .topic-option input { flex: none; margin-top: 4px; }
 .description { display: block; white-space: pre-wrap; }
 .stance-options label { display: inline-flex; gap: 8px; align-items: center; }
 .view-actions { margin-top: 20px; }
-[role="alert"] { margin-bottom: 16px; }
+[role="alert"], .custom-topic { margin-bottom: 16px; }
+.custom-field { margin: 16px 0; }
+.custom-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.custom-field textarea { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); font: inherit; resize: vertical; }
+.counter { margin: 6px 0 0; font-size: 12px; color: var(--app-text-muted); }
+.counter.invalid { color: var(--app-danger-text, #cb2634); }
 .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.practice-option { display: flex; align-items: center; gap: 8px; margin-block: 12px; }
 .style-field select { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
+.topic-preview { padding: 16px; border: 1px dashed var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
+.topic-preview h3 { margin: 8px 0; white-space: pre-wrap; }
 </style>

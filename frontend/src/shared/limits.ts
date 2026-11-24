@@ -9,11 +9,20 @@ export const USER_CONTENT_MAX_CHARS = 2000
 export const AI_CONTENT_MAX_CHARS = 2000
 export const TOPIC_TITLE_MAX_CHARS = 200
 export const TOPIC_DESCRIPTION_MAX_CHARS = 2000
+/** PRD §12：自定义辩题 1–200 字。 */
+export const CUSTOM_TOPIC_TITLE_MAX_CHARS = 200
+/** PRD §12：自定义辩题背景选填，最多 1000 字。 */
+export const CUSTOM_TOPIC_BACKGROUND_MAX_CHARS = 1000
 export const SUMMARY_TEXT_MAX_CHARS = 300
 export const SUMMARY_LIST_MAX_ITEMS = 3
 export const STRATEGY_TEXT_MAX_CHARS = 300
 export const STRATEGY_LIST_MAX_ITEMS = 3
 export const STRATEGY_CONTENT_MAX_BYTES = 8192
+// V2-13 复盘：与总结同名数值不代表同一契约，独立常量避免误改。
+export const REVIEW_TEXT_MAX_CHARS = 300
+export const REVIEW_KEY_ISSUES_MAX_ITEMS = 5
+export const REVIEW_LIST_MAX_ITEMS = 3
+export const REVIEW_CONTENT_MAX_BYTES = 24 * 1024
 export const HISTORY_PAGE_SIZE = 20
 export const HISTORY_MAX_PAGE_SIZE = 50
 

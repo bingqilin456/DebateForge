@@ -85,7 +85,7 @@ test('T14 浏览器 Mock：202 只轮询 GET，策略等待不阻挡首轮入口
   await generate.evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
   await expect(card).toContainText('策略生成中（v3）')
   await page.locator('#first-content').fill('先明确讨论范围，再提供可以检验的证据。')
-  await expect(page.getByRole('button', { name: '发送首轮', exact: true })).toBeEnabled()
+  await expect(page.locator('form[data-first-turn] button[type="submit"]')).toBeEnabled()
   await expect(card.locator('[data-strategy-completed]')).toBeVisible()
   expect(posts).toBe(1)
   expect(polls).toBe(2)

@@ -32,7 +32,7 @@ for (const width of [1440, 375]) {
         ? { user: { id: '42', username: 'visual_user' }, csrf_token: 'synthetic-visual-csrf' }
         : path.endsWith('/topics') ? { items: [topic] }
           : path.endsWith('/strategy') ? strategyState
-            : path === '/api/v1/debates' ? { items: [detail.debate], total: 1, page: 1, page_size: 20 } : detail
+            : path === '/api/v1/debates' ? { items: [detail.debate], total: 1, page: 1, page_size: 10 } : detail
       await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'X-Request-ID': 'visual' }, body: JSON.stringify({ data, request_id: 'visual' }) })
     })
     await page.goto('/')
@@ -53,7 +53,7 @@ for (const width of [1440, 375]) {
     await expect(page.locator('[data-query-strategy]')).toBeEnabled()
     await capture(page, testInfo.outputPath('strategy-input.png'))
     const input = page.locator('#first-content')
-    const send = page.getByRole('button', { name: '发送首轮', exact: true })
+    const send = page.locator('form[data-first-turn] button[type="submit"]')
     await input.fill('😀'.repeat(2000))
     await expect(send).toBeEnabled()
     await expect(page.locator('#content-help')).toContainText('2000 / 2000')

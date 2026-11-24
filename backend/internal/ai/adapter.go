@@ -90,12 +90,29 @@ func (a *OpenAIAdapter) Generate(ctx context.Context, req Request) (Result, erro
 	if err := ctx.Err(); err != nil {
 		return Result{}, contextError(err, Usage{}, Metadata{})
 	}
-
 	prompt, err := BuildPrompt(req)
 	if err != nil {
 		a.log(ctx, req, err, 0, Usage{})
 		return Result{}, err
 	}
+	return a.generatePrompt(ctx, req, prompt)
+}
+
+// GenerateArenaAssist 使用相同的有界传输与回复校验。辩题与发言仅进入 user 数据。
+func (a *OpenAIAdapter) GenerateArenaAssist(ctx context.Context, userID uint64, system, data string) (Result, error) {
+	return a.generatePrompt(ctx, Request{UserID: userID}, Prompt{Version: "neon-arena-v1", Messages: []PromptMessage{
+		{Role: RoleSystem, Content: system}, {Role: RoleUser, Content: data},
+	}})
+}
+
+func (a *OpenAIAdapter) generatePrompt(ctx context.Context, req Request, prompt Prompt) (Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, contextError(err, Usage{}, Metadata{})
+	}
+
 	if err := a.config.Window.ValidatePrompt(prompt); err != nil {
 		a.log(ctx, req, err, 0, Usage{})
 		return Result{}, err

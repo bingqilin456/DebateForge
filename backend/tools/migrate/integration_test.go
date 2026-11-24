@@ -65,28 +65,33 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	migrationCount := len(provider.ListSources())
+	if migrationCount == 0 {
+		t.Fatal("未找到业务迁移")
+	}
 	var output bytes.Buffer
 	if err := execute(ctx, provider, "up", &output); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 14 { // Goose 初始版本 0 + 六个建表 + 三个约束 + 一个种子版本 + 一个总结表版本 + 一个轮次与赛制版本 + 一个策略表版本。
-		t.Fatalf("版本历史条数 = %d，期望 14", len(before))
+	if len(before) != migrationCount+1 { // Goose 初始版本 0 加全部业务版本。
+		t.Fatalf("版本历史条数 = %d，期望 %d", len(before), migrationCount+1)
 	}
 	var tables int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 8 {
-		t.Fatal("八表的存储引擎/字符集不符合冻结设计", err)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations','training_issue_states','training_repractice_states') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 15 {
+		t.Fatal("十表的存储引擎/字符集不符合冻结设计", err)
 	}
 	var ids, foreignKeys, historyIDs int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 8 {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations') AND column_name='id' AND column_type='bigint unsigned' AND column_key='PRI' AND extra='auto_increment'`).Scan(&ids); err != nil || ids != 13 {
 		t.Fatal("业务主键未使用自增 BIGINT UNSIGNED", err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 7 {
-		t.Fatal("冻结的七条外键关系不完整", err)
+	// 00015 为 turn_annotations 增加两条外键（debate_id、turn_id）、00016 为 debate_reviews 增加一条，因此为 10 条。
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 14 {
+		t.Fatal("冻结的外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 13").Scan(&historyIDs); err != nil || historyIDs != 13 {
-		t.Fatal("十三个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id > 0").Scan(&historyIDs); err != nil || historyIDs != migrationCount {
+		t.Fatalf("已记录版本 %d，期望 %d，错误 %v", historyIDs, migrationCount, err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -102,8 +107,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 13 {
-		t.Fatal("状态未显示十三个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), " applied ") != migrationCount {
+		t.Fatalf("状态未显示全部 %d 个成功版本：%v", migrationCount, err)
 	}
 	assertSchemaConstraints(t, db)
 }
@@ -131,10 +136,10 @@ func versionHistory(t *testing.T, db *sql.DB, table string) []string {
 	return history
 }
 
-func rowCounts(t *testing.T, db *sql.DB) [8]int64 {
+func rowCounts(t *testing.T, db *sql.DB) [15]int64 {
 	t.Helper()
-	var counts [8]int64
-	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies"} {
+	var counts [15]int64
+	for i, table := range []string{"users", "auth_sessions", "topics", "debates", "debate_turns", "messages", "debate_summaries", "debate_strategies", "turn_annotations", "debate_reviews", "debate_steps", "debate_step_claims", "training_annotations", "training_issue_states", "training_repractice_states"} {
 		if err := db.QueryRow("SELECT COUNT(*) FROM `" + table + "`").Scan(&counts[i]); err != nil {
 			t.Fatal("无法核对业务行数")
 		}
@@ -176,7 +181,30 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	debateSQL := "INSERT INTO debates(user_id,topic_id,topic_title_snapshot,topic_description_snapshot,user_stance) VALUES (?,?,?,?,?)"
 	debate := insert(debateSQL, user, topic, "中文辩题🌱", "快照", "pro")
 	reject(1452, debateSQL, 0, topic, "x", "y", "pro")
-	reject(3819, "UPDATE debates SET completed_rounds=7 WHERE id=?", debate)
+	// 00014 之后 topic_id 可空：NULL 表示私有自定义辩题，不参与外键引用检查；
+	// 非 NULL 的非法 ID 仍必须被外键拒绝，两条语义不能混为一谈。
+	var nullTopicColumn string
+	if err := tx.QueryRow("SELECT IS_NULLABLE FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='debates' AND column_name='topic_id'").Scan(&nullTopicColumn); err != nil {
+		t.Fatal("无法核对 topic_id 可空性", err)
+	}
+	if nullTopicColumn != "YES" {
+		t.Fatalf("00014 后 debates.topic_id 必须可空，实际 IS_NULLABLE=%q", nullTopicColumn)
+	}
+	customDebate := insert(debateSQL, user, nil, "自定义辩题原文", "自定义背景", "con")
+	var storedNull bool
+	if err := tx.QueryRow("SELECT topic_id IS NULL FROM debates WHERE id=?", customDebate).Scan(&storedNull); err != nil || !storedNull {
+		t.Fatalf("自定义会话必须写入 NULL topic_id，实际 null=%t err=%v", storedNull, err)
+	}
+	reject(1452, debateSQL, user, 999999, "不存在的题目", "y", "pro")
+	// 00017 把粗边界放宽到 0–10（训练赛自由辩最多十回合）；11 仍是越界值。
+	// V1 的精确上限（quick_3 为 3、standard_4 为 4）由业务代码校验，数据库只做粗边界。
+	reject(3819, "UPDATE debates SET completed_rounds=11 WHERE id=?", debate)
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=10 WHERE id=?", debate); err != nil {
+		t.Fatalf("10 回合应落在新的粗边界内: %v", err)
+	}
+	if _, err := tx.Exec("UPDATE debates SET completed_rounds=0 WHERE id=?", debate); err != nil {
+		t.Fatalf("恢复夹具 completed_rounds 失败: %v", err)
+	}
 	reject(3819, "UPDATE debates SET mode='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET ai_style='other' WHERE id=?", debate)
 	reject(3819, "UPDATE debates SET user_stance='bad' WHERE id=?", debate)
@@ -215,6 +243,60 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 	insert("INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "中文发言🌱")
 	reject(1062, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "user", "重复")
 	reject(3819, "INSERT INTO messages(turn_id,role,content) VALUES (?,?,?)", turn, "system", "非法角色")
+
+	// 00015：annotation_eligible 默认 false（旧行保持原状，不会凭空获得批注资格）。
+	var eligibleDefault bool
+	if err := tx.QueryRow("SELECT annotation_eligible FROM debate_turns WHERE id=?", turn).Scan(&eligibleDefault); err != nil || eligibleDefault {
+		t.Fatalf("annotation_eligible 默认必须为 false，实际 %t err=%v", eligibleDefault, err)
+	}
+	// 该列只标识批注资格，不参与正式轮次状态：写入 true 不改变轮次状态与会话完成轮数。
+	insert("UPDATE debate_turns SET annotation_eligible=1 WHERE id=?", turn)
+	var eligibleOn bool
+	if err := tx.QueryRow("SELECT annotation_eligible FROM debate_turns WHERE id=?", turn).Scan(&eligibleOn); err != nil || !eligibleOn {
+		t.Fatalf("annotation_eligible 应可独立置为 true，实际 %t err=%v", eligibleOn, err)
+	}
+	reject(3819, "UPDATE debate_turns SET annotation_eligible=2 WHERE id=?", turn)
+
+	// turn_annotations：以触发轮唯一、两条 RESTRICT 外键、受控状态与版本约束。
+	annotationSQL := "INSERT INTO turn_annotations(debate_id,turn_id,status,lease_expires_at) VALUES (?,?,?,'2026-11-08 00:00:00')"
+	// 外键反例先于有效插入，避免被 turn_id 唯一键提前拒绝。
+	reject(1452, annotationSQL, 0, turn, "generating")
+	reject(1452, annotationSQL, debate, 0, "generating")
+	annotation := insert(annotationSQL, debate, turn, "generating")
+	reject(1062, annotationSQL, debate, turn, "generating")
+	reject(3819, "UPDATE turn_annotations SET attempt_version=0 WHERE id=?", annotation)
+	reject(3819, "UPDATE turn_annotations SET status='other' WHERE id=?", annotation)
+	// 成功结果整体保存，空数组也是合法内容；未完成时内容与错误码保留 NULL。
+	var blankContent bool
+	if err := tx.QueryRow("SELECT content_json IS NULL AND error_code IS NULL FROM turn_annotations WHERE id=?", annotation).Scan(&blankContent); err != nil || !blankContent {
+		t.Fatal("批注未完成时内容与错误码必须为 NULL", err)
+	}
+	insert("UPDATE turn_annotations SET status='completed', content_json=? WHERE id=?", `{"items":[]}`, annotation)
+
+	// debate_reviews（00016）：以会话唯一、一条 RESTRICT 外键、受控状态与版本约束，
+	// 且与总结/批注完全分表，复盘失败不得改写既有生成结果。
+	reviewSQL := "INSERT INTO debate_reviews(debate_id,status,lease_expires_at) VALUES (?,?,'2026-11-08 00:00:00')"
+	// 外键反例先于有效插入，避免被 debate_id 唯一键提前拒绝。
+	reject(1452, reviewSQL, 0, "generating")
+	review := insert(reviewSQL, debate, "generating")
+	reject(1062, reviewSQL, debate, "generating")
+	reject(3819, "UPDATE debate_reviews SET attempt_version=0 WHERE id=?", review)
+	reject(3819, "UPDATE debate_reviews SET status='other' WHERE id=?", review)
+	var unknownReview bool
+	if err := tx.QueryRow("SELECT schema_version IS NULL AND content_json IS NULL AND error_code IS NULL AND input_tokens IS NULL AND output_tokens IS NULL FROM debate_reviews WHERE id=?", review).Scan(&unknownReview); err != nil || !unknownReview {
+		t.Fatal("复盘未完成时内容、错误码与未知用量必须为 NULL", err)
+	}
+	// 外键名称与删除/更新规则必须精确指向 debates，不能只靠总数巧合通过。
+	var reviewFKRule, reviewFKTable string
+	if err := tx.QueryRow(`SELECT delete_rule, referenced_table_name FROM information_schema.referential_constraints
+		WHERE constraint_schema=DATABASE() AND constraint_name='fk_debate_reviews_debate' AND table_name='debate_reviews'`).Scan(&reviewFKRule, &reviewFKTable); err != nil || reviewFKRule != "RESTRICT" || reviewFKTable != "debates" {
+		t.Fatalf("debate_reviews 外键必须 RESTRICT 指向 debates，实际 rule=%q table=%q err=%v", reviewFKRule, reviewFKTable, err)
+	}
+	// 复盘与更早的生成结果分表：写入 replay 行不改变既有总结行数。
+	var summaryRows int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM debate_summaries WHERE debate_id=?", debate).Scan(&summaryRows); err != nil || summaryRows != 1 {
+		t.Fatal("复盘写入改变了既有总结行", err)
+	}
 	// 必须拒绝 PAD SPACE 反例，不能只测与合法值完全不同的字符串。
 	for _, check := range []struct {
 		table, column string
@@ -223,12 +305,15 @@ func assertSchemaConstraints(t *testing.T, db *sql.DB) {
 		invalid       []string
 	}{
 		{"debates", "user_stance", debate, []string{"pro", "con"}, []string{"PRO", "Con", "", " pr"}},
-		{"debates", "mode", debate, []string{"quick_3", "standard_4"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 "}},
+		{"debates", "mode", debate, []string{"quick_3", "standard_4", "training_v2"}, []string{"QUICK_3", "Standard_4", "", " quick_3", "quick_3 ", "TRAINING_V2", "training_v2 "}},
 		{"debates", "ai_style", debate, []string{"logical", "aggressive", "empathic", "data"}, []string{"LOGICAL", "Logical", "", " logical", "logical "}},
 		{"debates", "status", debate, []string{"active", "completed"}, []string{"active ", "completed ", "ACTIVE", "Active", "", " active", "active\t"}},
+		{"debates", "training_stage", debate, []string{"opening", "rebuttal", "free_debate", "closing"}, []string{"OPENING", "Opening", "", " opening", "opening ", "free-debate"}},
 		{"debate_turns", "status", turn, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_summaries", "status", summary, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"debate_strategies", "status", strategy, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
+		{"turn_annotations", "status", annotation, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
+		{"debate_reviews", "status", review, []string{"generating", "completed", "failed"}, []string{"generating ", "completed ", "failed ", "GENERATING", "Failed", "", " failed", "failed\t"}},
 		{"messages", "role", 0, []string{"user", "assistant"}, []string{"user ", "USER", "Assistant", "", " user", "user\t"}},
 	} {
 		where, id := "id", check.id

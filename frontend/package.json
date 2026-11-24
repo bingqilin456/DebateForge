@@ -14,6 +14,7 @@
     "test": "vitest run",
     "build": "vite build",
     "test:e2e": "playwright test e2e/views.spec.ts e2e/style.spec.ts e2e/stream.spec.ts",
+    "test:e2e:review": "playwright test -c e2e/review-mock.playwright.config.ts",
     "test:e2e:live": "playwright test e2e/live.spec.ts",
     "test:e2e:b2:live": "playwright test e2e/strategy-fault-live.spec.ts e2e/stream-live.spec.ts"
   },

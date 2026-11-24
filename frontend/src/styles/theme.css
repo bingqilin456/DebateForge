@@ -1,11 +1,16 @@
 body {
   /* Arco 语义变量定义在 body，别名也须在此解析。其余颜色沿用页面基调。 */
-  --app-text: #172b3a;
-  --app-text-muted: #526578;
+  --app-text: #18181b;
+  --app-text-muted: #55565e;
   --app-text-secondary: #34495e;
   --app-accent: #235b81;
   --app-surface: var(--color-bg-2);
-  --app-background: #f6f8fa;
+  --app-background: #f7f6f2;
+  --app-pro: #a73024;
+  --app-pro-pale: #fdf2f0;
+  --app-con: #1d4ed8;
+  --app-con-pale: #eff6ff;
+  --app-serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
   --app-border: var(--color-border-2);
   --app-input-border: #879aab;
   --app-info-bg: #edf5fa;
@@ -20,4 +25,15 @@ body {
   --app-radius-control: var(--border-radius-large);
   --app-radius-panel: 12px;
   --app-radius-card: 16px;
+}
+
+/*
+ * 复盘引用定位的落点视觉：正式工作台与两个预览页共用同一处定义。
+ * 定位命中时由 shared/locateQuote.ts 把引用文本写到整段原文节点的 data-located-quote 上，
+ * 这里只描这一段的外框，不逐字拆节点、不改字色，保证原文仍按纯文本可读。
+ */
+[data-located-quote] {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 3px;
+  border-radius: var(--app-radius-control);
 }

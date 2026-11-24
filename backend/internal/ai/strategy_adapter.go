@@ -33,6 +33,45 @@ func (a *OpenAIAdapter) GenerateStrategy(ctx context.Context, req StrategyReques
 		return StrategyResult{}, err
 	}
 
+	reply, err := a.generateStructuredReply(ctx, prompt)
+	usage, metadata := reply.Usage, reply.Metadata
+	latency := time.Duration(metadata.LatencyMS) * time.Millisecond
+	if err != nil {
+		a.logStrategy(ctx, err, latency, usage)
+		return StrategyResult{}, err
+	}
+	strategy, failure := parseStrategyReply(reply.Content)
+	if failure != nil {
+		failure.Usage, failure.Metadata = usage, metadata
+		a.logStrategy(ctx, failure, latency, usage)
+		return StrategyResult{}, failure
+	}
+
+	canonicalJSON, err := json.Marshal(strategy)
+	if err != nil || len(canonicalJSON) > MaxStrategyJSONBytes {
+		controlled := &Error{Code: CodeModelError, Message: "策略 JSON 序列化无效或超过大小上限", Usage: usage, Metadata: metadata}
+		a.logStrategy(ctx, controlled, latency, usage)
+		return StrategyResult{}, controlled
+	}
+
+	result := StrategyResult{
+		SchemaVersion: StrategySchemaVersion,
+		Strategy:      strategy,
+		ContentJSON:   string(canonicalJSON),
+		Usage:         usage,
+		Metadata:      metadata,
+	}
+	a.logStrategy(ctx, nil, latency, usage)
+	return result, nil
+}
+
+func (a *OpenAIAdapter) generateStructuredReply(ctx context.Context, prompt Prompt) (Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, contextError(err, Usage{}, Metadata{})
+	}
 	callCtx, cancel := newModelCallContext(ctx)
 	defer cancel()
 
@@ -69,8 +108,7 @@ func (a *OpenAIAdapter) GenerateStrategy(ctx context.Context, req StrategyReques
 		}
 		controlled.Metadata.Refused = observation.hasRefusal || observation.finishReason == "content_filter"
 		controlled.Metadata.FinishReason = observation.finishReason
-		a.logStrategy(ctx, controlled, latency, usage)
-		return StrategyResult{}, controlled
+		return Result{Usage: usage, Metadata: metadata}, controlled
 	}
 
 	finishReason := observation.finishReason
@@ -87,49 +125,34 @@ func (a *OpenAIAdapter) GenerateStrategy(ctx context.Context, req StrategyReques
 		content = message.Content
 	}
 
-	strategy, failure := classifyStrategyReply(content, observation)
-	if failure != nil {
-		failure.Usage = usage
-		failure.Metadata = metadata
-		a.logStrategy(ctx, failure, latency, usage)
-		return StrategyResult{}, failure
+	if failure := classifyStructuredReply(observation); failure != nil {
+		failure.Usage, failure.Metadata = usage, metadata
+		return Result{Usage: usage, Metadata: metadata}, failure
 	}
-
-	canonicalJSON, err := json.Marshal(strategy)
-	if err != nil || len(canonicalJSON) > MaxStrategyJSONBytes {
-		controlled := &Error{Code: CodeModelError, Message: "策略 JSON 序列化无效或超过大小上限", Usage: usage, Metadata: metadata}
-		a.logStrategy(ctx, controlled, latency, usage)
-		return StrategyResult{}, controlled
-	}
-
-	result := StrategyResult{
-		SchemaVersion: StrategySchemaVersion,
-		Strategy:      strategy,
-		ContentJSON:   string(canonicalJSON),
-		Usage:         usage,
-		Metadata:      metadata,
-	}
-	a.logStrategy(ctx, nil, latency, usage)
-	return result, nil
+	return Result{Content: content, Usage: usage, Metadata: metadata}, nil
 }
 
-func classifyStrategyReply(content string, observation responseObservation) (Strategy, *Error) {
+func classifyStructuredReply(observation responseObservation) *Error {
 	switch {
 	case observation.invalidBody || observation.invalidUTF8:
-		return Strategy{}, &Error{Code: CodeModelError, Message: "模型响应格式或大小无效"}
+		return &Error{Code: CodeModelError, Message: "模型响应格式或大小无效"}
 	case !observation.hasRole || observation.role != "assistant":
-		return Strategy{}, &Error{Code: CodeModelError, Message: "模型响应角色无效"}
+		return &Error{Code: CodeModelError, Message: "模型响应角色无效"}
 	case observation.hasRefusal:
-		return Strategy{}, &Error{Code: CodeModelRefused, Message: "模型拒绝回复本次内容"}
+		return &Error{Code: CodeModelRefused, Message: "模型拒绝回复本次内容"}
 	case observation.hasToolCalls:
-		return Strategy{}, &Error{Code: CodeModelError, Message: "模型返回了不支持的工具调用输出"}
+		return &Error{Code: CodeModelError, Message: "模型返回了不支持的工具调用输出"}
 	case observation.finishReason == "content_filter":
-		return Strategy{}, &Error{Code: CodeModelRefused, Message: "模型回复被内容策略拦截"}
+		return &Error{Code: CodeModelRefused, Message: "模型回复被内容策略拦截"}
 	case observation.finishReason == "length":
-		return Strategy{}, &Error{Code: CodeModelError, Message: "模型回复因输出上限被截断"}
+		return &Error{Code: CodeModelError, Message: "模型回复因输出上限被截断"}
 	case !observation.hasFinishReason || observation.finishReason != "stop":
-		return Strategy{}, &Error{Code: CodeModelError, Message: "模型未正常结束回复"}
+		return &Error{Code: CodeModelError, Message: "模型未正常结束回复"}
 	}
+	return nil
+}
+
+func parseStrategyReply(content string) (Strategy, *Error) {
 	strategy, err := ParseStrategy(content)
 	if err != nil {
 		var controlled *Error

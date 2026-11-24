@@ -70,17 +70,26 @@ type Debate struct {
 	ID                       uint64  `json:"-" gorm:"primaryKey"`
 	UserID                   uint64  `json:"-"`
 	TopicID                  *uint64 `json:"-"`
+	NeonTopicID              *uint64 `json:"-"`
+	NeonOpponentID           *uint64 `json:"-"`
+	OpponentNameSnapshot     string  `json:"-"`
+	OpponentTagSnapshot      string  `json:"-"`
+	OpponentPersonaSnapshot  *string `json:"-"`
 	TopicTitleSnapshot       string  `json:"-"`
 	TopicDescriptionSnapshot string  `json:"-"`
 	UserStance               string  `json:"-"`
 	Mode                     string  `json:"-"`
 	AIStyle                  string  `json:"-"`
+	Difficulty               string  `json:"-" gorm:"default:beginner"`
+	Practice                 bool    `json:"-"`
+	CupStage                 string  `json:"-"`
 	// TrainingStage / TrainingStageStep 是产品 V2 训练赛的权威阶段进度；
 	// V1 行保持 NULL 与 0，且只有训练赛路径读写它们（见 training_model.go）。
 	TrainingStage     *string   `json:"-"`
 	TrainingStageStep int       `json:"-"`
 	Status            string    `json:"-"`
 	CompletedRounds   int       `json:"-"`
+	ReviewStatus      string    `json:"-" gorm:"column:review_status;->;-:migration"`
 	CreatedAt         time.Time `json:"-"`
 	UpdatedAt         time.Time `json:"-"`
 }
@@ -114,10 +123,15 @@ type CustomTopic struct {
 // CreateInput 是严格二选一的创建输入：TopicID 与 CustomTopic 恰有一个非 nil。
 // 服务端归属、赛制与轮次都不从请求接收。
 type CreateInput struct {
-	TopicID     *uint64
-	CustomTopic *CustomTopic
-	UserStance  string
-	AIStyle     string
+	TopicID        *uint64
+	CustomTopic    *CustomTopic
+	NeonTopicID    *uint64
+	NeonOpponentID *uint64
+	UserStance     string
+	AIStyle        string
+	Difficulty     string
+	Practice       bool
+	CupStage       string
 }
 
 type DebateDTO struct {
@@ -127,9 +141,15 @@ type DebateDTO struct {
 	AIStance        string `json:"ai_stance"`
 	Mode            string `json:"mode"`
 	AIStyle         string `json:"ai_style"`
+	OpponentName    string `json:"opponent_name,omitempty"`
+	OpponentTag     string `json:"opponent_tag,omitempty"`
+	Difficulty      string `json:"difficulty"`
+	Practice        bool   `json:"practice"`
+	CupStage        string `json:"cup_stage,omitempty"`
 	TotalRounds     int    `json:"total_rounds"`
 	Status          string `json:"status"`
 	CompletedRounds int    `json:"completed_rounds"`
+	ReviewStatus    string `json:"review_status,omitempty"`
 	// Training 仅在产品 V2 训练赛会话上非空，是列表与详情共用的轻量进度；
 	// V1 会话保持 null，V1 语义与字段不变。
 	Training  *TrainingSummaryDTO `json:"training"`
@@ -159,7 +179,12 @@ func (d Debate) DTO() DebateDTO {
 	if !ai.AIStyle(style).Valid() {
 		style = string(ai.StyleLogical)
 	}
-	dto := DebateDTO{ID: formatID(d.ID), Topic: Topic{d.topicIDString(), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	dto := DebateDTO{ID: formatID(d.ID), Topic: Topic{d.topicIDString(), d.TopicTitleSnapshot, d.TopicDescriptionSnapshot}, UserStance: d.UserStance, AIStance: opposite, Mode: mode, AIStyle: style, TotalRounds: total, Status: d.Status, CompletedRounds: d.CompletedRounds, ReviewStatus: d.ReviewStatus, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+	dto.Difficulty = ai.NormalizeDifficulty(d.Difficulty)
+	dto.OpponentName = d.OpponentNameSnapshot
+	dto.OpponentTag = d.OpponentTagSnapshot
+	dto.Practice = d.Practice
+	dto.CupStage = d.CupStage
 	if d.IsTraining() {
 		dto.Training = trainingSummaryDTO(d)
 	}
@@ -309,6 +334,7 @@ func (d Detail) DTO() DetailDTO {
 		turns = append(turns, t.DTO())
 	}
 	out := DetailDTO{Debate: d.Debate.DTO(), Turns: turns, SummaryStatus: d.Summary.DTO()}
+	out.Debate.Practice = out.Debate.Practice || hasFakeArenaReply(d.Turns)
 	if d.Training != nil {
 		steps := make([]TrainingStepDTO, 0, len(d.Training.Steps))
 		for _, step := range d.Training.Steps {
@@ -401,7 +427,14 @@ func ValidateSubmit(in SubmitInput) (SubmitInput, error) {
 //   - 持久化保留原文：不 trim、不折行、不做任何 Unicode 归一化。
 //   - 立场与流派仍由服务端精确校验，赛制与归属不从请求接收。
 func ValidateCreateInput(in CreateInput) (CreateInput, error) {
-	if (in.TopicID == nil) == (in.CustomTopic == nil) {
+	count := 0
+	for _, present := range []bool{in.TopicID != nil, in.CustomTopic != nil, in.NeonTopicID != nil} {
+		if present {
+			count++
+		}
+	}
+	if count != 1 || (in.NeonTopicID != nil && *in.NeonTopicID == 0) ||
+		(in.NeonOpponentID != nil && (*in.NeonOpponentID == 0 || in.CupStage != "")) {
 		return in, ErrInvalidRequest
 	}
 	if in.UserStance != "pro" && in.UserStance != "con" {
@@ -414,6 +447,9 @@ func ValidateCreateInput(in CreateInput) (CreateInput, error) {
 		if *in.TopicID == 0 {
 			return in, ErrInvalidRequest
 		}
+		return in, nil
+	}
+	if in.NeonTopicID != nil {
 		return in, nil
 	}
 	custom := *in.CustomTopic

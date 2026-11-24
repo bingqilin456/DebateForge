@@ -16,7 +16,7 @@ export interface HistoryViewProps {
 const props = withDefaults(defineProps<HistoryViewProps>(), { pageSize: HISTORY_PAGE_SIZE, disabled: false })
 const emit = defineEmits<{
   /** 选中某条历史会话后触发，交由顶层切换至辩论主视图重读详情或继续未完成会话 */
-  'select-debate': [debateId: string, training?: boolean]
+  'select-debate': [debateId: string, training?: boolean, showReport?: boolean]
   /** 切换至辩题列表视图（T08） */
   'open-topics': []
   /** 返回当前辩论主视图 */
@@ -72,11 +72,12 @@ async function loadPage(target = page.value) {
 }
 function previousPage() { if (page.value > 1) void loadPage(page.value - 1) }
 function nextPage() { if (page.value < pageCount.value && !loadError.value) void loadPage(page.value + 1) }
-function selectDebate(id: string, training?: boolean) {
+function selectDebate(id: string, training?: boolean, showReport?: boolean) {
   if (controlsDisabled.value) return
   // 交接前同步锁定，只发一种事件；详情重读和展示完全由已有主界面处理。
   selectedDebateId.value = id
   if (training) emit('select-debate', id, true)
+  else if (showReport) emit('select-debate', id, false, true)
   else emit('select-debate', id)
 }
 function openTopics() { if (!navigationDisabled.value) emit('open-topics') }
@@ -108,7 +109,7 @@ onUnmounted(() => { disposed = true; version++ })
         <li v-for="debate in history.items" :key="debate.id" :data-history-id="debate.id">
           <div class="record-header">
             <h3>{{ debate.topic.title }}</h3>
-            <span class="status" :class="{ completed: debate.status === 'completed' }">{{ debate.status === 'completed' ? '已完成' : '进行中' }}</span>
+            <span class="status" :class="{ completed: debate.status === 'completed', failed: debate.review_status === 'failed' }">{{ debate.review_status === 'failed' ? '已完赛 · 复盘失败' : debate.status === 'completed' ? '已完成' : '进行中' }}</span>
           </div>
           <dl class="record-details">
             <div><dt>你的立场</dt><dd>{{ debate.user_stance === 'pro' ? '正方' : '反方' }}</dd></div>
@@ -118,8 +119,8 @@ onUnmounted(() => { disposed = true; version++ })
             <div><dt>创建时间</dt><dd><time :datetime="debate.created_at">{{ localTime(debate.created_at) }}</time></dd></div>
             <div><dt>更新时间</dt><dd><time :datetime="debate.updated_at">{{ localTime(debate.updated_at) }}</time></dd></div>
           </dl>
-          <Button type="outline" :data-debate-id="debate.id" :aria-label="`查看会话：${debate.topic.title}`" :disabled="controlsDisabled" @click="selectDebate(debate.id, debate.mode === 'training_v2' ? true : undefined)">
-            {{ selectedDebateId === debate.id ? '正在打开…' : '查看会话' }}
+          <Button type="outline" :data-debate-id="debate.id" :aria-label="`查看会话：${debate.topic.title}`" :disabled="controlsDisabled" @click="selectDebate(debate.id, debate.mode === 'training_v2', debate.status === 'completed')">
+            {{ selectedDebateId === debate.id ? '正在打开…' : debate.status === 'completed' ? '回看复盘' : '继续对局' }}
           </Button>
         </li>
       </ul>
@@ -146,6 +147,7 @@ onUnmounted(() => { disposed = true; version++ })
 .record-header h3 { font-size: 16px; }
 .status { padding: 3px 8px; border-radius: 4px; background: var(--app-info-bg); color: var(--app-accent); }
 .status.completed { background: var(--app-success-bg); color: var(--app-success-text); }
+.status.failed { background: var(--app-error-bg); color: var(--app-error-text); }
 .record-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 20px; }
 .record-details div { min-width: 0; }
 .record-details dt { font-weight: 600; }

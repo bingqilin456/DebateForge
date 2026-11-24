@@ -42,7 +42,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 
 | 目录 | 职责与入口 |
 | --- | --- |
-| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[页面设计与交互细化](product/PRD_V2_UI_DESIGN.md)（总览＋[模块目录](product/ui/README.md)，细化文档，非事实源）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md) |
+| [product/](product/) | 产品需求：[PRD V2](product/PRD.md)（当前规格，未实现）、[页面设计与交互细化](product/PRD_V2_UI_DESIGN.md)（总览＋[模块目录](product/ui/README.md)，细化文档，非事实源）、[PRD V1 冻结基线](product/PRD_V1_BASELINE.md)、[需求确认记录](product/PRD_V2_DECISIONS.md)、[Neon 定稿验收清单](product/NEON_ACCEPTANCE_CHECKLIST.md) |
 | [architecture/](architecture/) | 当前架构与目标设计：[ARCHITECTURE](architecture/ARCHITECTURE.md)（含 V1 状态机与 [V2 目标状态模型](architecture/ARCHITECTURE.md#v2-目标状态模型与服务端权威阶段进度待实施)） |
 | [api/](api/) | 接口契约：[API](api/API.md)、[OpenAPI 3.1](api/openapi.yaml) |
 | [decisions/](decisions/) | 决策与假设：[DECISIONS](decisions/DECISIONS.md)，本次不拆分 ADR |
@@ -60,6 +60,11 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 模块专属 README 留在模块目录。上述操作说明是查阅入口，执行数据库、真实模型、部署或 Git 写操作仍须符合本轮明确授权。
 
 ## 历史计划与验收证据
+
+- Neon 第一批：[技术验证记录](acceptance/NEON_FIRST_BATCH_ACCEPTANCE.md)，覆盖隔离 MySQL、Fake 端到端和真实模型待验项。
+- Neon 第二批：[技术验证记录](acceptance/NEON_SECOND_BATCH_ACCEPTANCE.md)，覆盖竞技场辅助、个人模型配置和练习局联调。
+- Neon 第三批：[技术验证记录](acceptance/NEON_THIRD_BATCH_ACCEPTANCE.md)，覆盖裁判共享、五维裁决、积分结算和杯赛。
+- Neon 第四批：[技术验证记录](acceptance/NEON_FOURTH_BATCH_ACCEPTANCE.md)，覆盖辩题与辩手公开、复盘分享、思辨道场和个人中心。
 
 - V2-03 私有自定义辩题：[设计、隔离迁移与 AC-V2-12 实测](planning/V2_03_PRIVATE_TOPIC_DESIGN.md#隔离-mysql-验证记录2026-11-18)。负责人已于 2026-11-18 确认限定范围签收。
 

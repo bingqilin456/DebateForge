@@ -76,6 +76,16 @@ describe('批注读取', () => {
     expect(result.items).toEqual([])
   })
 
+  it('同批可读取我方批注和敌方破绽与杀招', async () => {
+    const returned = batch({ items: [
+      item(),
+      item({ category: 'opponent_weakness', label: '敌方破绽', role: 'assistant' }),
+      item({ category: 'opponent_strength', label: '敌方杀招', role: 'assistant' }),
+    ] })
+    fetcher.mockResolvedValueOnce(envelope({ items: [returned] }))
+    await expect(createAnnotationApi(client()).list('7')).resolves.toEqual({ items: [returned] })
+  })
+
   it.each([
     ['未开始带条目', { items: [batch({ status: 'not_started', attempt_version: 0 })] }],
     ['未开始版本非 0', { items: [batch({ status: 'not_started', attempt_version: 3, items: [] })] }],

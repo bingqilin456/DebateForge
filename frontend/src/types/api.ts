@@ -43,9 +43,9 @@ export interface CustomTopic {
  * 创建会话请求是严格二选一：topic_id 与 custom_topic 恰有一个出现。
  * 服务端按“字段是否出现”判定互斥，两者同时出现或都缺失都是 400。
  */
-export type CreateDebateRequest =
-  | { topic_id: string; user_stance: Stance; ai_style?: AIStyle }
-  | { custom_topic: CustomTopic; user_stance: Stance; ai_style?: AIStyle }
+export type CreateDebateRequest = (
+  { topic_id: string } | { custom_topic: CustomTopic } | { neon_topic_id: string }
+) & { user_stance: Stance; ai_style?: AIStyle; difficulty?: DebateDifficulty; practice?: boolean; cup_stage?: string; neon_opponent_id?: string }
 
 /** LegacyCreateDebateRequest 是预设题的兼容形状，供已有调用方继续引用。 */
 export interface LegacyCreateDebateRequest {
@@ -59,6 +59,36 @@ export type DebateStatus = 'active' | 'completed'
 export type DebateMode = 'quick_3' | 'standard_4' | 'training_v2'
 
 export type AIStyle = 'logical' | 'aggressive' | 'empathic' | 'data'
+export type DebateDifficulty = 'beginner' | 'varsity' | 'national'
+
+export type NeonTopicCategory = 'technology' | 'campus' | 'society' | 'philosophy'
+export interface NeonTopicDraft { title: string; background: string; category: NeonTopicCategory }
+export interface NeonOpponentDraft { name: string; tag: string; difficulty: DebateDifficulty; persona: string }
+interface NeonCatalogVisibility { id: string; public: boolean; owned: boolean; official: boolean; heat: number }
+export interface NeonTopic extends NeonTopicDraft, NeonCatalogVisibility {}
+export interface NeonOpponent extends NeonOpponentDraft, NeonCatalogVisibility { style?: AIStyle }
+
+export type PersonalModelProvider = 'deepseek' | 'openai' | 'doubao' | 'custom'
+
+export interface PersonalModelInput {
+  provider: PersonalModelProvider
+  model: string
+  alias: string
+  base_url?: string
+  api_key: string
+}
+
+export interface PersonalModelStatus {
+  enabled: boolean
+  configured: boolean
+  provider?: PersonalModelProvider
+  model?: string
+  alias?: string
+  base_url?: string
+  verified?: boolean
+  used?: boolean
+  expires_at?: string
+}
 
 /** 赛制环节：第 3 轮在 quick_3 为结辩、在 standard_4 为自由辩。 */
 export type DebateStage = 'opening' | 'rebuttal' | 'free_debate' | 'closing'
@@ -141,10 +171,16 @@ export interface Debate {
   /** 赛制模式由服务端在创建时固定，客户端不可修改。 */
   mode: DebateMode
   ai_style: AIStyle
+  difficulty?: DebateDifficulty
+  practice?: boolean
+  opponent_name?: string
+  opponent_tag?: string
+  cup_stage?: string
   /** 总轮数由服务端给出：V1 由赛制推导，训练赛为自由辩回合上限。 */
   total_rounds: number
   status: DebateStatus
   completed_rounds: number
+  review_status?: 'completed' | 'failed' | 'pending'
   /**
    * 训练赛轻量进度；V1 会话为 null 或省略。
    * 可选是为了让未包含该字段的 V1 旧响应仍可读取；训练赛响应必须给出。
@@ -252,8 +288,9 @@ export type TurnStreamResult = { kind: 'done'; data: StreamDone } | { kind: 'pen
 
 // V2-04 原文批注：与轮次、总结、策略各自独立的状态与版本，不能复用它们的 DTO。
 
-/** 批注类别固定四种；颜色与线型只是展示派生。 */
+/** 五类双边批注，兼容历史的 unclear_scope。颜色与线型由界面派生。 */
 export type AnnotationCategory = 'strength' | 'possible_logic_gap' | 'insufficient_support' | 'unclear_scope'
+  | 'opponent_weakness' | 'opponent_strength'
 
 /**
  * 批注锚点：message_id 为服务端正式消息 ID；坐标是从 0 开始的 Unicode 码点半开区间。
@@ -370,8 +407,9 @@ export interface RepracticeVersion {
   id: string
   attempt_version: number
   status: 'generating' | 'completed' | 'failed'
+  quote?: string
   rewrite: string
-  feedback: { change: string; reason: string; new_problem: string }
+  feedback: { change: string; reason: string; new_problem: string; before_score?: number; after_score?: number }
 }
 
 export type ReviewRequest = { retry?: false } | { retry: true; expected_attempt_version: number }

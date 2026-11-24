@@ -12,6 +12,7 @@ const StrategySchemaVersion = 1
 const MaxStrategyJSONBytes = 8 << 10
 
 type StrategyRequest struct {
+	ForceFake bool
 	// AttemptVersion 来自服务端已认领策略行，仅供本地 Fake 确定性故障；不进入 Prompt。
 	AttemptVersion uint64
 	UserID         uint64

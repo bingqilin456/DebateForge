@@ -186,11 +186,17 @@ type CompletedTurn struct {
 // 为空时走 V1「(赛制, 轮号)」路径，非空时走训练赛按发言步骤建模的路径。
 // 两者不能混用字段，避免把训练赛塞进 V1 的轮次推导形成第二个事实源。
 type Request struct {
+	// 已有采纳的真实回复时禁止后续自动降级。
+	RequireReal bool
+	ForceFake   bool
 	// UserID 来自认证会话，只用于真实试运行准入。
-	UserID  uint64
-	Mode    Mode
-	AIStyle AIStyle
-	Topic   Topic
+	UserID     uint64
+	Mode       Mode
+	AIStyle    AIStyle
+	Difficulty string
+	// OpponentPersona 是用户配置的风格提示，只作为 user 数据外发。
+	OpponentPersona string
+	Topic           Topic
 	// V1 字段：训练赛请求不使用。
 	UserStance     Stance
 	RoundNo        int

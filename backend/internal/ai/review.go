@@ -94,6 +94,7 @@ type ReviewMessage struct {
 
 // ReviewRequest 是复盘生成的无状态输入契约。
 type ReviewRequest struct {
+	ForceFake  bool
 	UserID     uint64
 	Mode       Mode
 	Topic      Topic

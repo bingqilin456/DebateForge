@@ -40,12 +40,14 @@ const (
 	AnnotationFragmentTargetCodepoints = 120
 )
 
-// 批注类别固定四种；颜色与线型只是展示层派生，不是第二事实源。
+// 保留历史范围不清类别，便于旧批注继续读取。
 const (
 	AnnotationStrength            = "strength"
 	AnnotationPossibleLogicGap    = "possible_logic_gap"
 	AnnotationInsufficientSupport = "insufficient_support"
 	AnnotationUnclearScope        = "unclear_scope"
+	AnnotationOpponentWeakness    = "opponent_weakness"
+	AnnotationOpponentStrength    = "opponent_strength"
 )
 
 // ErrAnnotationAllRejected 表示模型确实给了候选，但没有一条能绑定到权威片段。
@@ -54,7 +56,7 @@ var ErrAnnotationAllRejected = errors.New("annotation_candidates_all_rejected")
 
 func annotationCategoryValid(value string) bool {
 	switch value {
-	case AnnotationStrength, AnnotationPossibleLogicGap, AnnotationInsufficientSupport, AnnotationUnclearScope:
+	case AnnotationStrength, AnnotationPossibleLogicGap, AnnotationInsufficientSupport, AnnotationUnclearScope, AnnotationOpponentWeakness, AnnotationOpponentStrength:
 		return true
 	}
 	return false
@@ -76,6 +78,7 @@ type AnnotationMessage struct {
 // 输入边界：Messages 只包含当前会话触发轮及以前已提交的正式消息，
 // 由调用方在短事务内读取后传入；生成发生在锁外，不与正式轮次事务共享锁。
 type AnnotationRequest struct {
+	ForceFake      bool
 	UserID         uint64
 	Mode           Mode
 	AIStyle        AIStyle
@@ -437,7 +440,7 @@ func annotationSystemPrompt(req AnnotationRequest, aiStance Stance, messageCount
 		"没有值得指出的内容时输出空数组；没有批注不等于没有问题。\n" +
 		"3. 只能输出一个合法的 JSON 对象，不得输出 Markdown 代码块标记（如 ```json）、前后缀解释或任何额外字段：\n" +
 		`{"items":[{"fragment_id":"f01","category":"strength","label":"论证有效","reason":"判断理由","improvement":"改进方向"}]}` + "\n" +
-		"4. category 只能取 strength、possible_logic_gap、insufficient_support、unclear_scope 之一，分别表示论证优点、可能的推理缺口、证据或支持不足、定义或范围不清。\n" +
+		"4. 用户发言 category 只选 strength（亮点）、possible_logic_gap（漏洞）、insufficient_support（论据补强）；陪练发言只选 opponent_weakness（敌方破绽）或 opponent_strength（敌方杀招）。\n" +
 		"5. label 为不超过 " + strconv.Itoa(MaxAnnotationLabelCodepoints) + " 个 Unicode 字符的非空中文文本；reason 与 improvement 各为不超过 " +
 		strconv.Itoa(MaxAnnotationTextCodepoints) + " 个 Unicode 字符的非空中文文本。每条都必须给出判断理由和改进方向。\n" +
 		"6. fragment_id 只能逐字使用 fragments 数组中出现的 id；一条批注只能绑定一个连续片段。不得自行编造编号、不得改用 message_id、不得复制原文充当编号。没有 id 的上下文片段不得引用。\n" +
@@ -532,13 +535,29 @@ func parseAnnotationCandidate(raw json.RawMessage, selectable map[string]Annotat
 	if err != nil {
 		return AnnotationCandidate{}, errAnnotationInvalidFields
 	}
-	if _, ok := selectable[fragmentID]; !ok {
+	fragment, ok := selectable[fragmentID]
+	if !ok {
 		// 编号必须来自本次目录；正文里伪造的编号无法命中。
 		return AnnotationCandidate{}, errAnnotationUnknownFragment
 	}
 	category, err := decodeStrictString(fields["category"])
 	if err != nil || !annotationCategoryValid(category) {
 		return AnnotationCandidate{}, errAnnotationInvalidFields
+	}
+	if fragment.Role == RoleAssistant {
+		switch category {
+		case AnnotationStrength:
+			category = AnnotationOpponentStrength
+		case AnnotationPossibleLogicGap, AnnotationInsufficientSupport, AnnotationUnclearScope:
+			category = AnnotationOpponentWeakness
+		}
+	} else {
+		switch category {
+		case AnnotationOpponentWeakness, AnnotationOpponentStrength:
+			return AnnotationCandidate{}, errAnnotationInvalidFields
+		case AnnotationUnclearScope:
+			category = AnnotationPossibleLogicGap
+		}
 	}
 	label, err := decodeStrictString(fields["label"])
 	if err != nil || validateText("批注标签", label, MaxAnnotationLabelCodepoints) != nil {
@@ -680,12 +699,29 @@ func (f *Fake) AnnotationRecords() []FakeAnnotationRecord {
 
 var _ AnnotationGenerator = (*Fake)(nil)
 
-// fakeAnnotationJSON 选择触发轮用户发言的第一个可选片段，构造固定样例。
+// fakeAnnotationJSON 为四轮练习提供双方可定位的固定样例。
 // 若该轮没有可选片段，退化为空集合，避免 Fake 自身产生非法引用。
 func fakeAnnotationJSON(req AnnotationRequest, catalog AnnotationCatalog) string {
+	role := RoleUser
+	category := AnnotationStrength
+	label := "论证有效"
+	reason := "该句把主张落在可检验的判断标准上，使后续交锋有明确落点，因此论证推进有效。"
+	improvement := "可以再补一句该标准为何适用于本场辩题，让论证更完整。"
+	if req.Mode == ModeStandard4 {
+		switch req.TriggerRoundNo {
+		case 3:
+			role, category, label = RoleAssistant, AnnotationOpponentWeakness, "追问对手依据"
+			reason = "对方从这个判断继续推导，你可以追问它是否适用于题目中的所有情形。"
+			improvement = "指出一个可能不满足该判断的情形，请对方解释是否需要限定范围。"
+		case 4:
+			role, category, label = RoleAssistant, AnnotationOpponentStrength, "回应对手强点"
+			reason = "对方在此收束了自己的主要判断标准，回应它可以让听众看清双方真正分歧。"
+			improvement = "先概括对方的判断标准，再说明己方在哪个前提上持有不同意见。"
+		}
+	}
 	trigger := make(map[string]bool, len(req.Messages))
 	for _, message := range req.Messages {
-		if message.Trigger && message.Role == RoleUser {
+		if message.Trigger && message.Role == role {
 			trigger[message.MessageID] = true
 		}
 	}
@@ -695,10 +731,10 @@ func fakeAnnotationJSON(req AnnotationRequest, catalog AnnotationCatalog) string
 		}
 		payload, err := json.Marshal(map[string]any{"items": []map[string]string{{
 			"fragment_id": fragment.ID,
-			"category":    AnnotationStrength,
-			"label":       "论证有效",
-			"reason":      "该句把主张落在可检验的判断标准上，使后续交锋有明确落点，因此论证推进有效。",
-			"improvement": "可以再补一句该标准为何适用于本场辩题，让论证更完整。",
+			"category":    category,
+			"label":       label,
+			"reason":      reason,
+			"improvement": improvement,
 		}}})
 		if err != nil {
 			return `{"items":[]}`

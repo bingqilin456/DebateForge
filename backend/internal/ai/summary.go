@@ -50,6 +50,7 @@ func SummaryMessageCount(m Mode) (int, error) {
 // 调用方可通过 Turns（每轮已完成对）或 Messages（有序 user/assistant 消息）传入历史；
 // 期望条数与合法轮号范围由 Mode 推导。
 type SummaryRequest struct {
+	ForceFake  bool
 	UserID     uint64
 	Mode       Mode
 	Topic      Topic

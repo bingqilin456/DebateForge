@@ -35,6 +35,32 @@ function click(label: string) {
 beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); history.replaceState(null, '', '/'); })
 afterEach(() => { app?.unmount(); host?.remove(); vi.unstubAllGlobals() })
 
+it('访客可以直达示例复盘，示例不读取私有对局或调用生成接口', async () => {
+  fetchMock.mockResolvedValue(failure(401, 'unauthenticated'))
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('input[name="password"]')).not.toBeNull())
+  click('看完整复盘示例')
+  await nextTick()
+  expect(location.hash).toBe('#review')
+  expect(host.querySelector('[aria-label="示例复盘"]')).not.toBeNull()
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/v1/auth/me'])
+})
+
+it('手机菜单可收合，并打开道场的逻辑排雷', async () => {
+  fetchMock.mockImplementation(async url => String(url).endsWith('/auth/me')
+    ? response({ user: { id: '42', username: 'alice' }, csrf_token: 'memory-only' })
+    : response({ items: [] }))
+  mount()
+  await vi.waitFor(() => expect(host.querySelector('[data-view-nav]')).not.toBeNull())
+  expect(host.querySelectorAll('[data-view-tab]')).toHaveLength(5)
+  const menu = host.querySelector<HTMLButtonElement>('[aria-controls="neon-navigation"]')!
+  menu.click(); await nextTick()
+  expect(menu.getAttribute('aria-expanded')).toBe('true')
+  click('思辨道场'); await nextTick()
+  expect(menu.getAttribute('aria-expanded')).toBe('false')
+  expect(host.textContent).toContain('30 秒逻辑排雷')
+})
+
 it('恢复失败提供显式恢复入口；503 不伪装未登录', async () => {
   fetchMock.mockResolvedValue(failure(503, 'dependency_unavailable'))
   const auth = mount()

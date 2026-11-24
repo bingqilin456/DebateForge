@@ -23,6 +23,11 @@ func TestRepracticeSavesIndependentVersionsAndRetries(t *testing.T) {
 	})
 	ctx := context.Background()
 	in := RepracticeInput{RequestID: "first", MessageID: 3, Start: 1, End: 2, Quote: "😀", Rewrite: "改写"}
+	unchanged := in
+	unchanged.Rewrite = unchanged.Quote
+	if _, err := drill.Submit(ctx, 1, 2, unchanged); !errors.Is(err, ErrRepracticeInput) || calls != 0 {
+		t.Fatalf("unchanged quote must not create a version or call the generator: err=%v, calls=%d", err, calls)
+	}
 	if list, err := drill.List(ctx, 1, 2); err != nil || len(list) != 0 || calls != 0 {
 		t.Fatal(list, err, calls)
 	}

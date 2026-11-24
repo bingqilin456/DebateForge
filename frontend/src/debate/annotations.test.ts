@@ -186,7 +186,7 @@ describe('批注投影', () => {
 
 describe('四类批注的展示派生', () => {
   it('线型与文字标签固定且互不相同', () => {
-    const styles = Object.values(ANNOTATION_STYLES)
+    const styles = Object.values(ANNOTATION_STYLES).filter(style => !style.category.startsWith('opponent_'))
     expect(styles).toHaveLength(4)
     expect(styles.map(style => style.decoration).sort()).toEqual(['dashed', 'solid', 'underline', 'wavy'])
   })
@@ -224,4 +224,8 @@ describe('Intl.Segmenter 使用方式', () => {
       resetGraphemeSegmenterCache()
     }
   })
+})
+it('识别 Neon 对方攻防批注类型', () => {
+  const categories = ['opponent_weakness', 'opponent_strength'].filter(isAnnotationCategory)
+  expect(categories.map(categoryLabel)).toEqual(['敌方破绽', '敌方杀招'])
 })

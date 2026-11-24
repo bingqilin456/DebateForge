@@ -93,6 +93,7 @@ test('空辩题与空历史、移动端无横向溢出', async ({ page }) => {
   await page.goto('/#topics')
   await expect(page.getByText('暂无可用辩题，请稍后刷新。')).toBeVisible()
   await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '菜单', exact: true }).click()
   await page.locator('[data-view-tab="history"]').click()
   await expect(page.getByText('暂无历史会话，前往辩题列表开始一次练习吧。')).toBeVisible()
   await expect(page.getByRole('button', { name: '上一页', exact: true })).toBeDisabled()

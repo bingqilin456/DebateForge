@@ -31,7 +31,8 @@ async function mount(handler: typeof fetch, disabled = false) {
   const auth = createAuthState()
   fetchMock.mockResolvedValueOnce(json({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf-test' }))
   await auth.login({ username: 'alice', password: 'example-password' })
-  fetchMock.mockReset().mockImplementation(handler)
+  fetchMock.mockReset().mockImplementation((url, init) => String(url).includes('/neon-catalog/')
+    ? Promise.resolve(failure(404, 'not_found')) : handler(url, init))
   const controls = reactive({ disabled })
   const created = vi.fn(), openDebate = vi.fn(), openHistory = vi.fn(), back = vi.fn()
   const host = document.createElement('div'); document.body.append(host)
@@ -64,7 +65,7 @@ describe('T08 辩题列表与立场选择', () => {
     expect(host.textContent).toContain('说明 5')
     expect(button(host, '创建会话').disabled).toBe(true)
     submit(host)
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v1/topics')).toHaveLength(1)
   })
 
   it('加载失败只显示受控提示，用户点击才重试', async () => {
@@ -72,10 +73,10 @@ describe('T08 辩题列表与立场选择', () => {
     const { host } = await mount(async () => ++calls === 1 ? failure(503, 'dependency_unavailable') : json({ items: topics }))
     await vi.waitFor(() => expect(host.querySelector('[role="alert"]')?.textContent).toContain('暂时不可用'))
     expect(host.textContent).not.toContain('private')
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v1/topics')).toHaveLength(1)
     button(host, '重试加载辩题').click()
     await loaded(host)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v1/topics')).toHaveLength(2)
   })
 
   it('空列表给出明确提示且不能创建', async () => {

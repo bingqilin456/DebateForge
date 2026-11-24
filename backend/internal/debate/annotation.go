@@ -334,6 +334,7 @@ func (s *Service) generateAnnotation(ctx context.Context, uid uint64, claim Anno
 		})
 	}
 	result, genErr := s.generateAnnotations(ctx, ai.AnnotationRequest{
+		ForceFake:      d.Practice,
 		UserID:         uid,
 		Mode:           ai.Mode(d.Mode),
 		AIStyle:        ai.AIStyle(d.AIStyle),
@@ -409,6 +410,9 @@ func toAnnotationItems(result ai.AnnotationResult, sources []AnnotationSource) (
 		source, ok := allowed[item.Anchor.MessageID]
 		if !ok {
 			return nil, &annotationRejectError{reason: annotationReasonMessageIDNotAllowed, cause: ErrAnchorNotLocated}
+		}
+		if (item.Category == AnnotationOpponentWeakness || item.Category == AnnotationOpponentStrength) && source.Role != "assistant" {
+			return nil, &annotationRejectError{reason: annotationReasonAnchorNotLocated, cause: ErrInvalidRequest}
 		}
 		start, end := item.Anchor.StartCP, item.Anchor.EndCP
 		if start == nil || end == nil || !VerifiedQuote(source.Content, *start, *end, item.Anchor.Quote) {

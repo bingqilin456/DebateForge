@@ -28,7 +28,7 @@ test('真实 Vite → Go → MySQL：空历史、双立场、分页、四轮总�
   await expect(page.locator('[aria-label="首轮辩论面板"]')).toContainText('你：反方 · AI：正方')
   for (let round = 1; round <= 4; round++) {
     await page.locator('#first-content').fill(`第${round}轮：我认为这一主张需要考虑适用条件，并用可检验的事例支持论点。`)
-    await page.getByRole('button', { name: round === 1 ? '发送首轮' : `发送第 ${round} 轮`, exact: true }).click()
+    await page.locator('form[data-first-turn] button[type="submit"]').click()
     await expect(page.locator('[aria-label="首轮辩论面板"] > p.muted').filter({ hasText: `已完成 ${round} / 4 轮` })).toBeVisible()
     await expect(page.locator('.message')).toHaveCount(round * 2)
   }

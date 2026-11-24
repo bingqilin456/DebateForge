@@ -5,6 +5,7 @@ import type {
   AnnotationAnchor,
   AnnotationBatch,
   AnnotationBatchStatus,
+  AnnotationCategory,
   AnnotationItem,
   AnnotationList,
   AnnotationRetryRequest,
@@ -19,7 +20,6 @@ import type {
  * - 所有条目按契约严格校验，坐标不可信时保留 resolved=false 交给展示层降级。
  */
 
-const categories = ['strength', 'possible_logic_gap', 'insufficient_support', 'unclear_scope']
 const batchStatuses: AnnotationBatchStatus[] = ['not_started', 'generating', 'completed', 'failed']
 // 与后端一致：这些是批注可返回的受控错误码。
 const errorCodes = ['model_error', 'model_timeout', 'model_unavailable', 'dependency_unavailable', 'generation_cancelled', 'content_invalid']
@@ -56,7 +56,7 @@ function isAnchor(value: unknown): value is AnnotationAnchor {
 
 function isItem(value: unknown): value is AnnotationItem {
   if (!isRecord(value)) return false
-  if (typeof value.category !== 'string' || !categories.includes(value.category)) return false
+  if (typeof value.category !== 'string' || !Object.hasOwn(annotationLabels, value.category)) return false
   if (!isBoundedText(value.label, 40) || !isBoundedText(value.reason, 300) || !isBoundedText(value.improvement, 300)) return false
   if (!isAnchor(value.anchor)) return false
   if (!Number.isInteger(value.turn_no) || (value.turn_no as number) < 1) return false
@@ -130,9 +130,11 @@ export async function retryAnnotation(
 }
 
 // 导出给测试与组件复用，避免在两处重复同一份契约常量。
-export const annotationLabels: Record<string, string> = {
+export const annotationLabels: Record<AnnotationCategory, string> = {
   strength: '论证有效',
   possible_logic_gap: '可能推理缺口',
   insufficient_support: '缺少支持',
   unclear_scope: '定义待明确',
+  opponent_weakness: '敌方破绽',
+  opponent_strength: '敌方杀招',
 }

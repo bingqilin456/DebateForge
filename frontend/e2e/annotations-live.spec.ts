@@ -28,8 +28,7 @@ test('V2-04 隔离 Fake 对局保存原文批注并在历史恢复', async ({ pa
 
   for (let round = 1; round <= 4; round++) {
     await page.locator('#first-content').fill(`第${round}轮：我先界定讨论范围🌱，再说明判断标准和理由。`)
-    const send = round === 1 ? '发送首轮' : `发送第 ${round} 轮`
-    await page.getByRole('button', { name: send, exact: true }).click()
+    await page.getByRole('button', { name: '发送交锋', exact: true }).click()
     await expect(page.locator('.message')).toHaveCount(round * 2)
     await expect(annotationPanel.locator(`[data-annotation-round="${round}"]`)).toBeAttached()
     if (round === 1) {
@@ -56,6 +55,7 @@ test('V2-04 隔离 Fake 对局保存原文批注并在历史恢复', async ({ pa
     }
   }
   await expect(page.locator('[data-summary-completed]')).toBeVisible()
+  await page.getByRole('button', { name: '菜单', exact: true }).click()
   await page.locator('[data-view-tab="history"]').click()
   await page.locator(`[data-debate-id="${debateId}"]`).click()
   await page.reload()

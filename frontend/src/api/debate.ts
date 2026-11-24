@@ -226,12 +226,18 @@ export function createDebateApi(client: ApiClient = authState.client) {
     // 类型层是联合类型，但调用方可能来自 JS 或 `as any`，不能只依赖编译期。
     const hasTopicKey = creatorIsRequest && isRecord(request) && 'topic_id' in request
     const hasCustomKey = creatorIsRequest && isRecord(request) && 'custom_topic' in request
-    if (creatorIsRequest && hasTopicKey === hasCustomKey) {
-      throw new ApiError('format', '辩题参数必须二选一：topic_id 与 custom_topic 不能同时出现或同时缺失。')
+    const hasNeonKey = creatorIsRequest && isRecord(request) && 'neon_topic_id' in request
+    if (creatorIsRequest && Number(hasTopicKey) + Number(hasCustomKey) + Number(hasNeonKey) !== 1) {
+      throw new ApiError('format', '请选择且仅选择一个辩题来源。')
     }
     const custom = hasCustomKey
     const resolvedStyle = creatorIsRequest ? (request as { ai_style?: AIStyle })?.ai_style : aiStyle
     if (resolvedStyle !== undefined && !isAIStyle(resolvedStyle)) throw new ApiError('format', 'AI 流派参数无效。')
+    const difficulty = request?.difficulty
+    if (difficulty !== undefined && !['beginner', 'varsity', 'national'].includes(difficulty)) {
+      throw new ApiError('format', '对局难度无效。')
+    }
+    if (request?.practice !== undefined && typeof request.practice !== 'boolean') throw new ApiError('format', '练习模式无效。')
     const resolvedStance = typeof topicOrRequest === 'string' ? stance : request?.user_stance
     if (!isStance(resolvedStance)) {
       throw new ApiError('format', '立场参数无效。')
@@ -249,6 +255,11 @@ export function createDebateApi(client: ApiClient = authState.client) {
         throw new ApiError('format', '自定义辩题背景最多 1000 字。')
       }
       body.custom_topic = { title, ...(background === undefined ? {} : { background }) }
+    } else if (hasNeonKey) {
+      if (!request || !('neon_topic_id' in request) || typeof request.neon_topic_id !== 'string') {
+        throw new ApiError('format', '自定义题库编号无效。')
+      }
+      body.neon_topic_id = entityId(request.neon_topic_id)
     } else {
       // 预设分支：兼容字符串重载与 { topic_id } 对象形态。
       const preset = typeof topicOrRequest === 'string' ? null : (topicOrRequest as Record<string, unknown>)
@@ -264,6 +275,13 @@ export function createDebateApi(client: ApiClient = authState.client) {
     }
     body.user_stance = resolvedStance
     if (resolvedStyle !== undefined) body.ai_style = resolvedStyle
+    if (difficulty !== undefined) body.difficulty = difficulty
+    if (request?.practice !== undefined) body.practice = request.practice
+    if (request?.cup_stage !== undefined) body.cup_stage = request.cup_stage
+    if (request?.neon_opponent_id !== undefined) {
+      if (typeof request.neon_opponent_id !== 'string' || request.cup_stage) throw new ApiError('format', '自定义辩手编号或赛段无效。')
+      body.neon_opponent_id = entityId(request.neon_opponent_id)
+    }
     return client.request('/api/v1/debates', {
       method: 'POST',
       expectedStatus: 201,

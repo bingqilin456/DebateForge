@@ -84,14 +84,47 @@ func (r *Repository) Create(ctx context.Context, uid uint64, in CreateInput) (d 
 	err = r.transaction(ctx, false, func(tx *gorm.DB) error {
 		// 新会话固定 standard_4；流派由 Service 精确校验后保存。
 		// quick_3 仅供历史数据与隔离 E2E 使用，生产创建路径不提供该选项。
+		if in.CupStage != "" {
+			index := neonStageIndex(in.CupStage)
+			if index < 0 {
+				return ErrInvalidRequest
+			}
+			player, err := readNeonCupPlayer(tx, uid)
+			if err != nil {
+				return dependency(err, false)
+			}
+			stage := neonCupStages[index]
+			in.Difficulty, in.AIStyle = stage.Difficulty, stage.AIStyle
+			in.Practice = in.Practice || index > player.UnlockedIndex
+		}
 		d = Debate{
 			UserID:     uid,
 			UserStance: in.UserStance,
 			Mode:       string(ai.ModeStandard4),
 			AIStyle:    in.AIStyle,
+			Difficulty: ai.NormalizeDifficulty(in.Difficulty),
+			Practice:   in.Practice,
+			CupStage:   in.CupStage,
 			Status:     "active",
 		}
-		if in.CustomTopic != nil {
+		if in.NeonOpponentID != nil {
+			var opponent neonOpponentRow
+			if err := readNeonCatalogEntry(tx, uid, *in.NeonOpponentID, false, &opponent); err != nil {
+				return err
+			}
+			d.NeonOpponentID = &opponent.ID
+			d.OpponentNameSnapshot, d.OpponentTagSnapshot = opponent.Name, opponent.Tag
+			d.OpponentPersonaSnapshot = &opponent.Persona
+			d.Difficulty = opponent.Difficulty
+		}
+		if in.NeonTopicID != nil {
+			var topic neonTopicRow
+			if err := readNeonCatalogEntry(tx, uid, *in.NeonTopicID, false, &topic); err != nil {
+				return err
+			}
+			d.NeonTopicID = &topic.ID
+			d.TopicTitleSnapshot, d.TopicDescriptionSnapshot = topic.Title, topic.Background
+		} else if in.CustomTopic != nil {
 			if in.TopicID != nil {
 				return ErrInvalidRequest
 			}
@@ -137,8 +170,12 @@ func (r *Repository) List(ctx context.Context, uid uint64, page, pageSize int) (
 		if total == 0 || offset >= total {
 			return nil
 		}
-		if e := tx.Where("user_id = ?", uid).
-			Order("created_at DESC, id DESC").
+		if e := tx.Model(&Debate{}).
+			Select("debates.*, CASE WHEN reviews.status = 'completed' THEN 'completed' WHEN reviews.status = 'failed' OR (reviews.status IS NULL AND summaries.status = 'failed') THEN 'failed' ELSE 'pending' END AS review_status").
+			Joins("LEFT JOIN debate_reviews AS reviews ON reviews.debate_id = debates.id").
+			Joins("LEFT JOIN debate_summaries AS summaries ON summaries.debate_id = debates.id").
+			Where("debates.user_id = ?", uid).
+			Order("debates.created_at DESC, debates.id DESC").
 			Limit(pageSize).
 			Offset(int(offset)).
 			Find(&list.Items).Error; e != nil {
@@ -431,7 +468,11 @@ func (r *Repository) Complete(ctx context.Context, uid uint64, d Debate, t Turn,
 			newStatus = "completed"
 		}
 		now := r.now()
-		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", t.RoundNo-1).Updates(map[string]any{"completed_rounds": newRounds, "status": newStatus, "updated_at": now})
+		changes := map[string]any{"completed_rounds": newRounds, "status": newStatus, "updated_at": now}
+		if result.Metadata.Model == "fake" {
+			changes["practice"] = true
+		}
+		update = tx.Model(&Debate{}).Where("id = ? AND user_id = ? AND status = ? AND completed_rounds = ?", d.ID, uid, "active", t.RoundNo-1).Updates(changes)
 		if update.Error != nil {
 			return dependency(update.Error, false)
 		}

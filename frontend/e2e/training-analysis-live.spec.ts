@@ -13,10 +13,18 @@ test('完整训练赛通过 Vite、Go、隔离 MySQL 和 Fake 保存并恢复回
   await page.getByLabel('用户名', { exact: true }).fill(username)
   await page.getByLabel('密码', { exact: true }).fill(password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await page.locator('[data-topic-id="1"] input').check()
-  await page.locator('input[value="training_v2"]').check()
-  await page.getByRole('button', { name: '创建会话', exact: true }).click()
-  await expect(page).toHaveURL(/#training=[1-9]\d*$/)
+  await expect(page.locator('[data-topic-id="1"] input')).toBeVisible()
+  const session = await page.request.get('/api/v1/auth/me')
+  expect(session.status()).toBe(200)
+  const { data: { csrf_token: csrf } } = await session.json() as { data: { csrf_token: string } }
+  // Neon 的选题页统一创建四轮对局。由历史契约创建夹具，再验证旧训练页仍可恢复。
+  const created = await page.request.post('/api/v1/training-debates', {
+    headers: { Origin: baseURL!, 'X-CSRF-Token': csrf },
+    data: { topic_id: '1', user_stance: 'pro', ai_style: 'logical' },
+  })
+  expect(created.status()).toBe(201)
+  const { data: { id } } = await created.json() as { data: { id: string } }
+  await page.goto(`/#training=${id}`)
   const route = page.url()
   const contents = ['主张考虑适用条件', '驳论需要可验证依据', '自由辩应逐项确认标准', '结辩收束为三项条件']
 

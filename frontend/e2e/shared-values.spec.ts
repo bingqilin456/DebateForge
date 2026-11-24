@@ -53,7 +53,7 @@ for (const width of [1440, 375]) {
     await expect(page.locator('[data-query-strategy]')).toBeEnabled()
     await capture(page, testInfo.outputPath('strategy-input.png'))
     const input = page.locator('#first-content')
-    const send = page.getByRole('button', { name: '发送首轮', exact: true })
+    const send = page.locator('form[data-first-turn] button[type="submit"]')
     await input.fill('😀'.repeat(2000))
     await expect(send).toBeEnabled()
     await expect(page.locator('#content-help')).toContainText('2000 / 2000')

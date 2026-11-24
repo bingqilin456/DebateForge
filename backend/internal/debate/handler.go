@@ -48,7 +48,13 @@ func (h *Handler) RegisterRoutes(group *gin.RouterGroup, a *auth.Handler) {
 	h.registerAnnotationRoutes(group, a)
 	// V2-13 复盘：读取只要 Session；显式生成/重试额外要求 Origin/CSRF 与防刷前置。
 	h.registerReviewRoutes(group, a)
+	h.registerPersonalModelRoutes(group, a)
 	h.registerTrainingRepractice(group, a)
+	h.registerArenaRoutes(group, a)
+	h.registerNeonCupRoutes(group, a)
+	h.registerNeonJudgeRoutes(group, a)
+	h.registerNeonVerdictRoutes(group, a)
+	h.registerNeonCatalogRoutes(group, a)
 	if h.service != nil && h.service.trainingIssues != nil {
 		NewIssueCardHandler(h.service.trainingIssues).RegisterIssueCardRoutes(group, a)
 	}
@@ -95,10 +101,15 @@ func decode(c *gin.Context, payload any) bool {
 // 用 RawMessage 保留“字段是否出现”，以便严格二选一：
 // 字段缺失与显式 null 必须区分，两个字段都出现也要拒绝。
 type createRequest struct {
-	TopicID     json.RawMessage
-	CustomTopic json.RawMessage
-	UserStance  string
-	AIStyle     json.RawMessage
+	TopicID        json.RawMessage
+	CustomTopic    json.RawMessage
+	NeonTopicID    json.RawMessage
+	NeonOpponentID json.RawMessage
+	UserStance     string
+	AIStyle        json.RawMessage
+	Difficulty     json.RawMessage
+	Practice       json.RawMessage
+	CupStage       json.RawMessage
 	// unknown/duplicate 记录顶层额外键与重复键。自定义分支是新入口，
 	// 必须严格拒绝；预设分支保留既有“忽略未知字段”的行为，避免破坏旧客户端。
 	unknown   []string
@@ -137,12 +148,22 @@ func (in *createRequest) UnmarshalJSON(raw []byte) error {
 			in.TopicID = value
 		case "custom_topic":
 			in.CustomTopic = value
+		case "neon_topic_id":
+			in.NeonTopicID = value
+		case "neon_opponent_id":
+			in.NeonOpponentID = value
 		case "user_stance":
 			if isJSONNull(value) || json.Unmarshal(value, &in.UserStance) != nil {
 				return ErrInvalidRequest
 			}
 		case "ai_style":
 			in.AIStyle = value
+		case "difficulty":
+			in.Difficulty = value
+		case "practice":
+			in.Practice = value
+		case "cup_stage":
+			in.CupStage = value
 		default:
 			in.unknown = append(in.unknown, key)
 		}
@@ -169,12 +190,41 @@ type customTopicRequest struct {
 // 自定义题目的 title 必填为字符串，background 可省略或为空字符串。
 func parseCreateRequest(in createRequest) (CreateInput, error) {
 	out := CreateInput{UserStance: in.UserStance}
-	hasTopic := len(in.TopicID) > 0
-	hasCustom := len(in.CustomTopic) > 0
-	if hasTopic == hasCustom {
+	if len(in.CupStage) > 0 && (json.Unmarshal(in.CupStage, &out.CupStage) != nil || neonStageIndex(out.CupStage) < 0) {
 		return out, ErrInvalidRequest
 	}
-	if hasCustom {
+	if len(in.Practice) > 0 && (isJSONNull(in.Practice) || json.Unmarshal(in.Practice, &out.Practice) != nil) {
+		return out, ErrInvalidRequest
+	}
+	if len(in.Difficulty) > 0 {
+		if json.Unmarshal(in.Difficulty, &out.Difficulty) != nil || !ai.ValidDifficulty(out.Difficulty) {
+			return out, ErrInvalidRequest
+		}
+	}
+	hasTopic := len(in.TopicID) > 0
+	hasCustom := len(in.CustomTopic) > 0
+	hasNeonTopic := len(in.NeonTopicID) > 0
+	if (!hasTopic && !hasCustom && !hasNeonTopic) || (hasTopic && hasCustom) || (hasNeonTopic && (hasTopic || hasCustom)) {
+		return out, ErrInvalidRequest
+	}
+	for _, field := range []struct {
+		raw  json.RawMessage
+		dest **uint64
+	}{{in.NeonTopicID, &out.NeonTopicID}, {in.NeonOpponentID, &out.NeonOpponentID}} {
+		if len(field.raw) == 0 {
+			continue
+		}
+		var value string
+		if json.Unmarshal(field.raw, &value) != nil {
+			return out, ErrInvalidRequest
+		}
+		id, err := ParseID(value)
+		if err != nil {
+			return out, ErrInvalidRequest
+		}
+		*field.dest = &id
+	}
+	if hasCustom || hasNeonTopic || out.NeonOpponentID != nil {
 		// 自定义分支是新入口：顶层未知键与重复键都严格拒绝，
 		// 不能让客户端借额外字段混入赛制、轮次或归属。
 		if len(in.unknown) > 0 || len(in.duplicate) > 0 {
@@ -191,7 +241,7 @@ func parseCreateRequest(in createRequest) (CreateInput, error) {
 			return out, ErrInvalidRequest
 		}
 		out.TopicID = &id
-	} else {
+	} else if hasCustom {
 		if isJSONNull(in.CustomTopic) {
 			return out, ErrInvalidRequest
 		}

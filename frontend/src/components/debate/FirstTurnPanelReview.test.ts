@@ -51,8 +51,9 @@ function detail(): DebateDetail {
 }
 
 async function mount(review: unknown) {
-  fetcher.mockImplementation(async input => {
+  fetcher.mockImplementation(async (input, init) => {
     const url = String(input)
+    if (url.endsWith('/repractice') && init?.method !== 'POST') return json([])
     if (url.endsWith('/review')) return json(review)
     if (url.endsWith('/strategy')) return json({ status: 'not_started', attempt_version: null })
     if (url.endsWith('/annotations')) return json({ items: [] })
@@ -93,4 +94,18 @@ it('省略 available 的旧响应仍展示完整复盘面板', async () => {
   await mount({ status: 'not_started', attempt_version: null })
   expect(host.querySelector('[data-review-panel]')).not.toBeNull()
   await vi.waitFor(() => expect(host.querySelector('[data-generate-review]')).not.toBeNull())
+})
+
+it('完赛可以修订自己的原话，直接提交未修改的原话时只给提示', async () => {
+  await mount({ status: 'not_started', attempt_version: null })
+  const ownerButton = Array.from(host.querySelectorAll('button')).find(btn => btn.textContent?.trim() === '修订并重评')
+  expect(ownerButton?.closest('[data-message-id]')?.getAttribute('data-message-id')).toBe('202')
+  ownerButton?.click()
+  await nextTick()
+  const panel = host.querySelector('[aria-label="局部重练"]')
+  expect(panel?.querySelector('textarea')?.value).toBe('第 1 轮用户原文')
+  panel?.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }))
+  await nextTick()
+  expect(panel?.textContent).toContain('请先修改原句')
+  expect(fetcher.mock.calls.some(([input, init]) => String(input).endsWith('/repractice') && init?.method === 'POST')).toBe(false)
 })

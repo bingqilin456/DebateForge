@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/bingqilin456/DebateForge/backend/internal/ai"
 	"gorm.io/gorm"
 )
 
@@ -22,7 +23,7 @@ func (r *Repository) withTrainingRepractice(ctx context.Context, uid, id uint64,
 		if err != nil {
 			return err
 		}
-		if !row.IsTraining() || row.Status != "completed" {
+		if (!row.IsTraining() && row.Mode != string(ai.ModeStandard4)) || row.Status != "completed" {
 			return ErrRepracticeSource
 		}
 		versions := []RepracticeVersion{}

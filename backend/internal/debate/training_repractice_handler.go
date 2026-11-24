@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/bingqilin456/DebateForge/backend/internal/ai"
 	"github.com/bingqilin456/DebateForge/backend/internal/auth"
 	"github.com/gin-gonic/gin"
 )
@@ -22,18 +23,19 @@ type trainingRepracticeVersion struct {
 	ID       string             `json:"id"`
 	Attempt  uint64             `json:"attempt_version"`
 	Status   string             `json:"status"`
+	Quote    string             `json:"quote"`
 	Rewrite  string             `json:"rewrite"`
 	Feedback RepracticeFeedback `json:"feedback"`
 }
 
 func projectRepractice(v RepracticeVersion) trainingRepracticeVersion {
-	return trainingRepracticeVersion{formatID(v.ID), v.Attempt, v.Status, v.Input.Rewrite, v.Feedback}
+	return trainingRepracticeVersion{formatID(v.ID), v.Attempt, v.Status, v.Input.Quote, v.Input.Rewrite, v.Feedback}
 }
 
 func (s *Service) EnableTrainingRepractice(repo *Repository, generate func(context.Context, RepracticeInput) (RepracticeFeedback, error)) {
 	s.trainingRepractice = NewRepractice(func(ctx context.Context, uid, id uint64) (Detail, error) {
 		detail, err := s.Detail(ctx, uid, id)
-		if err == nil && detail.Training == nil {
+		if err == nil && detail.Training == nil && detail.Debate.Mode != string(ai.ModeStandard4) {
 			return Detail{}, ErrNotFound
 		}
 		return detail, err
@@ -64,7 +66,8 @@ func (h *Handler) registerTrainingRepractice(group *gin.RouterGroup, a *auth.Han
 		}
 		writeData(c, 200, items)
 	})
-	group.POST("/debates/:id/repractice", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, func(c *gin.Context) {
+	// 四轮、总结与复盘已用满旧入口的分钟额度。重练走同一 Gate 的训练请求计数。
+	group.POST("/debates/:id/repractice", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, func(c *gin.Context) {
 		id, err := ParseID(c.Param("id"))
 		if err != nil {
 			serviceError(c, err)
@@ -89,7 +92,7 @@ func (h *Handler) registerTrainingRepractice(group *gin.RouterGroup, a *auth.Han
 		}
 		writeData(c, 200, projectRepractice(version))
 	})
-	group.POST("/debates/:id/repractice/:version/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitGeneration, func(c *gin.Context) {
+	group.POST("/debates/:id/repractice/:version/retry", a.RequireOrigin(), a.RequireAuth(), a.RequireCSRF(), h.limitTrainingGeneration, func(c *gin.Context) {
 		id, idErr := ParseID(c.Param("id"))
 		version, versionErr := ParseID(c.Param("version"))
 		if idErr != nil || versionErr != nil {

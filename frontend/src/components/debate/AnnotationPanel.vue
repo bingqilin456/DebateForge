@@ -4,7 +4,7 @@ import { Alert, Button } from '@arco-design/web-vue'
 import { ApiError } from '../../api/client'
 import type { AnnotationApi } from '../../api/annotations'
 import type { AnnotationBatch, AnnotationItem, DebateDetail } from '../../types/api'
-import { ANNOTATION_STYLES, annotationEntryKey, categoryLabel } from '../../debate/annotations'
+import { ANNOTATION_STYLES, annotationDisplayLabel, annotationEntryKey, categoryLabel } from '../../debate/annotations'
 import { GENERATION_POLL_BUDGET_MS, GENERATION_POLL_INTERVAL_MS } from '../../shared/limits'
 
 /**
@@ -261,7 +261,7 @@ defineExpose({ load, messageItems, focusFromMarker })
               :aria-expanded="isExpanded(keysOf(item))"
               @click="toggle(item)"
             >
-              <span class="tag">{{ styleOf(item).label }}</span>
+              <span class="tag">{{ annotationDisplayLabel(item) }}</span>
               <span class="quote">{{ item.anchor.quote }}</span>
               <span class="chev">{{ isExpanded(keysOf(item)) ? '收起' : '展开' }}</span>
             </button>
@@ -328,6 +328,8 @@ defineExpose({ load, messageItems, focusFromMarker })
 .marker-logic-gap { border-bottom: 2px wavy #d97a1f; }
 .marker-support { background: #edf4fb; border-left: 4px dashed #4a76a8; }
 .marker-scope { border-bottom: 2px solid #6f4a9c; }
+.marker-opponent-weakness { border-bottom: 2px solid #a12736; }
+.marker-opponent-strength { border-bottom: 3px double #2e4e9e; }
 @media (max-width: 720px) {
   /* 移动端作为底部面板。 */
   .annotation-panel { border-radius: var(--app-radius-panel) var(--app-radius-panel) 0 0; }

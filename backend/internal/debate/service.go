@@ -425,6 +425,7 @@ func (s *Service) runSummaryGeneration(ctx context.Context, uid uint64, d Detail
 		})
 	}
 	result, genErr := s.generateSummary(ctx, ai.SummaryRequest{
+		ForceFake:  d.Debate.Practice || hasFakeArenaReply(d.Turns),
 		UserID:     uid,
 		Mode:       mode,
 		Topic:      ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
@@ -509,15 +510,23 @@ func (s *Service) runTurnGeneration(ctx context.Context, uid uint64, d Detail, s
 			AssistantContent: pt.Messages[1].Content,
 		})
 	}
+	var opponentPersona string
+	if d.Debate.OpponentPersonaSnapshot != nil {
+		opponentPersona = *d.Debate.OpponentPersonaSnapshot
+	}
 	result, genErr := s.generateTurn(ctx, ai.Request{
-		UserID:         uid,
-		Mode:           ai.Mode(d.Debate.Mode),
-		AIStyle:        ai.AIStyle(d.Debate.AIStyle),
-		Topic:          ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
-		UserStance:     ai.Stance(d.Debate.UserStance),
-		RoundNo:        turn.RoundNo,
-		CompletedTurns: completedTurns,
-		UserContent:    turn.Messages[0].Content,
+		OpponentPersona: opponentPersona,
+		RequireReal:     hasRealArenaReply(d.Turns[:len(d.Turns)-1]),
+		ForceFake:       d.Debate.Practice || hasFakeArenaReply(d.Turns[:len(d.Turns)-1]),
+		UserID:          uid,
+		Mode:            ai.Mode(d.Debate.Mode),
+		AIStyle:         ai.AIStyle(d.Debate.AIStyle),
+		Difficulty:      d.Debate.Difficulty,
+		Topic:           ai.Topic{Title: d.Debate.TopicTitleSnapshot, Description: d.Debate.TopicDescriptionSnapshot},
+		UserStance:      ai.Stance(d.Debate.UserStance),
+		RoundNo:         turn.RoundNo,
+		CompletedTurns:  completedTurns,
+		UserContent:     turn.Messages[0].Content,
 		// topic_id 为空即自定义语义：题目原文只作为 user 数据段外发。
 		Custom: d.Debate.Custom(),
 	}, emit)
@@ -575,13 +584,32 @@ func (s *Service) generateTurn(ctx context.Context, req ai.Request, emit func(st
 	if emit == nil {
 		result, err = s.generator.Generate(callCtx, req)
 	} else if generator, ok := s.generator.(ai.StreamGenerator); ok {
-		result, err = generator.Stream(callCtx, req, emit)
+		pending := ""
+		started := false
+		result, err = generator.Stream(callCtx, req, func(chunk string) error {
+			if started {
+				return emit(chunk)
+			}
+			pending += chunk
+			text, ready := cleanReplyPrefix(pending, false)
+			if !ready {
+				return nil
+			}
+			started = true
+			return emit(text)
+		})
+		if err == nil && !started {
+			if text, _ := cleanReplyPrefix(pending, true); text != "" {
+				err = emit(text)
+			}
+		}
 	} else {
 		err = &ai.Error{Code: ai.CodeModelUnavailable}
 	}
 	if callCtx.Err() != nil {
 		err = generationContextError(err, result, callCtx.Err())
 	}
+	result.Content, _ = cleanReplyPrefix(result.Content, true)
 	return
 }
 

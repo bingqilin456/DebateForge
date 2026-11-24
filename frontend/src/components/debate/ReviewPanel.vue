@@ -21,6 +21,7 @@ const props = defineProps<{
   canGenerate?: boolean
   canRetry?: boolean
   loading?: boolean
+  feedbackOnly?: boolean
   /** 原文定位入口：未接入时维度卡只显示原文依据，不给可点击定位。 */
   locate?: (messageId: string, startCp: number, endCp: number) => void
   /** 局部重练入口：未接入时显示“待整合”而不是死链。 */
@@ -134,10 +135,11 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
 </script>
 
 <template>
-  <section class="review-panel" aria-label="赛后复盘与四维训练参考" data-review-panel>
+  <section class="review-panel" :aria-label="feedbackOnly ? '赛后复盘' : '赛后复盘与四维训练参考'" data-review-panel>
     <header class="review-header">
       <h3>赛后复盘 · 单场训练参考</h3>
-      <span class="muted">训练参考，不是客观测量；不判胜负、不计总分、不跨场累计。</span>
+      <span v-if="feedbackOnly" class="muted">对照本场原文查看争点和改进建议，评分见裁判团。</span>
+      <span v-else class="muted">训练参考，不是客观测量；不判胜负、不计总分、不跨场累计。</span>
     </header>
 
     <div class="review-state" :class="`is-${review.status}`" role="status" data-review-state>
@@ -169,7 +171,7 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
     </div>
 
     <template v-if="completed">
-      <div class="review-body" data-review-completed>
+      <div v-if="!feedbackOnly" class="review-body" data-review-completed>
         <section class="radar-block" aria-label="四维雷达图">
           <h4>四维训练参考</h4>
           <svg class="radar" viewBox="0 0 300 200" role="img" data-review-radar
@@ -241,7 +243,7 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
         </section>
       </div>
 
-      <p v-if="hasGaps" class="muted gap-note" data-review-gap-note>
+      <p v-if="!feedbackOnly && hasGaps" class="muted gap-note" data-review-gap-note>
         有维度为“观察不足”：这是本场缺少足够观察依据的正常结果，不是 0 分，也不影响复盘与后续下载入口。
       </p>
 

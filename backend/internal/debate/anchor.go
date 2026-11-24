@@ -27,6 +27,8 @@ const (
 	AnnotationPossibleLogicGap    = "possible_logic_gap"
 	AnnotationInsufficientSupport = "insufficient_support"
 	AnnotationUnclearScope        = "unclear_scope"
+	AnnotationOpponentWeakness    = "opponent_weakness"
+	AnnotationOpponentStrength    = "opponent_strength"
 )
 
 // ErrAnchorNotLocated 表示引用本身非法、不在白名单消息内或在该消息中不存在。
@@ -214,6 +216,8 @@ var annotationCategories = map[string]bool{
 	AnnotationPossibleLogicGap:    true,
 	AnnotationInsufficientSupport: true,
 	AnnotationUnclearScope:        true,
+	AnnotationOpponentWeakness:    true,
+	AnnotationOpponentStrength:    true,
 }
 
 // IsAnnotationCategory 供 Handler 与前端契约测试复用。
@@ -288,6 +292,9 @@ func validateAnnotationItem(raw AnnotationItemInput, allowed map[uint64]Annotati
 	if !ok {
 		// 跨会话、未来轮或非正式消息：整份结果拒绝，不回显引用。
 		return AnnotationItem{}, errors.Join(ErrInvalidRequest, ErrAnchorNotLocated)
+	}
+	if (raw.Category == AnnotationOpponentWeakness || raw.Category == AnnotationOpponentStrength) && source.Role != "assistant" {
+		return AnnotationItem{}, ErrInvalidRequest
 	}
 	anchor, err := ResolveAnchor(source.MessageID, source.Content, raw.Anchor.Quote, raw.Anchor.StartCP)
 	if err != nil {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { AnnotationItem } from '../../types/api'
-import { ANNOTATION_STYLES, annotationEntryKey, buildAnnotationView, type AnnotatedSegment } from '../../debate/annotations'
+import { ANNOTATION_STYLES, annotationDisplayLabel, annotationEntryKey, buildAnnotationView, type AnnotatedSegment } from '../../debate/annotations'
 
 /**
  * 在正式消息原文上渲染批注标记。
@@ -36,7 +36,7 @@ function classes(segment: AnnotatedSegment) {
 
 /** 可访问名称：类别标签是语义载体，颜色与线型只是辅助。 */
 function entryLabel(segment: AnnotatedSegment) {
-  return `批注：${segment.items.map(item => styleOf(item).label).join('、')}`
+  return `批注：${segment.items.map(annotationDisplayLabel).join('、')}`
 }
 
 /** 该段全部条目键；仅用于比较与查找，不进入选择器。 */
@@ -90,5 +90,7 @@ function select(segment: AnnotatedSegment, event: Event) {
 .marker-logic-gap { text-decoration-style: wavy; text-decoration-color: #aa5415; }
 .marker-support { background: #edf4fb; text-decoration-style: dashed; text-decoration-color: #4a76a8; }
 .marker-scope { text-decoration-style: solid; text-decoration-color: #6f4a9c; }
+.marker-opponent-weakness { text-decoration-style: wavy; text-decoration-color: #a12736; }
+.marker-opponent-strength { text-decoration-style: double; text-decoration-color: #2e4e9e; }
 .pending { display: block; margin: 6px 0 0; font-size: 13px; color: var(--app-warning-text, #a86b00); }
 </style>

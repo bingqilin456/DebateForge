@@ -17,7 +17,7 @@ import (
 const HTTPWriteTimeout = 65 * time.Second
 const OrdinaryRequestBudget = 5 * time.Second
 
-func NewBusinessRouter(logger *slog.Logger, db DatabasePinger, a *auth.Handler, t *topic.Handler, d *debate.Handler) *gin.Engine {
+func NewBusinessRouter(logger *slog.Logger, db DatabasePinger, a *auth.Handler, t *topic.Handler, d *debate.Handler, extra ...func(*gin.RouterGroup, *auth.Handler)) *gin.Engine {
 	router := NewRouter(logger, db, a)
 	group := router.Group("/api/v1")
 	if t != nil {
@@ -25,6 +25,9 @@ func NewBusinessRouter(logger *slog.Logger, db DatabasePinger, a *auth.Handler, 
 	}
 	if d != nil {
 		d.RegisterRoutes(group, a)
+	}
+	for _, register := range extra {
+		register(group, a)
 	}
 	return router
 }
@@ -36,6 +39,9 @@ func requestBudget(logger *slog.Logger) gin.HandlerFunc {
 		// 批注手动补做与复盘生成都会等待一次分析/生成，因此与其它生成入口同预算；读取仍是普通短预算。
 		// 只有 Gin 已精确匹配到 POST 路由才放宽，客户端无法用伪造后缀取得长预算。
 		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/debates/:id/turns" || c.FullPath() == "/api/v1/debates/:id/turns/stream" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/retry" || c.FullPath() == "/api/v1/debates/:id/summary" || c.FullPath() == "/api/v1/debates/:id/strategy" || c.FullPath() == "/api/v1/debates/:id/turns/:turn_id/annotations/retry" || c.FullPath() == "/api/v1/debates/:id/review" || c.FullPath() == "/api/v1/debates/:id/issue-cards/analyze" || c.FullPath() == "/api/v1/debates/:id/steps" || c.FullPath() == "/api/v1/debates/:id/steps/stream" || c.FullPath() == "/api/v1/debates/:id/steps/:step_no/retry") {
+			budget = ai.DefaultRequestBudget
+		}
+		if c.Request.Method == http.MethodPost && (c.FullPath() == "/api/v1/dojo/history-quiz" || c.FullPath() == "/api/v1/dojo/techniques") {
 			budget = ai.DefaultRequestBudget
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), budget)

@@ -16,6 +16,7 @@ import (
 	"github.com/bingqilin456/DebateForge/backend/internal/debate"
 	"github.com/bingqilin456/DebateForge/backend/internal/platform"
 	"github.com/bingqilin456/DebateForge/backend/internal/topic"
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -79,7 +80,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("初始化认证失败: %w", err)
 	}
-	generator, err := configuredGenerator(ctx, logger)
+	generator, err := businessGenerator(ctx, logger, database.ORM)
 	if err != nil {
 		return err
 	}
@@ -103,14 +104,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			}, ctx.Err()
 		})
 	}
+	if model, ok := generator.(*debate.PersonalModel); ok {
+		debateService.EnableAnnotations(true)
+		debateService.EnableReviews(true)
+		debateService.EnablePersonalModelRepractice(debateRepository, model)
+	}
 	debateHandler := debate.NewHandler(debateService)
+	sharing := debate.NewNeonShareHandler(debateRepository)
 	listener, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("监听 HTTP 失败: %w", err)
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler:           platform.NewBusinessRouter(logger, database, authHandler, topicHandler, debateHandler),
+		Handler: platform.NewBusinessRouter(logger, database, authHandler, topicHandler, debateHandler,
+			debateRepository.RegisterNeonProfileRoutes, debateHandler.RegisterNeonDojoRoutes, func(api *gin.RouterGroup, a *auth.Handler) {
+				sharing.RegisterPublic(api)
+				sharing.RegisterProtected(api, a)
+			}),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      platform.HTTPWriteTimeout,

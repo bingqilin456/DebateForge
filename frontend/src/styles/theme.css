@@ -1,11 +1,16 @@
 body {
   /* Arco 语义变量定义在 body，别名也须在此解析。其余颜色沿用页面基调。 */
-  --app-text: #172b3a;
-  --app-text-muted: #526578;
+  --app-text: #18181b;
+  --app-text-muted: #55565e;
   --app-text-secondary: #34495e;
   --app-accent: #235b81;
   --app-surface: var(--color-bg-2);
-  --app-background: #f6f8fa;
+  --app-background: #f7f6f2;
+  --app-pro: #a73024;
+  --app-pro-pale: #fdf2f0;
+  --app-con: #1d4ed8;
+  --app-con-pale: #eff6ff;
+  --app-serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
   --app-border: var(--color-border-2);
   --app-input-border: #879aab;
   --app-info-bg: #edf5fa;

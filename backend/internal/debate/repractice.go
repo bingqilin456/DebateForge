@@ -22,9 +22,11 @@ type RepracticeInput struct {
 }
 
 type RepracticeFeedback struct {
-	Change     string `json:"change"`
-	Reason     string `json:"reason"`
-	NewProblem string `json:"new_problem"`
+	Change      string   `json:"change"`
+	Reason      string   `json:"reason"`
+	NewProblem  string   `json:"new_problem"`
+	BeforeScore *float64 `json:"before_score,omitempty"`
+	AfterScore  *float64 `json:"after_score,omitempty"`
 }
 
 type RepracticeVersion struct {
@@ -38,11 +40,12 @@ type RepracticeVersion struct {
 // Repractice 校验完赛原文并管理独立的改写版本。
 // 记录在模型调用前保存，重试只推进已有失败版本，不写正式发言。
 type Repractice struct {
-	detail   func(context.Context, uint64, uint64) (Detail, error)
-	generate func(context.Context, RepracticeInput) (RepracticeFeedback, error)
-	mu       sync.Mutex
-	sessions map[[2]uint64][]RepracticeVersion
-	store    func(context.Context, uint64, uint64, bool, func(*[]RepracticeVersion) error) error
+	detail        func(context.Context, uint64, uint64) (Detail, error)
+	generate      func(context.Context, RepracticeInput) (RepracticeFeedback, error)
+	generateOwned func(context.Context, Detail, RepracticeInput) (RepracticeFeedback, error)
+	mu            sync.Mutex
+	sessions      map[[2]uint64][]RepracticeVersion
+	store         func(context.Context, uint64, uint64, bool, func(*[]RepracticeVersion) error) error
 }
 
 func NewRepractice(detail func(context.Context, uint64, uint64) (Detail, error), generate func(context.Context, RepracticeInput) (RepracticeFeedback, error)) *Repractice {
@@ -100,6 +103,9 @@ func (r *Repractice) Submit(ctx context.Context, owner, id uint64, in Repractice
 	if !repracticeSourceMatches(d, in) {
 		return RepracticeVersion{}, ErrRepracticeSource
 	}
+	if in.Rewrite == in.Quote {
+		return RepracticeVersion{}, ErrRepracticeInput
+	}
 	var version RepracticeVersion
 	fresh := false
 	err = r.withVersions(ctx, owner, id, true, func(versions *[]RepracticeVersion) error {
@@ -123,7 +129,7 @@ func (r *Repractice) Submit(ctx context.Context, owner, id uint64, in Repractice
 	if err != nil || !fresh {
 		return version, err
 	}
-	return r.finish(ctx, owner, id, version)
+	return r.finish(ctx, d, version)
 }
 
 func repracticeSourceMatches(d Detail, in RepracticeInput) bool {
@@ -179,11 +185,17 @@ func (r *Repractice) Retry(ctx context.Context, owner, id, version, attempt uint
 	if err != nil || !fresh {
 		return v, err
 	}
-	return r.finish(ctx, owner, id, v)
+	return r.finish(ctx, d, v)
 }
 
-func (r *Repractice) finish(ctx context.Context, owner, id uint64, v RepracticeVersion) (RepracticeVersion, error) {
-	feedback, err := r.generate(ctx, v.Input)
+func (r *Repractice) finish(ctx context.Context, detail Detail, v RepracticeVersion) (RepracticeVersion, error) {
+	var feedback RepracticeFeedback
+	var err error
+	if r.generateOwned != nil {
+		feedback, err = r.generateOwned(ctx, detail, v.Input)
+	} else {
+		feedback, err = r.generate(ctx, v.Input)
+	}
 	if err != nil || isBlankText(feedback.Change) || isBlankText(feedback.Reason) {
 		v.Status = "failed"
 	} else {
@@ -193,7 +205,7 @@ func (r *Repractice) finish(ctx context.Context, owner, id uint64, v RepracticeV
 	v.LeaseExpiresAt = time.Time{}
 	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	err = r.withVersions(saveCtx, owner, id, true, func(versions *[]RepracticeVersion) error {
+	err = r.withVersions(saveCtx, detail.Debate.UserID, detail.Debate.ID, true, func(versions *[]RepracticeVersion) error {
 		current := (*versions)[v.ID-1]
 		if current.Status != "generating" || current.Attempt != v.Attempt {
 			return ErrAttemptVersionConflict

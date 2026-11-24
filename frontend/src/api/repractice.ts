@@ -6,6 +6,7 @@ function isVersion(value: unknown): value is RepracticeVersion {
   return isRecord(value) && isEntityId(value.id) && Number.isSafeInteger(value.attempt_version)
     && typeof value.attempt_version === 'number' && value.attempt_version >= 1
     && (value.status === 'generating' || value.status === 'completed' || value.status === 'failed')
+    && (value.quote === undefined || typeof value.quote === 'string')
     && typeof value.rewrite === 'string' && isRecord(value.feedback)
     && typeof value.feedback.change === 'string' && typeof value.feedback.reason === 'string'
     && typeof value.feedback.new_problem === 'string'

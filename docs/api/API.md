@@ -811,6 +811,40 @@ generating 仅含 status/attempt_version；failed 增加受控 error_code（mode
 - 迁移 `00016_create_debate_reviews.sql` 为**新增正向 SQL 文件**，本工作树**未执行**；并行迁移编号需在整合时重新核对（README 记录下一候选号）。
 - 前端：完赛后展示复盘面板；失败独立展示并可手动重试；四维卡片始终可读；雷达只用 1–4 档，观察不足轴留空。原文定位通过工作台消息 `data-message-id` 定位，图例按钮键盘可达。局部重练、争点卡与 PDF 入口按“待整合”并列显示，不接死链、不伪造能力。收到 `available:false` 时整个复盘区隐藏。
 
+## Neon 第二批
+
+- `POST /api/v1/debates` 接收可选 `difficulty`（`beginner`、`varsity`、`national`）和 `practice`。省略难度时为入门。主动传 `practice: true` 开本地练习局，返回及详情带上已保存的难度和练习标记。真实回复失败按现有状态恢复流程重试。改用本地练习时新开一局，旧局保持原来源。
+- `GET /api/v1/debates/{id}/arena` 读取本人对局的 `rounds`、`hints` 与 `practice`。每个已提交的双边轮次最多一条记录，包含双方消息 ID、要点、正方气势百分比和来源。样板气势为本地计算。该轮已有真实分析，且两方引用均能定位到各自原句时，图谱可使用模型选出的段落并标 `graph_source: ai`。其他图谱展示本地摘要。
+- `POST /api/v1/debates/{id}/arena` 以 `action` 选择 `hints`、`teammate` 或 `framework`。返回 `round_no`、`text` 和 `source`，均为当前轮提示或可编辑草稿。正式发言继续走 `/turns` 的认领与提交。已结束或有回复在途的状态按业务规则拒绝生成草稿；已有请求频率、调用额度和 Origin/CSRF 校验继续生效。
+- `GET /api/v1/settings/model` 读取本人的 `enabled`、`configured`、`verified`、`used` 及当前配置的别名和有效期。`POST` 同路径保存服务商、`model`、`alias`、`api_key` 和自定义服务的 `base_url`。服务商为 `deepseek`、`openai`、`doubao`、`custom`。`POST .../test` 只在用户点击时发起校验。`POST .../remove` 停用并移除该账号的配置。响应及日志中无明文密钥。
+- 个人模型需显式设 `AI_MODE=byok`，通过 `BYOK_MASTER_KEY_FILE` 读取服务端加密用秘密文件。自定义服务走已允许的公开 HTTPS 域名，服务端用 `BYOK_CUSTOM_HOSTS` 设置允许名单，拒绝内网目标和重定向。Key 经加密后入库，别名供 UI 展示。
+
+## Neon 第三批
+
+- `GET /api/v1/cup` 返回当前账号的 `elo`、`unlocked_stage`、`recommended_stage` 和四阶 `stages`。已有正式记录时返回 `rank`。积分相同按胜率排序。创建对局可传 `cup_stage` 为 `prelim`、`quarter`、`semi` 或 `final`。档位和推荐对手由服务端赛段决定，选择未解锁赛段时标记为练习。省略赛段可继续普通四轮训练。
+- `GET /api/v1/judges` 返回官方裁判、自己的裁判和公开裁判。`POST` 用 `name`、`role` 新建私密裁判。`GET /api/v1/judges/{id}` 对未公开且非本人的风格返回 404。`POST .../{id}/visibility` 由本人提交 `public` 显式公开或撤回。裁决开始时校验可见性，已保存的旧结果保留裁判名称和意见。
+- `GET /api/v1/judges/models` 返回本人的已保存别名与演示选项。`POST` 可使用同个人模型设置的保存参数独立添加席位模型。`POST .../models/{id}/remove` 移除自己的附加配置。保存后即可选择，发送密钥只在保存时发生。公开风格不会共享创建者的模型配置。
+- `GET /api/v1/debates/{id}/verdict` 读取已保存的报告。`POST` 同路径用 `seats` 提交 1～3 个不同裁判，每席指定 `judge_id` 和 `model_id`。响应给出裁决状态、各席来源和结果，以及可用的五维聚合。失败席可通过 `POST .../seats/{seat}/retry` 单独重试。模拟票与真实票隔离，已结算场次的胜负和积分固定，后续席位意见单独保存。
+- 正式积分只对符合条件的已完赛场次写一条流水，和正式裁决在同一事务提交。平局记 0，练习和演示裁决不计分。只有当前最高解锁赛段获胜才晋级。修订重评的原句、改写和前后参考分属于自己的重评版本。
+
+## Neon 第四批
+
+| 接口（前缀 `/api/v1`） | 说明 |
+| --- | --- |
+| `GET /neon-catalog/topics`、`GET /neon-catalog/opponents` | 登录后读取官方条目、本人条目和他人已公开条目。热度按完成至少一轮的不同账号计数。辩题以 `category` 区分科技伦理、校园生活、社会经济、哲学思辨。 |
+| `POST /neon-catalog/{topics 或 opponents}`、`POST /neon-catalog/{topics 或 opponents}/{id}` | 首次保存为私密，后者仅允许本人编辑。辩题接收 `title`、`background`、`category`，辩手接收 `name`、`tag`、`difficulty`、`persona`。 |
+| `POST /neon-catalog/{topics 或 opponents}/{id}/visibility` | 所有者提交 `{"public":true}` 确认公开，提交 `false` 撤回。既有对局保留其开赛快照。 |
+| `POST /debates` | 选题为 `topic_id`、`custom_topic`、`neon_topic_id` 三选一，可另传 `neon_opponent_id`。他人的私密或撤回条目无法用于新对局。 |
+| `GET/POST /debates/{id}/sharing`、`GET /debates/{id}/sharing/markdown` | 仅完赛对局所有者可读写分享状态或导出。写入接受 `action` 为 `prompt`（记录询问）、`publish` 或 `withdraw`。重复公开保持同一个链接，撤回后再公开会签发新链接。 |
+| `GET /public/reports`、`GET /public/reports/{share_id}`、`GET /public/reports/{share_id}/markdown` | 公开复盘列表至少提供 `topic_id` 或 `owner_id`，用 `page`、`page_size` 翻页。自定义辩题的查询键形如 `custom-{id}`。详情与 UTF-8 导出使用分享 UUID，撤回后返回 404。 |
+| `GET /dojo`、`POST /dojo/answer` | 读内置题与本人的答题记录。答题传 `question_id` 和 0–3 的 `choice`，返回正确项、解析、本次 ELO 变动和是否已领奖。 |
+| `POST /dojo/history-quiz`、`POST /dojo/techniques` | 请求生成历史排雷题或个性化技法，素材取自本人对局和可定位批注。素材不足可继续使用内置题与基础技法。 |
+| `GET/POST /profile` | 读取个人档案或保存昵称和头像。保存字段为 `nickname`、`avatar_kind`（`seal` / `image`）、`avatar_seal`、`avatar_image`。图片由前端压缩为 128×128 JPEG，后端重编码后保存。个人档案包含正式战绩、ELO 变化与高频漏洞。 |
+| `GET /leaderboard`、`GET /public/profiles/{user_id}` | 榜单登录可读，每页 10 人，按 ELO、胜率和稳定 ID 排序。公开个人资料只包含昵称、头像、段位、ELO、胜率和最高杯赛阶段，公开复盘用同一 ID 查询。 |
+| `GET /debates` | 保留本人历史分页，列表行增加 `review_status`，取值为 `pending`、`completed` 或 `failed`。示例和他人的公开复盘没有本人的对局行。 |
+
+写入沿用同源、Session 与 CSRF 校验。公开查询及导出均禁用缓存，导出只读已保存内容。道场每题首次答对才增加 5 ELO，且与积分变更一并提交。
+
 ## T01 文档任务的历史验证记录
 
 2026 年 11 月 8 日完成技术自查，待项目负责人最终验收；不替代完整 T02、T03 或 T05 的业务验收。

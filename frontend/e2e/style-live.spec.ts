@@ -87,7 +87,7 @@ test('T14 真实 Fake：四流派持久化、默认/非法值、防重复、跳�
     await card().locator('[data-generate-strategy]').evaluate((node: HTMLButtonElement) => { node.click(); node.click() })
     await expect.poll(() => postCount(debate.id)).toBe(1)
     await expect(card().locator('[data-query-strategy]')).toBeDisabled()
-    await expect(panel().getByRole('button', { name: '发送首轮', exact: true })).toBeDisabled() // 空发言校验，不依赖策略
+    await expect(panel().locator('form[data-first-turn] button[type="submit"]')).toBeDisabled() // 空发言校验，不依赖策略
     const release = releasePost as (() => void) | null
     expect(release).not.toBeNull()
     release!(); releasePost = null
@@ -149,7 +149,7 @@ test('T14 真实 Fake：四流派持久化、默认/非法值、防重复、跳�
   await page.goto(`/#debate=${defaultDebate.id}`)
   await expect(card().locator('[data-generate-strategy]')).toBeEnabled()
   await page.locator('#first-content').fill('不生成策略也能直接提出论点，并说明判断依据和适用范围。')
-  await page.getByRole('button', { name: '发送首轮', exact: true }).click()
+  await page.locator('form[data-first-turn] button[type="submit"]').click()
   await expect(panel().locator('.message')).toHaveCount(2)
   await expect(card().locator('[data-generate-strategy]')).toHaveCount(0)
   expect(postCount(defaultDebate.id)).toBe(0)

@@ -289,6 +289,7 @@ func (s *Service) runReviewGeneration(ctx context.Context, uid uint64, claim Rev
 		}
 	}
 	result, genErr := s.generateReview(ctx, ai.ReviewRequest{
+		ForceFake:  d.Practice,
 		UserID:     uid,
 		Mode:       ai.Mode(d.Mode),
 		Topic:      ai.Topic{Title: d.TopicTitleSnapshot, Description: d.TopicDescriptionSnapshot},

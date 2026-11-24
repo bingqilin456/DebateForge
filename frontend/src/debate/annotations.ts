@@ -13,7 +13,7 @@ import type { AnnotationAnchor, AnnotationItem, AnnotationBatch } from '../types
 
 export type AnnotationCategory = AnnotationItem['category']
 
-/** 四类批注的展示派生：颜色、线型、默认文字标签。 */
+/** 批注的颜色、线型和默认文字标签。 */
 export interface AnnotationStyle {
   category: AnnotationCategory
   /** 线型只用于 CSS class 与文字说明，不替代文字标签。 */
@@ -33,6 +33,20 @@ export const ANNOTATION_STYLES: Record<AnnotationCategory, AnnotationStyle> = {
   insufficient_support: { category: 'insufficient_support', decoration: 'dashed', label: '缺少支持', className: 'support' },
   // 定义或范围不清：紫色下划线。
   unclear_scope: { category: 'unclear_scope', decoration: 'underline', label: '定义待明确', className: 'scope' },
+  opponent_weakness: { category: 'opponent_weakness', decoration: 'wavy', label: '敌方破绽', className: 'opponent-weakness' },
+  opponent_strength: { category: 'opponent_strength', decoration: 'solid', label: '敌方杀招', className: 'opponent-strength' },
+}
+
+const ownLabels: Partial<Record<AnnotationCategory, string>> = {
+  strength: '我方亮点',
+  possible_logic_gap: '我方漏洞',
+  insufficient_support: '论据补强',
+}
+
+export function annotationDisplayLabel(item: AnnotationItem): string {
+  const label = categoryLabel(item.category)
+  const ownLabel = item.role === 'user' ? ownLabels[item.category] : undefined
+  return ownLabel ? `${ownLabel} · ${label}` : label
 }
 
 export function isAnnotationCategory(value: unknown): value is AnnotationCategory {

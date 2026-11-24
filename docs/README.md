@@ -87,14 +87,17 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - T05：[首轮最终验收记录](acceptance/T05_FIRST_TURN_ACCEPTANCE.md)；结项范围限于无收费实现，真实模型链路未验收。
 - T06：[正式入口与首轮联调最终验收](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
 - T07 部署准备见 [配置与运行清单](../deploy/README.md) 和 [验收记录](acceptance/T07_DEPLOYMENT_PREPARATION_ACCEPTANCE.md)。
+- T16 Phase 4 运维演练见[执行计划](../deploy/T16_PLAN.md)、[健康与备份新鲜度检查工具](../deploy/ops/health/README.md)和[验证记录](acceptance/T16_OPERATIONS_VALIDATION.md)；记录中的未验证项仍须现场补证。
 - T09 三轮状态机与失败恢复（含 T11 后端历史分页）见 [T09 验收记录](acceptance/T09_THREE_TURNS_RECOVERY_ACCEPTANCE.md)。
 - T10 结构化总结与重试见 [T10 验收记录](acceptance/T10_SUMMARY_RETRY_ACCEPTANCE.md)。
 - T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
 - Phase 2 最终整合（含 T08/T11 独立页面、赛制兼容、Chromium 与真实 Fake 联调）见 [最终验收记录](acceptance/PHASE2_FINAL_ACCEPTANCE.md)；后者补充并取代早先仅后端核心闭环的结项范围。
 - Phase 3 首批：[A 安全回归矩阵、T15 样例与 Demo 最小方案](planning/PHASE3_A_INTEGRATION_SPEC.md)、[T14-STYLE 最小 Spec](planning/T14_STYLE_SPEC.md)、[T14-STYLE 后端专项与 B 交接](acceptance/T14_STYLE_BACKEND_ACCEPTANCE.md)；后续前端与故障验证分别见 B1/B2 记录，不回写早期证据为完整 AC16 通过。
 - Phase 3 B1 补测与 B2 SSE：[B 原始交付](acceptance/B2_SSE_FRONTEND_ACCEPTANCE.md)、[指定 SHA 整合、浏览器 Fake 结果与 B3 启动交接](acceptance/PHASE3_B2_INTEGRATION_ACCEPTANCE.md)；实现与实测不替代负责人签收及阶段结项，当前待确认项查 TASKS。
-- Phase 3 B3：[浏览器补验结果、证据与边界](acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md)、[操作说明及 10 场真实评测准备](guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)。固定受测基线 134b845，交付 SHA 为 d22487f；新增真实 Fake/Nginx 浏览器 2/2 与最终只读启停 1/1 通过。真实模型评测保持未授权/未执行。
+- Phase 3 B3：[浏览器补验结果、证据与边界](acceptance/PHASE3_B3_BROWSER_ACCEPTANCE.md)、[操作说明与评测准备](guides/PHASE3_BROWSER_AND_EVAL_GUIDE.md)。固定受测基线 134b845，交付 SHA 为 d22487f；新增 Fake/Nginx 浏览器 2/2 与最终只读启停 1/1 通过。该批次未调用真实模型；后续真实评测见结项记录。
+- Phase 3 B侧收尾（含2026-11-20人工评读追加）：[T14-EVAL三场记录、AC12/AC16复用范围与边界](acceptance/P3_B_CURRENT_BASELINE_REVIEW_2026-11-17.md)。历史初始判断保留；最新追加记录 B 已评读无异议，负责人确认会话23计入合格。
 - Phase 3 B2/B3 正式签收：[签收结论、累计验收矩阵(A4)、启动前置条件(A5)与复现边界](acceptance/PHASE3_B2_B3_SIGNOFF.md)。签收范围限定 134b845 的固定 test/Fake 无收费工作，不含真实 Demo、10 场评测与阶段结项。
+- Phase 3 收尾状态（2026-11-20 结项）：[五项必要 P0、受测 SHA 与历史证据、已知风险及未验证项](acceptance/PHASE3_CLOSEOUT_2026-11-19.md)。T14-EVAL 已按 B 人工评读无异议及负责人确认 23 计入合格而完成；T07-COST-01、Phase 4 与产品 V2 仍分别保持原状态。
 - 确认废弃代码清理：[删除依据、保留原因与验证](acceptance/REMOVE_UNUSED_CODE_ACCEPTANCE.md)；单项结果待负责人确认，不改变阶段验收状态。
 - 功能负责人分工变更（2026-11-16）：[本轮范围、验证与授权边界](acceptance/FEATURE_OWNERSHIP_ACCEPTANCE.md)；仅改文档，不代替 Phase 3 结项或 V2 决策。
 - 产品 V2 文档重构（2026-11-17）：[自测、变更范围与未执行项](acceptance/PRD_V2_RESTRUCTURE_ACCEPTANCE.md)；仅改文档，不含代码/迁移/真实调用，不代替 Phase 3 结项或 V2 开发授权。

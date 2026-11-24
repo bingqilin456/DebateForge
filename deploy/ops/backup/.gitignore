@@ -1,0 +1,7 @@
+# 本目录运行期产物与私钥；只提交工具、测试与文档。
+.local/
+artifacts/
+*.age
+*.sql.gz
+*.sql
+logs/

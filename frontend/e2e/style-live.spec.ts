@@ -99,7 +99,7 @@ test('T14 真实 Fake：四流派持久化、默认/非法值、防重复、跳�
     if (data.status !== 'completed') throw new Error('Fake 未返回完成策略')
     expect(data.ai_style).toBe(style)
     expect(data.schema_version).toBe(1)
-    expect(data.prompt_version).toBe('strategy-v1')
+    expect(data.prompt_version).toBe(process.env.SIYIGE_B3_EXPECTED_STRATEGY_PROMPT ?? 'strategy-v1')
     await expect(card().locator('[data-strategy-completed]')).toBeVisible()
     await page.reload()
     await expect(card().locator('[data-strategy-completed]')).toContainText(`（${style}）`)

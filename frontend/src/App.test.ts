@@ -372,7 +372,7 @@ it('顶层导航支持辩论主视图、TopicsView 与 HistoryView 切换并保�
     const u = String(url)
     if (u.endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
     if (u.endsWith('/topics')) return response({ items: [debate.topic] })
-    if (u.startsWith('/api/v1/debates?')) return response({ items: [debate], total: 1, page: 1, page_size: 20 })
+    if (u.startsWith('/api/v1/debates?')) return response({ items: [debate], total: 1, page: 1, page_size: 10 })
     if (u.endsWith('/debates/123')) {
       return response({ debate, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
     }
@@ -423,7 +423,7 @@ it('创建期间锁定顶层导航；结果不明切页回来仍只能查历史'
     if (String(url).endsWith('/auth/me')) return response({ user: { id: '42', username: 'alice' }, csrf_token: 'csrf' })
     if (String(url).endsWith('/topics')) return response({ items: [{ id: '1', title: '选题', description: '说明' }] })
     if (init?.method === 'POST') return new Promise<Response>(resolve => { finish = resolve })
-    return response({ items: [], total: 0, page: 1, page_size: 20 })
+    return response({ items: [], total: 0, page: 1, page_size: 10 })
   })
   mount()
   await vi.waitFor(() => expect(host.querySelector('[data-topic-id="1"] input')).not.toBeNull())

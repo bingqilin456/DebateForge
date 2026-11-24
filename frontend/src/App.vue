@@ -259,6 +259,7 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
           v-if="currentView === 'history'"
           :key="`history:${auth.state.user?.id}`"
           :auth="auth"
+          :page-size="10"
           :disabled="auth.state.pending || restoring || creating"
           @select-debate="openDebate"
           @open-topics="switchView('topics')"

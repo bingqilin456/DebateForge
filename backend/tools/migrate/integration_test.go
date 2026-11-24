@@ -65,14 +65,18 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	migrationCount := len(provider.ListSources())
+	if migrationCount == 0 {
+		t.Fatal("未找到业务迁移")
+	}
 	var output bytes.Buffer
 	if err := execute(ctx, provider, "up", &output); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(strings.TrimSpace(output.String()))
 	before := versionHistory(t, db, "goose_db_version")
-	if len(before) != 20 { // Goose 初始版本 0 加 19 个业务版本。
-		t.Fatalf("版本历史条数 = %d，期望 20", len(before))
+	if len(before) != migrationCount+1 { // Goose 初始版本 0 加全部业务版本。
+		t.Fatalf("版本历史条数 = %d，期望 %d", len(before), migrationCount+1)
 	}
 	var tables int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('users','auth_sessions','topics','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations','training_issue_states','training_repractice_states') AND engine='InnoDB' AND table_collation='utf8mb4_0900_ai_ci'`).Scan(&tables); err != nil || tables != 15 {
@@ -86,8 +90,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('auth_sessions','debates','debate_turns','messages','debate_summaries','debate_strategies','turn_annotations','debate_reviews','debate_steps','debate_step_claims','training_annotations') AND delete_rule='RESTRICT' AND update_rule='RESTRICT'`).Scan(&foreignKeys); err != nil || foreignKeys != 14 {
 		t.Fatal("冻结的外键关系不完整", err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id BETWEEN 1 AND 19").Scan(&historyIDs); err != nil || historyIDs != 19 {
-		t.Fatal("十九个版本未逐一记录成功", err)
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT version_id) FROM goose_db_version WHERE is_applied=1 AND version_id > 0").Scan(&historyIDs); err != nil || historyIDs != migrationCount {
+		t.Fatalf("已记录版本 %d，期望 %d，错误 %v", historyIDs, migrationCount, err)
 	}
 	counts := rowCounts(t, db)
 	// 每次重建 provider，模拟独立进程重跑，而非复用内存缓存。
@@ -103,8 +107,8 @@ func TestMySQLInitialSchemaAndRepeat(t *testing.T) {
 		t.Fatal("重复执行改变了历史或既有数据")
 	}
 	output.Reset()
-	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), "applied") != 19 {
-		t.Fatal("状态未显示十九个成功版本", err)
+	if err := execute(ctx, provider, "status", &output); err != nil || strings.Count(output.String(), " applied ") != migrationCount {
+		t.Fatalf("状态未显示全部 %d 个成功版本：%v", migrationCount, err)
 	}
 	assertSchemaConstraints(t, db)
 }

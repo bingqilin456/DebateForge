@@ -3,6 +3,7 @@ import type { Debate, Topic } from '../src/types/api'
 
 const topics: Topic[] = Array.from({ length: 5 }, (_, i) => ({ id: String(i + 1), title: `浏览器辩题 ${i + 1}`, description: '讨论这项主张的利弊。' }))
 const session = { user: { id: '42', username: 'browser_user' }, csrf_token: 'synthetic-csrf' }
+const profile = { nickname: session.user.username, avatar_kind: 'seal', avatar_seal: '辩', avatar_image: '', elo: 1420, rank_label: '校队主力', win_rate: 0, cup_stage: '初赛' }
 function debate(id = '11', legacy = false): Debate {
   return {
     id, topic: topics[0]!, user_stance: 'pro', ai_stance: 'con',
@@ -21,6 +22,10 @@ async function api(page: Page, handler: (route: Route, url: URL) => Promise<void
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     if (url.pathname === '/api/v1/auth/me') return json(route, session)
+    if (url.pathname === '/api/v1/public/profiles/42') return json(route, profile)
+    if (url.pathname === '/api/v1/profile') return json(route, { ...profile, games: 0, wins: 0, elo_history: [], vulnerabilities: [] })
+    if (url.pathname.startsWith('/api/v1/neon-catalog/') || url.pathname === '/api/v1/cup') return failure(route, 404, 'not_found')
+    if (url.pathname.endsWith('/sharing') && route.request().method() === 'GET') return json(route, { prompt_handled: true, show_prompt: false, share_id: null })
     if (url.pathname.endsWith('/strategy') && route.request().method() === 'GET') return json(route, { status: 'not_started', attempt_version: null })
     await handler(route, url)
   })
@@ -54,42 +59,42 @@ for (const stance of ['pro', 'con'] as const) {
 
 test('T11 两页、三/四轮状态、上一页、刷新和打开详情', async ({ page }) => {
   const pages: number[] = []
-  const items = Array.from({ length: 21 }, (_, i) => debate(String(i + 1), i === 1))
+  const items = Array.from({ length: 11 }, (_, i) => debate(String(i + 1), i === 1))
   await api(page, async (route, url) => {
     if (url.pathname === '/api/v1/debates') {
       const pageNo = Number(url.searchParams.get('page'))
-      expect(url.searchParams.get('page_size')).toBe('20')
+      expect(url.searchParams.get('page_size')).toBe('10')
       pages.push(pageNo)
-      return json(route, { items: items.slice((pageNo - 1) * 20, pageNo * 20), total: 21, page: pageNo, page_size: 20 })
+      return json(route, { items: items.slice((pageNo - 1) * 10, pageNo * 10), total: 11, page: pageNo, page_size: 10 })
     }
     // 使用进行中的历史会话验证交接，避免把已有总结请求混入分页测试。
-    return json(route, { debate: { ...debate('21'), status: 'active', completed_rounds: 0 }, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
+    return json(route, { debate: { ...debate('11'), status: 'active', completed_rounds: 0 }, turns: [], summary_status: { status: 'not_started', attempt_version: null } })
   })
   await page.goto('/#history')
-  await expect(page.locator('[data-history-id]')).toHaveCount(20)
+  await expect(page.locator('[data-history-id]')).toHaveCount(10)
   await expect(page.locator('[data-history-id="1"]')).toContainText('4 / 4 轮')
   await expect(page.locator('[data-history-id="2"]')).toContainText('3 / 3 轮')
   await expect(page.getByRole('button', { name: '上一页', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '下一页', exact: true }).click()
   await expect(page.locator('[data-history-id]')).toHaveCount(1)
-  await expect(page.locator('[data-history-id="21"]')).toBeVisible()
+  await expect(page.locator('[data-history-id="11"]')).toBeVisible()
   await expect(page.getByRole('button', { name: '下一页', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '刷新历史', exact: true }).click()
   await expect.poll(() => pages.length).toBe(3)
   await page.getByRole('button', { name: '上一页', exact: true }).click()
-  await expect(page.locator('[data-history-id]')).toHaveCount(20)
+  await expect(page.locator('[data-history-id]')).toHaveCount(10)
   await page.reload()
-  await expect(page.locator('[data-history-id]')).toHaveCount(20)
+  await expect(page.locator('[data-history-id]')).toHaveCount(10)
   await page.getByRole('button', { name: '下一页', exact: true }).click()
-  await page.locator('[data-debate-id="21"]').click()
-  await expect(page).toHaveURL(/#debate=21$/)
+  await page.locator('[data-debate-id="11"]').click()
+  await expect(page).toHaveURL(/#debate=11$/)
   await expect(page.getByText('已完成 0 / 4 轮')).toBeVisible()
   expect(pages).toEqual([1, 2, 2, 1, 1, 2])
 })
 
 test('空辩题与空历史、移动端无横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await api(page, async (route, url) => json(route, url.pathname.endsWith('/topics') ? { items: [] } : { items: [], total: 0, page: 1, page_size: 20 }))
+  await api(page, async (route, url) => json(route, url.pathname.endsWith('/topics') ? { items: [] } : { items: [], total: 0, page: 1, page_size: 10 }))
   await page.goto('/#topics')
   await expect(page.getByText('暂无可用辩题，请稍后刷新。')).toBeVisible()
   await expect(page.getByRole('button', { name: '创建会话', exact: true })).toBeDisabled()
@@ -111,7 +116,7 @@ for (const kind of ['503', 'network', 'malformed'] as const) {
         if (kind === 'network') return route.abort('failed')
         return json(route, { unexpected: true })
       }
-      return json(route, view === 'topics' ? { items: topics } : { items: [debate()], total: 1, page: 1, page_size: 20 })
+      return json(route, view === 'topics' ? { items: topics } : { items: [debate()], total: 1, page: 1, page_size: 10 })
     })
     await page.goto('/#topics')
     await expect(page.locator('[data-view="topics"] [role="alert"]')).toBeVisible()
@@ -198,7 +203,7 @@ test('创建响应丢失锁定提交并引导历史核实', async ({ page }) => 
   await api(page, async (route, url) => {
     if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
     if (route.request().method() === 'POST') { creates++; return route.abort('failed') }
-    return json(route, { items: [debate()], total: 1, page: 1, page_size: 20 })
+    return json(route, { items: [debate()], total: 1, page: 1, page_size: 10 })
   })
   await page.goto('/#topics')
   await page.locator('input[value="1"]').check()
@@ -213,7 +218,7 @@ test('创建响应丢失锁定提交并引导历史核实', async ({ page }) => 
 test('历史刷新遇到 401 清除记录并回到登录', async ({ page }) => {
   let calls = 0
   await api(page, async route => ++calls === 1
-    ? json(route, { items: [debate()], total: 1, page: 1, page_size: 20 })
+    ? json(route, { items: [debate()], total: 1, page: 1, page_size: 10 })
     : failure(route, 401, 'unauthenticated'))
   await page.goto('/#history')
   await expect(page.locator('[data-history-id]')).toHaveCount(1)
@@ -239,7 +244,7 @@ test('统一入口：双击只创建一次，锁定导航，刷新重登和历�
       return json(route, saved, 201)
     }
     if (path.endsWith('/debates/11')) { details++; return json(route, { debate: saved, turns: [], summary_status: { status: 'not_started', attempt_version: null } }) }
-    return json(route, { items: [saved], total: 1, page: 1, page_size: 20 })
+    return json(route, { items: [saved], total: 1, page: 1, page_size: 10 })
   })
   await page.goto('/')
   await expect(page.locator('[data-view="topics"]')).toBeVisible()
@@ -280,7 +285,7 @@ for (const kind of ['400', '401', '503', 'malformed', 'timeout'] as const) {
         if (kind === 'malformed') return json(route, { unexpected: true }, 201)
         return failure(route, Number(kind), kind === '400' ? 'invalid_request' : kind === '401' ? 'unauthenticated' : 'dependency_unavailable')
       }
-      return json(route, { items: [], total: 0, page: 1, page_size: 20 })
+      return json(route, { items: [], total: 0, page: 1, page_size: 10 })
     })
     await page.goto('/')
     await page.locator('input[value="1"]').check()
@@ -323,7 +328,7 @@ test('V2-02 从历史恢复训练赛并按服务端状态进入结辩', async ({
   })
   await api(page, async (route, url) => {
     if (url.pathname.endsWith('/topics')) return json(route, { items: topics })
-    if (url.pathname === '/api/v1/debates') return json(route, { items: [match], total: 1, page: 1, page_size: 20 })
+    if (url.pathname === '/api/v1/debates') return json(route, { items: [match], total: 1, page: 1, page_size: 10 })
     if (url.pathname.endsWith('/free-debate/end')) {
       closing = true
       endRequests++
@@ -381,7 +386,7 @@ test('训练赛退出续练、争点回应定位、复盘失败与重练刷新�
       : { status: 'not_started', attempt_version: null }
   await api(page, async (route, url) => {
     const method = route.request().method()
-    if (url.pathname === '/api/v1/debates') return json(route, { items: [{ ...match, status: completed ? 'completed' : 'active' }], total: 1, page: 1, page_size: 20 })
+    if (url.pathname === '/api/v1/debates') return json(route, { items: [{ ...match, status: completed ? 'completed' : 'active' }], total: 1, page: 1, page_size: 10 })
     if (url.pathname === path) return json(route, {
       debate: { ...match, status: completed ? 'completed' : 'active' }, turns: [],
       summary_status: { status: 'not_started', attempt_version: null },

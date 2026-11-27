@@ -102,6 +102,12 @@ func TestLoadDeployConfig(t *testing.T) {
 	if cfg.Database.ValidateTestTarget() == nil {
 		t.Fatal("部署库被接受为集成测试目标")
 	}
+	t.Setenv("AI_MODE", "byok")
+	t.Setenv("BYOK_MASTER_KEY_FILE", filepath.Join(t.TempDir(), "byok-master-key"))
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("个人模型部署配置未被接受: %v", err)
+	}
+	t.Setenv("AI_MODE", "fake")
 	for _, tc := range []struct{ key, value string }{
 		{"HTTP_ADDR", "0.0.0.0:8081"},
 		{"DB_ADDR", "127.0.0.1:13307"},
@@ -110,9 +116,13 @@ func TestLoadDeployConfig(t *testing.T) {
 		{"DB_USER", "siyige_deploy_migrator"},
 		{"AUTH_ORIGIN", "http://127.0.0.1:5173"},
 		{"AI_MODE", "deepseek"},
+		{"AI_MODE", "byok"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			t.Setenv(tc.key, tc.value)
+			if tc.key == "AI_MODE" && tc.value == "byok" {
+				t.Setenv("BYOK_MASTER_KEY_FILE", "relative-key")
+			}
 			if _, err := LoadConfig(); err == nil {
 				t.Fatal("接受了不安全的部署配置")
 			}

@@ -62,8 +62,12 @@ func LoadConfig() (Config, error) {
 			if !filepath.IsAbs(os.Getenv("T07_TRIAL_LEDGER")) {
 				return Config{}, fmt.Errorf("真实试运行要求显式配置持久账本路径")
 			}
+		case "byok":
+			if !filepath.IsAbs(os.Getenv("BYOK_MASTER_KEY_FILE")) {
+				return Config{}, fmt.Errorf("个人模型模式要求专用加密主密钥文件")
+			}
 		default:
-			return Config{}, fmt.Errorf("部署准备仅允许关闭模型或使用 Fake")
+			return Config{}, fmt.Errorf("部署模式的模型选择无效")
 		}
 	} else if !isLoopbackEndpoint(addr) {
 		return Config{}, fmt.Errorf("HTTP_ADDR 必须使用回环 IP 和 1–65535 端口")

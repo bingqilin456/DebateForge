@@ -40,7 +40,9 @@ t07=(docker compose --env-file deploy/.env -f deploy/compose.yaml -p siyige-t07-
 
 从版本 `00013` 升级到 Neon 的独立副本时，管理员先临时授予迁移账号对 `siyige_deploy.topics` 的表级 `UPDATE`。版本 `00027` 要回填既有辩题分类。迁移核对完成后撤回这项临时权限，再执行应用的逐表授权。保留旧库与旧应用对应的版本，以便切换前验证回退路径。
 
-Neon 公网演示使用 `AI_MODE=fake`。迁移与授权就绪后，应用可通过覆盖配置显式设置 `V2_ANNOTATION_FAKE=1` 和 `V2_REVIEW_FAKE=1`，分别启用演示批注与复盘。
+Neon 公网演示默认使用 `AI_MODE=fake`。迁移与授权就绪后，应用可通过覆盖配置显式设置 `V2_ANNOTATION_FAKE=1` 和 `V2_REVIEW_FAKE=1`，分别启用演示批注与复盘。
+
+个人模型设置使用 `AI_MODE=byok`，由 `compose.byok.yaml` 叠加启用。服务端通过 `BYOK_MASTER_KEY_FILE` 读取独立的 32 字节十六进制加密主密钥，用户录入的供应商密钥只在服务端加密保存，浏览器不会保存或直连供应商。正式环境启用该模式前，先准备主密钥文件并运行 `docker compose ... -f compose.byok.yaml config --quiet`，再滚动替换 app；模型供应商的请求费用由用户个人配置承担，公网部署仍需保留请求限额与出网审查。
 
 ## 3. 首次受控发布与回退
 

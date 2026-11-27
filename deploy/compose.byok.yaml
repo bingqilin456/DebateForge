@@ -1,0 +1,12 @@
+# 受控个人模型模式。仅在正式环境准备 BYOK_MASTER_KEY_FILE 后叠加。
+services:
+  app:
+    environment:
+      AI_MODE: byok
+      BYOK_MASTER_KEY_FILE: /run/secrets/byok_master_key
+    secrets:
+      - byok_master_key
+
+secrets:
+  byok_master_key:
+    file: ${T07_BYOK_MASTER_KEY_FILE:?set T07_BYOK_MASTER_KEY_FILE}

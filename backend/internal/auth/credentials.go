@@ -10,7 +10,7 @@ import (
 const (
 	usernameMinLength = 3
 	usernameMaxLength = 32
-	passwordMinRunes  = 12
+	passwordMinRunes  = 6
 	passwordMaxRunes  = 128
 	passwordMaxBytes  = 512
 )

@@ -334,9 +334,13 @@ func assertStatus(t *testing.T, result apiResult, status int, code string) {
 func TestAuthRegisterLoginMeLogoutWithRealMySQL(t *testing.T) {
 	fixture := newAuthFixture(t)
 	username := fixture.randomUsername(t)
+	boundaryPassword := "tst_" + username[:2]
+
+	tooShort, _ := fixture.register(t, username, boundaryPassword[:5])
+	assertStatus(t, tooShort, http.StatusBadRequest, "invalid_request")
 
 	// 大小写与首尾空白的归一化在真实链路上生效。
-	registerResult, _ := fixture.register(t, "  "+strings.ToUpper(username)+"  ", integrationPassword)
+	registerResult, _ := fixture.register(t, "  "+strings.ToUpper(username)+"  ", boundaryPassword)
 	assertStatus(t, registerResult, http.StatusCreated, "")
 	if len(registerResult.data()) != 2 {
 		t.Fatalf("注册响应字段数=%d", len(registerResult.data()))
@@ -349,10 +353,10 @@ func TestAuthRegisterLoginMeLogoutWithRealMySQL(t *testing.T) {
 	}
 
 	// 重复注册（再次归一化到同名）必须 409。
-	duplicate, _ := fixture.register(t, username, integrationPassword)
+	duplicate, _ := fixture.register(t, username, boundaryPassword)
 	assertStatus(t, duplicate, http.StatusConflict, "username_conflict")
 
-	loginResult, cookie, csrf := fixture.login(t, strings.ToUpper(username), integrationPassword)
+	loginResult, cookie, csrf := fixture.login(t, strings.ToUpper(username), boundaryPassword)
 	assertStatus(t, loginResult, http.StatusOK, "")
 	if cookie.Value == "" || csrf == "" || cookie.Value == csrf {
 		t.Fatal("登录未返回独立的 Session 与 CSRF")
@@ -382,7 +386,7 @@ func TestAuthRegisterLoginMeLogoutWithRealMySQL(t *testing.T) {
 	if !strings.HasPrefix(row.PasswordHash, "$argon2id$v=19$m=19456,t=2,p=1$") {
 		t.Fatal("password_hash 不是冻结参数的 Argon2id 编码")
 	}
-	if strings.Contains(row.PasswordHash, integrationPassword) || row.CSRFToken == cookie.Value {
+	if strings.Contains(row.PasswordHash, boundaryPassword) || row.CSRFToken == cookie.Value {
 		t.Fatal("数据库出现明文密码或复用的 CSRF")
 	}
 
@@ -410,7 +414,7 @@ func TestAuthRegisterLoginMeLogoutWithRealMySQL(t *testing.T) {
 	assertStatus(t, afterLogout, http.StatusUnauthorized, "unauthenticated")
 
 	// 日志不得出现密码、Session 原值、CSRF、完整响应或有用的存储细节。
-	fixture.assertNoSecretsInLogs(t, integrationPassword, cookie.Value, csrf, string(registerResult.body), string(loginResult.body))
+	fixture.assertNoSecretsInLogs(t, boundaryPassword, cookie.Value, csrf, string(registerResult.body), string(loginResult.body))
 }
 
 func TestAuthConcurrentRegisterKeepsSingleWinner(t *testing.T) {

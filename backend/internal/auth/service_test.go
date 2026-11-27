@@ -202,7 +202,7 @@ func TestRegisterRejectsInvalidInputBeforeHashing(t *testing.T) {
 	service, _, counter := newTestService(t, store)
 	for name, tc := range map[string]struct{ username, password string }{
 		"bad username":   {"a!", "correct-horse-battery"},
-		"short password": {"alice_01", "too-short"},
+		"short password": {"alice_01", "short"},
 		"non ascii":      {"阿里斯", "correct-horse-battery"},
 		"invalid utf8":   {"alice\xff", "correct-horse-battery"},
 		"too long rune":  {"alice_01", "😀"},

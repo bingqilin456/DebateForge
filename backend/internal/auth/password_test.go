@@ -55,7 +55,7 @@ func TestHashPasswordUsesRandomSalt(t *testing.T) {
 
 func TestHashPasswordRejectsInvalidInput(t *testing.T) {
 	for name, raw := range map[string]string{
-		"too short": strings.Repeat("a", 11),
+		"too short": strings.Repeat("a", 5),
 		"too long":  strings.Repeat("a", 129),
 		"invalid":   string([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}),
 	} {

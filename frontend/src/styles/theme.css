@@ -22,9 +22,17 @@ body {
   --app-success-bg: var(--color-success-light-1);
   --app-selected-border: rgb(var(--primary-6));
   --app-selected-bg: var(--color-primary-light-1);
-  --app-radius-control: var(--border-radius-large);
-  --app-radius-panel: 12px;
-  --app-radius-card: 16px;
+  /* Web 端近似 Apple 的 continuous corners：外层更圆，内层逐级收窄。 */
+  --app-radius-xs: 8px;
+  --app-radius-sm: 10px;
+  --app-radius-control: 12px;
+  --app-radius-panel: 16px;
+  --app-radius-card: 20px;
+}
+
+/* 新浏览器使用 superellipse 连续曲率，旧浏览器回退到上面的 border-radius。 */
+:where(button, .card, .arco-btn, input, select, textarea) {
+  corner-shape: superellipse(1.08);
 }
 
 /*

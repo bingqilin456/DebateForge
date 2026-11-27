@@ -91,11 +91,15 @@ async function submit() {
 </template>
 
 <style scoped>
-.auth-card { width: 100%; max-width: 440px; padding: 28px; border: 1px solid var(--app-border); border-radius: var(--app-radius-card); background: var(--app-surface); color: var(--app-text); }
-.auth-card h2 { margin: 0 0 8px; font-size: 22px; }
+.auth-card { width: 100%; max-width: 440px; padding: 28px; border: 1px solid #e7e5e4; border-radius: var(--app-radius-panel); background: var(--app-surface); color: var(--app-text); box-shadow: 0 6px 20px #2925240b; }
+.auth-card h2 { margin: 0 0 8px; font: 700 22px/1.4 var(--app-serif); }
 .auth-intro { margin: 0 0 24px; color: var(--app-text-muted); line-height: 1.6; }
 .auth-field { margin-bottom: 20px; }
 .auth-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.auth-field :deep(.arco-input-wrapper) { border: 1px solid #d6d3d1; border-radius: var(--app-radius-control); background: #fff; }
+.auth-field :deep(.arco-input-focus) { border-color: var(--app-pro); }
+.auth-card :deep(.arco-btn-primary) { border-radius: var(--app-radius-control); background: #c9362b; }
+.auth-card :deep(.arco-btn-primary:hover:not([disabled])) { background: #a73024; }
 .auth-help { margin: 8px 0 0; color: var(--app-text-muted); font-size: 12px; line-height: 1.7; }
 .auth-feedback { margin-bottom: 20px; }
 .auth-switch { display: block; margin: 12px auto 0; }

@@ -12,7 +12,7 @@ Compose、Nginx、MySQL 沿用 [ADR-008](../docs/decisions/DECISIONS.md#adr-008-
 2. 在私有目录（如 `deploy/secrets/db`，宿主机权限 `0700`）准备三个独立的 64 位小写十六进制随机口令文件 `root.txt`、`app.txt`、`migrator.txt`。新环境可用 `(umask 077; set -C; openssl rand -hex 32 > "$file")` 分别创建，`file` 指向每个尚不存在的文件。私有目录内这三个文件可设 `0444`，便于 Docker 通过单文件 secrets 挂载给各自的非 root 用户。宿主机依靠私有父目录限制读取，不能把这些文件移到可遍历目录。现有卷需使用当前有效凭据；换文件不会自动更改数据库账户。 [Compose 文件 Secrets](https://docs.docker.com/compose/how-tos/use-secrets/)
 3. 将 `T07_TLS_DIR` 置于宿主机 `0700 root:root` 私有父目录下，例如 `deploy/secrets/tls` 的父目录 `deploy/secrets`。只挂载 TLS 子目录，子目录用 `0750 root:101`，`fullchain.pem` 和 `privkey.pem` 用 `0640 root:101`，容器 UID/GID 101 只读访问。验收需确认容器能读取证书，宿主机非授权账号即使在 GID 101 也无法穿过私有父目录。隔离验收使用测试 CA 签发的证书，在验收浏览器中信任该 CA，curl 显式使用 CA 文件。用验收机器 hosts 或 curl `--resolve` 将同一域名指向回环。TLS、浏览器 Origin 和 Compose 的 `https://<域名>` 必须一致。
 
-普通用户密码当前仍按 T03 注册与登录契约校验 12–128 个 Unicode 码点且最多 512 个 UTF-8 字节，保持原文。普通用户产品政策的差异归 T03-AUTH-01。数据库账户和服务端密钥继续使用各自的高强度随机生成与凭据管理规则，API Key 仅在另获真实调用授权时按供应商规则管理。
+普通用户注册与登录按原文校验密码，长度为 6–128 个 Unicode 码点且最多 512 个 UTF-8 字节。数据库账户和服务端密钥继续使用各自的高强度随机生成与凭据管理规则，API Key 仅在另获真实调用授权时按供应商规则管理。
 
 以下命令使用明确的隔离项目名。更换目标要重新核对 Docker context、项目名、卷、凭据路径、域名与发布标识。使用 `config --quiet` 校验变量，避免将包含宿主机路径的完整配置发到日志。
 

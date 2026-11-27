@@ -61,4 +61,6 @@ onMounted(async () => {
 .public-reports li { padding: 5px 0; overflow-wrap: anywhere; }
 .public-reports nav { display: flex; align-items: center; gap: 10px; }
 .public-reports button { min-height: 36px; }
+.card[aria-label="公开主页"] { border-color: #e5e0da; background: #fff; box-shadow: 0 5px 18px rgba(55,45,33,.05); }
+.public-owner h1 { font-family: Georgia, var(--app-serif); }
 </style>

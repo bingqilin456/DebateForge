@@ -1,7 +1,7 @@
 // 按含义命名；相同数值不代表同一契约。字符数均按 Unicode 码点计算。
 export const USERNAME_MIN_CHARS = 3
 export const USERNAME_MAX_CHARS = 32
-export const PASSWORD_MIN_CHARS = 12
+export const PASSWORD_MIN_CHARS = 6
 export const PASSWORD_MAX_CHARS = 128
 export const PASSWORD_MAX_BYTES = 512
 

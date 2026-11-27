@@ -126,9 +126,14 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="card profile-card" aria-label="个人档案">
-    <h1>个人中心</h1>
+  <section class="profile-overview" aria-label="个人档案">
+    <header class="profile-title">
+      <h1>个人中心与历史辩论档案</h1>
+      <p>查看 ELO 变化、杯赛进度和历史对局。</p>
+    </header>
     <template v-if="profile">
+      <div class="profile-grid">
+      <section class="profile-card identity-card">
       <div class="profile-heading">
         <ProfileAvatar :profile="profile" size="large" />
         <div><h2>{{ profile.nickname }}</h2><small>正式战绩 {{ profile.games }} 局 · {{ profile.wins }} 胜</small></div>
@@ -152,9 +157,16 @@ onMounted(load)
           <button class="profile-button" type="button" :disabled="saving" @click="cancelEdit">取消</button>
         </div>
       </form>
-      <div class="profile-insights">
-        <section>
-          <h3>ELO 成长</h3>
+      <section class="profile-weakness">
+        <h3>常见薄弱点</h3>
+        <ul v-if="profile.vulnerabilities.length">
+          <li v-for="item in profile.vulnerabilities" :key="item.label">{{ item.label }} <span>{{ item.count }} 次</span></li>
+        </ul>
+        <p v-else class="muted">暂未找到可统计的个人批注。</p>
+      </section>
+      </section>
+        <section class="profile-card trend-card">
+          <h3>ELO 思辨成长曲线</h3>
           <figure v-if="points.length">
             <svg viewBox="0 0 480 96" role="img" :aria-label="`ELO 从 ${points[0]?.elo} 变为 ${points.at(-1)?.elo}`">
               <path d="M12 48H468 M12 84H468" class="chart-lines" />
@@ -166,13 +178,6 @@ onMounted(load)
             <figcaption>{{ points[0]?.elo }} → {{ points.at(-1)?.elo }}</figcaption>
           </figure>
           <p v-else class="muted">完成积分结算或答对道场题目后，这里会显示积分变化。</p>
-        </section>
-        <section>
-          <h3>常见漏洞</h3>
-          <ul v-if="profile.vulnerabilities.length">
-            <li v-for="item in profile.vulnerabilities" :key="item.label">{{ item.label }} <span>{{ item.count }} 次</span></li>
-          </ul>
-          <p v-else class="muted">暂未找到可统计的个人批注。</p>
         </section>
       </div>
     </template>
@@ -220,11 +225,19 @@ onMounted(load)
 .profile-form input:not([type=radio]) { display: block; max-width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--app-border); border-radius: 6px; }
 .profile-form fieldset { border: 0; padding: 0; }
 .profile-form fieldset label { margin-right: 14px; }
-.profile-insights { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; margin-top: 14px; }
-.profile-insights h3 { font: 700 17px var(--app-serif); }
-.profile-insights ul, .ranks { list-style: none; padding: 0; }
-.profile-insights li { display: flex; gap: 6px; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--app-border); }
-.profile-insights li span { white-space: nowrap; color: var(--app-text-muted); }
+.profile-title h1 { margin: 0; font: 700 24px/1.4 var(--app-serif); }
+.profile-title p { margin: 4px 0 0; color: var(--app-text-muted); font-size: 14px; }
+.profile-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; margin: 16px 0; }
+.profile-grid > section { min-width: 0; padding: 20px; border: 1px solid #e5e0da; border-radius: 16px; }
+.profile-grid h3 { margin: 0 0 12px; font-size: 14px; }
+.profile-weakness { padding: 12px; margin-top: 14px; border: 1px solid #e5e0da; border-radius: 12px; background: #faf9f7; }
+.profile-weakness ul, .ranks { list-style: none; padding: 0; }
+.profile-weakness ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.profile-weakness li { padding: 4px 8px; border-radius: 8px; background: #fff5ed; font-size: 12px; }
+.profile-weakness li span { white-space: nowrap; color: var(--app-text-muted); }
+.identity-card :deep(.profile-stats div) { background: #faf9f7; text-align: center; }
+.identity-card :deep(.profile-stats div:nth-child(3)) { background: #eef8f3; }
+.identity-card :deep(.profile-stats div:nth-child(4)) { background: #fff7e5; }
 figure { margin: 0; }
 figure svg { display: block; width: 100%; background: var(--app-background); border-radius: 7px; }
 .chart-lines { stroke: var(--app-border); }
@@ -235,5 +248,10 @@ figcaption, .muted { color: var(--app-text-muted); font-size: 13px; }
 .rank-no { font-variant-numeric: tabular-nums; color: var(--app-text-muted); }
 .ranks li a { overflow-wrap: anywhere; }
 .profile-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-@media (max-width: 550px) { .profile-insights { grid-template-columns: 1fr; } .ranks li { gap: 6px; grid-template-columns: 18px 30px minmax(0,1fr) 42px auto; font-size: 13px; } .ranks li .muted { display: none; } }
+.profile-card { border-color: #e5e0da; background: #fff; box-shadow: 0 5px 18px rgba(55,45,33,.05); }
+.profile-card h1, .profile-card h2, .profile-card h3 { font-family: Georgia, var(--app-serif); }
+.profile-button { border-radius: 9px; background: #faf9f7; }
+.profile-button.primary { background: #18181b; border-color: #18181b; }
+@media (max-width: 850px) { .profile-grid { grid-template-columns: 1fr; } }
+@media (max-width: 550px) { .ranks li { gap: 6px; grid-template-columns: 18px 30px minmax(0,1fr) 42px auto; font-size: 13px; } .ranks li .muted { display: none; } }
 </style>

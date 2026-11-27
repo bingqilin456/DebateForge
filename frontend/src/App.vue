@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Button, Modal } from '@arco-design/web-vue'
+import { IconBook, IconCompass, IconDashboard, IconFile, IconMenu, IconMute, IconSound, IconUser } from '@arco-design/web-vue/es/icon'
 import { authState, type AuthState } from './auth/state'
 import LoginForm from './components/auth/LoginForm.vue'
 import RegisterForm from './components/auth/RegisterForm.vue'
@@ -26,13 +27,13 @@ function isDebateRoute(hash: string) {
 }
 
 type View = 'debate' | 'topics' | 'review' | 'dojo' | 'history' | 'public-profile' | 'public-report'
-const navigation: { view: View; label: string }[] = [
-  { view: 'debate', label: '辩论竞技场' },
-  { view: 'topics', label: '辩题与杯赛' },
-  { view: 'review', label: '深度复盘' },
-  { view: 'dojo', label: '思辨道场' },
-  { view: 'history', label: '个人中心' },
-]
+const navigation = [
+  { view: 'debate', label: '辩论竞技场', icon: IconDashboard },
+  { view: 'topics', label: '辩题与杯赛', icon: IconCompass },
+  { view: 'review', label: '深度复盘', icon: IconFile },
+  { view: 'dojo', label: '思辨道场', icon: IconBook },
+  { view: 'history', label: '个人中心', icon: IconUser },
+] as const
 
 function viewFromHash(hash: string): View {
   if (hash === '#topics') return 'topics'
@@ -165,19 +166,15 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
 
 <template>
   <div class="page">
-    <header class="masthead">
+    <header class="masthead" @keydown.esc="menuOpen = false">
+      <div class="masthead-inner">
       <a class="brand" href="#topics" @click.prevent="switchView('topics')">
         <span class="brand-seal" aria-hidden="true">弈</span>
-        <span class="brand-title">思弈阁<small>AI 辩论训练</small></span>
+        <span class="brand-title">
+          <span>思弈阁 <span class="brand-edition">DebateForge</span></span>
+          <small>AI 辩论训练与逻辑复盘平台</small>
+        </span>
       </a>
-      <Button
-        v-if="auth.state.status === 'authenticated'"
-        class="menu-toggle"
-        aria-controls="neon-navigation"
-        :aria-expanded="menuOpen"
-        :disabled="creating"
-        @click="menuOpen = !menuOpen"
-      >菜单</Button>
       <nav
         v-if="auth.state.status === 'authenticated'"
         id="neon-navigation"
@@ -194,26 +191,37 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
           :aria-current="currentView === item.view ? 'page' : undefined"
           :disabled="auth.state.pending || restoring || creating"
           @click="switchView(item.view)"
-        >{{ item.label }}</button>
+        ><component :is="item.icon" aria-hidden="true" />{{ item.label }}</button>
       </nav>
-      <div class="arena-tools">
-        <Button :aria-pressed="arenaSoundEnabled" @click="toggleArenaSound">{{ arenaSoundEnabled ? '音效开' : '音效关' }}</Button>
-        <Button v-if="auth.state.status === 'authenticated'" :disabled="creating" @click="settingsOpen = true">接入模型</Button>
+      <div class="masthead-actions">
+        <div v-if="auth.state.status === 'authenticated'" class="account">
+          <a v-if="identity" class="account-identity" href="#history" @click.prevent="switchView('history')"><ProfileAvatar :profile="identity" size="small" /><span>{{ identity.nickname }}</span></a>
+          <span v-else class="account-name">{{ auth.state.user?.username }}</span>
+          <span v-if="cup" class="elo-badge" aria-label="当前 ELO">ELO {{ cup.elo }}</span>
+          <Button :disabled="auth.state.pending || restoring || creating" @click="logout">退出登录</Button>
+        </div>
+        <Button class="sound-button" :aria-label="arenaSoundEnabled ? '音效开' : '音效关'" :aria-pressed="arenaSoundEnabled" @click="toggleArenaSound">
+          <IconSound v-if="arenaSoundEnabled" aria-hidden="true" />
+          <IconMute v-else aria-hidden="true" />
+        </Button>
+        <Button v-if="auth.state.status === 'authenticated'" class="model-button" :disabled="creating" @click="settingsOpen = true">接入模型</Button>
+        <Button v-if="currentView !== 'review'" class="showcase-button" :disabled="creating" @click="switchView('review')">看完整复盘示例</Button>
+        <Button
+          v-if="auth.state.status === 'authenticated'"
+          class="menu-toggle"
+          aria-label="菜单"
+          aria-controls="neon-navigation"
+          :aria-expanded="menuOpen"
+          :disabled="creating"
+          @click="menuOpen = !menuOpen"
+        ><IconMenu aria-hidden="true" /></Button>
       </div>
-      <Button
-        v-if="currentView !== 'review'"
-        class="showcase-button"
-        :disabled="creating"
-        @click="switchView('review')"
-      >看完整复盘示例</Button>
-      <div v-if="auth.state.status === 'authenticated'" class="account">
-        <span v-if="cup" class="elo-badge" aria-label="当前 ELO">ELO {{ cup.elo }}</span>
-        <a v-if="identity" class="account-identity" href="#history" @click.prevent="switchView('history')"><ProfileAvatar :profile="identity" size="small" /><span>{{ identity.nickname }}</span></a>
-        <span v-else>{{ auth.state.user?.username }}</span>
-        <Button :disabled="auth.state.pending || restoring || creating" @click="logout">退出登录</Button>
       </div>
     </header>
-    <main :class="{ 'wide-main': currentView === 'debate' || currentView === 'review' }">
+    <main :class="{
+      'wide-main': auth.state.status === 'authenticated' || ['review', 'public-profile', 'public-report'].includes(currentView),
+      'guest-main': auth.state.status === 'anonymous' && !['review', 'public-profile', 'public-report'].includes(currentView),
+    }">
       <div v-if="currentView !== 'review' && currentView !== 'public-profile' && currentView !== 'public-report' && auth.state.status !== 'authenticated'" class="intro">
         <h1>辩论训练</h1>
         <p>选择一个辩题，从第一轮表达开始练习。</p>
@@ -286,61 +294,81 @@ onUnmounted(() => { active = false; window.removeEventListener('hashchange', rou
       </template>
       <p class="scope-note">AI 生成内容仅供练习参考，请勿输入个人敏感信息。支持四轮标准赛制文字辩论与结构化复盘总结。</p>
     </main>
-    <Modal v-if="settingsOpen" :visible="true" title="接入模型" :footer="false" width="min(640px, calc(100vw - 24px))" @cancel="settingsOpen = false">
+    <Modal v-if="settingsOpen" :visible="true" title="接入模型" modal-class="neon-model-dialog" :footer="false" width="min(640px, calc(100vw - 24px))" @cancel="settingsOpen = false">
       <ModelSettings :client="auth.client" />
     </Modal>
   </div>
 </template>
 
 <style>
-:root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-synthesis: none; }
+:root { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-synthesis: none; color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; color: var(--app-text); background: var(--app-background); }
 .page { min-height: 100vh; }
-.masthead { display: flex; align-items: center; gap: 16px; padding: 12px clamp(16px, 3vw, 40px); background: var(--app-surface); border-bottom: 1px solid var(--app-border); }
-.account { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.account > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12ch; }
+.masthead { background: rgb(255 255 255 / 90%); backdrop-filter: blur(12px); border-bottom: 1px solid #e7e5e4; position: sticky; top: 0; z-index: 20; }
+.masthead-inner { width: min(1280px, calc(100% - 32px)); min-height: 56px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.masthead-actions, .account { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.masthead-actions { margin-inline-start: auto; }
+.account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12ch; font-size: 12px; }
 .account-identity { display: inline-flex; gap: 6px; align-items: center; color: var(--app-text); text-decoration: none; min-width: 0; }
 .account-identity > span:last-child { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account > .elo-badge { color: #6e4e18; background: #fff8e8; border: 1px solid #ead7a8; border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+.account > .elo-badge { color: #78350f; background: #fffbeb; border: 1px solid #fde68a; border-radius: 999px; padding: 4px 9px; white-space: nowrap; font-size: 12px; font-weight: 650; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--app-text); text-decoration: none; flex-shrink: 0; }
-.brand-seal { display: grid; place-items: center; border-radius: 10px; width: 40px; height: 40px; background: var(--app-pro); color: white; font: 700 22px var(--app-serif); }
-.brand-title { font: 700 20px var(--app-serif); }
-.brand-title small { display: block; margin-top: 3px; color: var(--app-text-muted); font: 11px system-ui, sans-serif; }
-.showcase-button { margin-left: auto; }
-.arena-tools { display: flex; flex-wrap: wrap; gap: 6px; }
-main { width: min(760px, calc(100% - 32px)); margin: 30px auto 40px; }
-main.wide-main { width: min(1220px, calc(100% - 32px)); }
+.brand-seal { display: grid; place-items: center; border-radius: 8px; width: 32px; height: 32px; background: #c9362b; color: white; font: 700 16px var(--app-serif); box-shadow: 0 1px 2px #18181b22; }
+.brand-title { font: 700 16px/1.2 var(--app-serif); letter-spacing: .02em; }
+.brand-edition { display: inline-block; padding: 2px 5px; border: 1px solid #e7e5e4; border-radius: 4px; color: #57534e; background: #f5f5f4; font: 500 10px system-ui, sans-serif; vertical-align: middle; }
+.brand-title small { display: block; margin-top: 3px; color: #78716c; font: 11px system-ui, sans-serif; }
+.masthead-actions .arco-btn { min-height: 32px; height: auto; padding: 5px 9px; border-radius: 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.masthead-actions .sound-button { color: #57534e; background: transparent; font-size: 16px; }
+.masthead-actions .model-button { border: 1px solid #e7e5e4; background: #fff; color: #44403c; }
+.masthead-actions .showcase-button { background: #18181b; color: white; }
+.masthead-actions .arco-btn:not([disabled]):hover { filter: brightness(.94); }
+main { width: min(880px, calc(100% - 32px)); margin: 28px auto 48px; }
+main.wide-main { width: min(1280px, calc(100% - 32px)); margin-top: 24px; }
+main.guest-main { width: min(440px, calc(100% - 32px)); margin-top: clamp(24px, 8vh, 80px); }
+.guest-main .intro { text-align: center; margin-bottom: 22px; }
+.neon-model-dialog { overflow: hidden; border-radius: var(--app-radius-panel); box-shadow: 0 16px 48px #29252430; }
+/* Arco 锁滚动时写入打开瞬间的 body 像素宽度，保留随视口变化的宽度。 */
+body:has(.neon-model-dialog) { width: auto !important; }
 .showcase-actions { margin-bottom: 12px; }
 .intro { margin-bottom: 32px; }
 h1 { margin: 12px 0; font: 700 clamp(26px, 4vw, 36px)/1.4 var(--app-serif); }
 h2 { margin-top: 0; font-size: 21px; }
 p { line-height: 1.8; }
 .intro > p:last-child, .scope-note { color: var(--app-text-muted); }
-.card { padding: 28px; border: 1px solid var(--app-border); border-radius: var(--app-radius-card); background: var(--app-surface); margin-bottom: 24px; }
+.card { padding: 28px; border: 1px solid #e5e1d9; border-radius: var(--app-radius-panel); background: #fff; box-shadow: 0 2px 10px rgba(55,45,33,.035); margin-bottom: 24px; }
 .page-feedback { color: var(--app-error-text); padding: 12px 16px; background: var(--app-error-bg); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .scope-note { font-size: 13px; margin-top: 24px; }
 .restore-button { margin-bottom: 16px; }
-.view-nav { display: flex; gap: 3px; padding: 4px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-background); }
-.view-nav button { padding: 8px 11px; min-height: 38px; border: 0; border-radius: 8px; color: var(--app-text-muted); background: transparent; white-space: nowrap; font-size: 14px; }
+.view-nav { display: flex; gap: 2px; padding: 4px; border: 1px solid #e5e1d9; border-radius: 12px; background: #f5f3ef; }
+.view-nav button { display: flex; align-items: center; gap: 5px; padding: 6px 9px; min-height: 32px; border: 0; border-radius: 8px; color: #57534e; background: transparent; white-space: nowrap; font-size: 13px; }
+.view-nav button:hover:not([disabled]) { color: var(--app-text); }
+.view-nav button svg { font-size: 14px; }
 .view-nav button[aria-current='page'] { color: var(--app-text); background: var(--app-surface); font-weight: 700; box-shadow: 0 1px 3px #18181b26; }
-.menu-toggle { display: none; }
+.masthead-actions .menu-toggle { display: none; }
 button, select, textarea { font: inherit; }
 .arco-btn, select { min-height: 44px; }
 button, select { cursor: pointer; }
 button:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
 button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid var(--app-accent); outline-offset: 3px; }
-@media (max-width: 1160px) {
-  .masthead { flex-wrap: wrap; gap: 10px; }
-  .menu-toggle { display: inline-flex; margin-left: auto; }
-  .view-nav { display: none; order: 5; width: 100%; flex-wrap: wrap; }
-  .view-nav.is-open { display: flex; }
-  .view-nav button { min-height: 44px; }
+@media (max-width: 1199px) {
+  .masthead-inner { flex-wrap: wrap; gap: 8px; padding-block: 7px; }
+  .masthead-actions .menu-toggle { display: inline-flex; font-size: 18px; min-width: 40px; min-height: 40px; }
+  .view-nav { display: none; order: 5; width: 100%; }
+  .view-nav.is-open { display: grid; }
+  .view-nav button { min-height: 44px; padding-inline: 12px; text-align: left; }
 }
 @media (max-width: 600px) {
+  .masthead-inner { width: calc(100% - 24px); }
+  .brand-title small, .brand-edition { display: none; }
+  .masthead-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .masthead-actions .arco-btn { min-height: 38px; }
+  .masthead-actions:has(.menu-toggle) .showcase-button { display: none; }
+  .account-identity > span:last-child, .account-name { display: none; }
+  .account { order: 1; }
   main { margin: 22px auto; }
+  main.wide-main { width: calc(100% - 24px); margin-top: 16px; }
   .card { padding: 18px 15px; }
-  .account > span:not(.elo-badge) { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>

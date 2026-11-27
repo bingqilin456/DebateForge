@@ -125,18 +125,24 @@ onUnmounted(() => {
 
 <template>
   <section class="dojo" aria-label="思辨道场">
-    <header>
-      <h1>思辨道场</h1>
-      <p>识别辩论中的逻辑漏洞，练习每轮用得上的攻防技巧。</p>
+    <header class="dojo-heading">
+      <h1>思辨道场 · 逻辑排雷与技法库</h1>
+      <p>识别辩论中的高频逻辑谬误，练习攻防句式。</p>
     </header>
     <div class="dojo-layout">
-      <section class="card exercise" aria-labelledby="dojo-quiz-heading">
-        <header>
-          <div>
-            <h2 id="dojo-quiz-heading">30 秒逻辑排雷</h2>
-            <p v-if="questions.length">内置题已答对 {{ solved }}/{{ questions.length }} · 每题首次答对 +5 ELO</p>
+      <section class="exercise" aria-labelledby="dojo-quiz-heading">
+        <header class="exercise-heading">
+          <div class="exercise-title">
+            <span class="exercise-icon" aria-hidden="true">ϟ</span>
+            <div>
+              <h2 id="dojo-quiz-heading">30 秒逻辑排雷</h2>
+              <p>内置题首次答对 +5 ELO</p>
+            </div>
           </div>
-          <span v-if="question" class="timer">{{ seconds ? `${seconds} 秒` : '仍可作答' }}</span>
+          <div class="dojo-stats">
+            <span v-if="question" class="timer"><span aria-hidden="true">◷</span> {{ seconds ? seconds + ' 秒' : '仍可作答' }}</span>
+            <span v-if="questions.length" class="solved">已答对 {{ solved }}/{{ questions.length }}</span>
+          </div>
         </header>
         <div class="dojo-actions">
           <button type="button" :disabled="historyBusy || busy || loading" @click="loadHistoryQuiz">
@@ -144,16 +150,18 @@ onUnmounted(() => {
           </button>
           <button v-if="history" type="button" :disabled="busy || historyBusy" @click="showBuiltin(index)">回到内置题</button>
         </div>
-        <p v-if="historyNotice" role="status">{{ historyNotice }}</p>
-        <p v-if="loading" role="status">正在加载内置题…</p>
-        <p v-if="error" role="alert">{{ error }}</p>
+        <p v-if="historyNotice" class="notice" role="status">{{ historyNotice }}</p>
+        <p v-if="loading" class="notice" role="status">正在加载内置题…</p>
+        <p v-if="error" class="notice error" role="alert">{{ error }}</p>
         <button v-if="error && !question" type="button" @click="load">重新加载</button>
         <template v-if="question">
-          <p class="question-source">
-            {{ history ? (question.source === 'ai' ? 'AI 历史题' : '历史批注题') : `内置题 ${index + 1}/${questions.length}` }}
-          </p>
-          <blockquote>{{ question.quote }}</blockquote>
-          <p>{{ question.prompt || '找出这段发言中的主要逻辑漏洞。' }}</p>
+          <div class="question-excerpt">
+            <p class="question-source">
+              {{ history ? (question.source === 'ai' ? 'AI 历史题' : '历史批注题') : '内置题 ' + (index + 1) + '/' + questions.length }}
+            </p>
+            <blockquote>{{ question.quote }}</blockquote>
+          </div>
+          <p class="question-prompt">{{ question.prompt || '找出这段发言中的主要逻辑漏洞。' }}</p>
           <div class="options">
             <button v-for="(option, choice) in question.options" :key="option" type="button"
               :class="{ correct: result?.correct === choice, incorrect: result?.choice === choice && result.correct !== choice }"
@@ -161,29 +169,29 @@ onUnmounted(() => {
               {{ 'ABCD'[choice] }}. {{ option }}
             </button>
           </div>
-          <div v-if="result" class="answer" role="status">
+          <div v-if="result" class="answer" :class="result.correct === result.choice ? 'answer-correct' : 'answer-incorrect'" role="status">
             <strong>{{ result.correct === result.choice ? '答对了' : '再想一想' }}</strong>
             <span v-if="result.elo_delta"> · +{{ result.elo_delta }} ELO</span>
             <span v-else-if="result.rewarded"> · 本题奖励已领取</span>
             <p>正确选项为 {{ question.options[result.correct] }}。{{ result.explanation }}</p>
           </div>
-          <div v-if="!history" class="dojo-actions">
+          <div v-if="!history" class="dojo-actions question-navigation">
             <button type="button" :disabled="index === 0 || busy || historyBusy" @click="showBuiltin(index - 1)">上一题</button>
             <button type="button" :disabled="index === questions.length - 1 || busy || historyBusy" @click="showBuiltin(index + 1)">下一题</button>
           </div>
         </template>
       </section>
-      <section class="card techniques" aria-labelledby="dojo-techniques-heading">
-        <h2 id="dojo-techniques-heading">辩论核心技法</h2>
-        <details v-for="item in playbook" :key="item.tag">
-          <summary><span>{{ item.tag }}</span> {{ item.title }}</summary>
-          <p>{{ item.desc }}</p>
-          <blockquote>{{ item.template }}</blockquote>
-        </details>
-        <button type="button" :disabled="techniquesBusy" @click="loadTechnique">
-          {{ techniquesBusy ? '正在读取历史…' : 'AI 总结我的薄弱技法' }}
-        </button>
-        <p v-if="techniqueNotice" role="status">{{ techniqueNotice }}</p>
+      <section class="techniques" aria-labelledby="dojo-techniques-heading">
+        <header class="techniques-heading">
+          <div>
+            <h2 id="dojo-techniques-heading"><span class="technique-icon" aria-hidden="true">▤</span> 核心技法库</h2>
+            <p>结合你的历史辩词讲解攻防技法。</p>
+          </div>
+          <button type="button" class="techniques-action" :disabled="techniquesBusy" @click="loadTechnique">
+            {{ techniquesBusy ? '正在读取历史…' : 'AI 总结我的薄弱技法' }}
+          </button>
+        </header>
+        <p v-if="techniqueNotice" class="notice" role="status">{{ techniqueNotice }}</p>
         <article v-if="technique?.quote" class="answer">
           <h3>{{ technique.title }}</h3>
           <p>{{ technique.source === 'ai' ? 'AI 生成 · 本人辩词' : '历史批注 · 本人辩词' }}</p>
@@ -191,33 +199,139 @@ onUnmounted(() => {
           <p>{{ technique.reason }}</p>
           <p>{{ technique.guide }}</p>
         </article>
+        <div class="technique-list">
+          <details v-for="item in playbook" :key="item.tag">
+            <summary><span class="technique-tag">{{ item.tag }}</span>{{ item.title }}</summary>
+            <div class="technique-content">
+              <p>{{ item.desc }}</p>
+              <blockquote>{{ item.template }}</blockquote>
+            </div>
+          </details>
+        </div>
       </section>
     </div>
   </section>
 </template>
 
 <style scoped>
-.dojo { width: 100%; min-width: 0; }
-.dojo > header { margin-bottom: 1.25rem; }
-.dojo h1, .dojo h2, .dojo h3 { margin: 0; }
-.dojo p { margin: .45rem 0; }
-.dojo-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
-.exercise, .techniques { display: grid; min-width: 0; gap: .8rem; align-content: start; }
-.exercise > header { display: flex; align-items: start; justify-content: space-between; gap: .6rem; }
-.question-source, .timer { color: #704324; font-size: .875rem; }
-.timer { border: 1px solid #ded1bf; border-radius: 1rem; padding: .2rem .6rem; white-space: nowrap; }
-.dojo blockquote { margin: 0; padding: .8rem 1rem; background: #f6f1ea; border-left: 3px solid #ad8055; line-height: 1.65; overflow-wrap: anywhere; }
-.options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.dojo button { border: 1px solid #d9cabb; border-radius: .45rem; background: #fffdf9; color: #312219; padding: .55rem .8rem; text-align: left; cursor: pointer; }
-.dojo button:disabled { opacity: .58; cursor: default; }
-.dojo button:focus-visible, .dojo summary:focus-visible { outline: 2px solid #9b382f; outline-offset: 3px; }
-.dojo button.correct { border-color: #467754; background: #edf4eb; }
-.dojo button.incorrect { border-color: #b04c43; background: #faedeb; }
-.dojo-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.answer, .techniques details { border: 1px solid #e1d7c9; border-radius: .55rem; padding: .65rem .8rem; }
-.techniques summary { cursor: pointer; padding-block: .2rem; }
-.techniques summary span { color: #8d3e2c; }
-.techniques > button { justify-self: start; }
-@media (max-width: 740px) { .dojo-layout { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 420px) { .options { grid-template-columns: minmax(0, 1fr); } }
+.dojo { color: var(--app-text); min-width: 0; }
+.dojo-heading { margin-bottom: 24px; }
+.dojo-heading h1 { font: 700 24px/1.35 var(--app-serif); }
+.dojo h1, .dojo h2, .dojo h3, .dojo p, .dojo blockquote { margin: 0; }
+.dojo .dojo-heading p { margin-top: 4px; color: #57534e; font-size: 14px; }
+.dojo-layout { display: grid; gap: 20px; align-items: start; }
+.exercise, .techniques {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid #e7e5e4;
+  border-radius: var(--app-radius-panel);
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+.exercise-heading, .techniques-heading, .exercise-title, .dojo-stats, .dojo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.exercise-heading, .techniques-heading { justify-content: space-between; flex-wrap: wrap; }
+.exercise-heading { padding-bottom: 12px; border-bottom: 1px solid #f5f5f4; }
+.exercise-icon {
+  display: grid;
+  flex: 0 0 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--app-radius-control);
+  background: var(--app-pro-pale);
+  color: var(--app-pro);
+  font-weight: 700;
+}
+.exercise-heading h2, .techniques h2 { font-size: 14px; line-height: 1.4; }
+.exercise-heading p, .techniques-heading p { color: #57534e; font-size: 12px; }
+.dojo-stats, .dojo-actions { flex-wrap: wrap; }
+.timer, .solved { padding: 4px 10px; border-radius: var(--app-radius-xs); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.timer { background: #f5f5f4; color: #44403c; }
+.solved { background: #f0fdfa; color: #0f766e; }
+.question-excerpt {
+  padding: 16px;
+  border: 1px solid #e7e5e4;
+  border-radius: var(--app-radius-control);
+  background: var(--app-background);
+  overflow-wrap: anywhere;
+}
+.question-excerpt .question-source { margin-bottom: 6px; color: #57534e; font-size: 11px; font-weight: 600; }
+.question-excerpt blockquote { font: 400 16px/1.65 var(--app-serif); }
+.question-prompt { color: #57534e; font-size: 13px; }
+.options, .technique-list { display: grid; gap: 10px; }
+.dojo button {
+  min-width: 0;
+  border: 1px solid #e7e5e4;
+  border-radius: var(--app-radius-control);
+  padding: 8px 10px;
+  background: #fff;
+  color: var(--app-text);
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.dojo button:hover:not(:disabled) { border-color: currentColor; }
+.dojo button:disabled { opacity: .58; }
+.options button { padding: 12px 14px; font-size: 14px; }
+.options .correct, .answer-correct { border-color: #99f6e4; background: #f0fdfa; color: #115e59; }
+.options .incorrect, .answer-incorrect { border-color: #fecaca; background: var(--app-pro-pale); color: var(--app-pro); }
+.dojo-actions button:first-child { border-color: #fecaca; background: var(--app-pro-pale); color: var(--app-pro); }
+.question-navigation button:first-child { border-color: #e7e5e4; background: #fff; color: var(--app-text); }
+.question-navigation button:last-child { background: #18181b; color: #fff; }
+.answer, .notice {
+  padding: 12px 14px;
+  border: 1px solid #e7e5e4;
+  border-radius: var(--app-radius-control);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.answer p, .answer blockquote { margin-top: 6px; }
+.answer.answer-correct { border-color: #99f6e4; }
+.answer.answer-incorrect { border-color: #fecaca; }
+.technique-icon, .technique-tag { color: var(--app-con); }
+.techniques .techniques-action {
+  border-color: #bfdbfe;
+  border-radius: var(--app-radius-xs);
+  background: var(--app-con-pale);
+  color: var(--app-con);
+  font-weight: 600;
+}
+.techniques article.answer { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
+.techniques details { border: 1px solid #e7e5e4; border-radius: var(--app-radius-control); background: #fafaf9; }
+.techniques details[open] { background: #fff; }
+.techniques summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.techniques summary::-webkit-details-marker { display: none; }
+.techniques summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-inline-start: auto;
+  border-inline-end: 1px solid #57534e;
+  border-block-end: 1px solid #57534e;
+  transform: rotate(45deg);
+}
+.techniques details[open] summary::after { transform: rotate(225deg); }
+.technique-tag { flex: none; padding: 2px 8px; border-radius: 4px; background: var(--app-con-pale); font-size: 10px; }
+.technique-content { padding: 8px 14px 14px; border-top: 1px solid #f5f5f4; color: #57534e; font-size: 13px; }
+.techniques blockquote { padding: 10px; border-radius: var(--app-radius-xs); background: #f5f5f4; font: 400 14px/1.6 var(--app-serif); }
+.technique-content blockquote { margin-top: 8px; }
+.notice { background: #fafaf9; color: #57534e; }
+.notice.error { border-color: var(--app-error-border); background: var(--app-error-bg); color: var(--app-error-text); }
+.dojo summary:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
+@media (min-width: 640px) { .options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .dojo-layout { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
 </style>

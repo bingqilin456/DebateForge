@@ -2313,10 +2313,10 @@ components:
         password:
           type: string
           writeOnly: true
-          minLength: 12
+          minLength: 6
           maxLength: 128
           x-max-utf8-bytes: 512
-          description: 按原样校验，不 trim；12–128 个 Unicode 码点，且 UTF-8 最多 512 字节。
+          description: 按原样校验，不 trim；6–128 个 Unicode 码点，且 UTF-8 最多 512 字节。
     User:
       type: object
       required:

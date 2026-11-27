@@ -347,7 +347,7 @@ SSE 未通过直连、Nginx 中文分块及断线恢复验收时，按 AC12 不�
 
 使用成熟 Argon2id 实现，基线内存 19 MiB、迭代 2、并行度 1，每个密码独立随机盐，保存包含参数的哈希编码，常量时间验证。实施时测量服务器耗时和认证并发，避免登录接口耗尽资源，不自行实现密码算法。该参数基线依据 [OWASP 密码存储建议](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)。
 
-T03 现行用户名契约为 3 至 32 位 ASCII 字母、数字及下划线，trim 后小写归一化。注册和登录均按密码原文校验 12–128 个 Unicode 码点、最多 512 个 UTF-8 字节，不 trim、不强制字符类别。产品政策不将 12 位作为普通用户的统一门槛，兼容调整归 T03-AUTH-01，本轮保留现行行为。注册/登录限制请求体与尝试频率，登录错误统一提示用户名或密码错误。
+T03 现行用户名契约为 3 至 32 位 ASCII 字母、数字及下划线，trim 后小写归一化。注册和登录均按密码原文校验 6–128 个 Unicode 码点、最多 512 个 UTF-8 字节，不 trim、不强制字符类别。已有账号继续使用原密码。注册/登录限制请求体与尝试频率，登录错误统一提示用户名或密码错误。
 
 Session 绑定独立随机 `csrf_token`，登录和 `GET /api/v1/auth/me` 返回，浏览器仅在内存持有。按 [API](../api/API.md#phase-1-业务接口) 校验配置中的完整 Origin，拒绝缺失、`null` 和不匹配值。需要 Session 的写路由同时校验 `X-CSRF-Token`。注册和登录即使携带旧 Cookie，也按匿名路由的规则校验 Origin。生产与 Vite 开发代理均使用浏览器同源请求。[OWASP Session 建议](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 

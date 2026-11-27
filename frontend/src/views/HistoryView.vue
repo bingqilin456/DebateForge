@@ -153,4 +153,7 @@ onUnmounted(() => { disposed = true; version++ })
 .record-details dt { font-weight: 600; }
 .record-details dd { margin: 0; }
 .view-actions, .pagination { margin-top: 20px; }
+.history-view { border-color: #e5e0da; background: #fff; box-shadow: 0 5px 18px rgba(55,45,33,.05); }
+.history-list li { border-color: #e5e0da; background: #fffdfa; }
+.status { border-radius: 999px; }
 </style>

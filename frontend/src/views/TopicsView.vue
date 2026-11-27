@@ -49,6 +49,14 @@ const visibleTopics = computed<(Topic & { item?: NeonTopic })[]>(() => {
 })
 const selectedCatalogTopic = computed(() => catalogTopics.value?.find(item => neonTopicKey(item) === selectedTopicId.value))
 const availableOpponents = computed(() => opponents.value.filter(item => !item.official).sort((a, b) => b.heat - a.heat))
+const opponentCards = computed(() => {
+  const official = Object.entries(AI_STYLE_LABELS).map(([value, label]) => {
+    const item = opponents.value.find(candidate => candidate.official && candidate.style === value)
+    return { value, name: item?.name ?? label, item }
+  })
+  return [...official, ...availableOpponents.value.map(item => ({ value: `custom-${item.id}`, name: item.name, item }))]
+    .sort((a, b) => (b.item?.heat ?? 0) - (a.item?.heat ?? 0))
+})
 const opponentChoice = computed({
   get: () => opponentId.value ? `custom-${opponentId.value}` : aiStyle.value,
   set(value: string) {
@@ -171,6 +179,12 @@ function selectSource(value: 'preset' | 'custom') {
   source.value = value
 }
 
+function startTopic(topicId: string) {
+  if (formDisabled.value) return
+  selectedTopicId.value = topicId
+  void create()
+}
+
 async function create() {
   if (!canSubmit.value) return
   // 同步置位：DOM 更新 disabled 前连续提交也不能创建两个不同会话。
@@ -236,15 +250,20 @@ onUnmounted(() => { disposed = true; version++ })
 </script>
 
 <template>
-  <section class="card topics-view" aria-label="辩题列表视图" data-view="topics" :aria-busy="loading || creating">
+  <section class="topics-view" aria-label="辩题列表视图" data-view="topics" :aria-busy="loading || creating">
     <div class="view-header">
-      <h2>辩题列表与立场选择</h2>
+      <div>
+        <h2>辩题列表与立场选择</h2>
+        <p class="muted">单场四轮 · 立论 / 攻辩 / 交锋 / 结辩</p>
+      </div>
       <Button :disabled="formDisabled" @click="loadTopics">{{ loading ? '加载中…' : loadError ? '重试加载辩题' : '刷新辩题' }}</Button>
     </div>
-    <p class="muted">单场四轮 · 立论 / 攻辩 / 交锋 / 结辩</p>
-    <section v-if="cup" class="cup-preview" aria-label="思弈杯">
+    <section v-if="cup" class="lobby-panel cup-preview" aria-label="思弈杯">
       <div class="cup-heading">
-        <strong>思弈杯 <span>ELO {{ cup.elo }}<template v-if="cup.rank"> · 第 {{ cup.rank }} 名</template></span></strong>
+        <div>
+          <h3>思弈杯 · 四阶晋级赛制</h3>
+          <p class="muted">当前 ELO {{ cup.elo }}<template v-if="cup.rank"> · 第 {{ cup.rank }} 名</template></p>
+        </div>
         <Button :disabled="formDisabled" @click="selectCupStage(cup.recommended_stage)">按我的 ELO 智能匹配难度</Button>
       </div>
       <div class="cup-stages">
@@ -270,6 +289,54 @@ onUnmounted(() => { disposed = true; version++ })
       :client="currentAuth.client" :topics="catalogTopics" :opponents="opponents"
       :disabled="formDisabled || catalogLoading" @changed="loadCatalog" />
     <form v-if="authenticated" @submit.prevent="create">
+      <section class="lobby-panel" :aria-labelledby="`${id}-opponents-title`">
+        <div class="section-heading">
+          <h3 :id="`${id}-opponents-title`">第一步：选择 AI 辩手与持方</h3>
+          <fieldset :disabled="formDisabled" class="stance-options">
+            <legend>选择你的立场</legend>
+            <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
+            <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="con">反方（反对）</label>
+          </fieldset>
+        </div>
+        <fieldset class="persona-grid" :disabled="formDisabled || !!selectedCupStage" aria-label="AI 辩手卡片">
+          <button
+            v-for="opponent in opponentCards" :key="opponent.value" type="button" class="persona-card"
+            :aria-pressed="opponentChoice === opponent.value" @click="opponentChoice = opponent.value"
+          >
+            <span class="persona-heading">
+              <strong>{{ opponent.name }}</strong>
+              <span v-if="opponent.item" class="pill">{{ cupDifficulty[opponent.item.difficulty] }}</span>
+            </span>
+            <span v-if="opponent.item" class="persona-meta">
+              <span>{{ opponent.item.tag }}</span>
+              <span v-if="!opponent.item.official" class="heat">{{ opponent.item.public ? `热度 ${opponent.item.heat}` : '仅本人可见' }}</span>
+            </span>
+            <span v-if="opponent.item?.persona" class="muted">{{ opponent.item.persona }}</span>
+          </button>
+        </fieldset>
+        <div class="opponent-settings">
+          <div class="style-field">
+            <label :for="`${id}-ai-style`">AI 陪练流派</label>
+            <select :id="`${id}-ai-style`" v-model="opponentChoice" name="ai_style" :disabled="formDisabled || !!selectedCupStage">
+              <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ opponents.find(item => item.official && item.style === value)?.name ?? label }}</option>
+              <option v-for="opponent in availableOpponents" :key="opponent.id" :value="`custom-${opponent.id}`">{{ opponent.name }} · {{ opponent.tag }}</option>
+            </select>
+            <p v-if="selectedOpponent" class="muted">{{ selectedOpponent.persona }}</p>
+            <p v-else class="muted">默认逻辑型。开赛后保存当时的辩手配置。</p>
+          </div>
+          <div class="style-field">
+            <label :for="`${id}-difficulty`">交锋难度</label>
+            <select :id="`${id}-difficulty`" v-model="difficulty" name="difficulty" :disabled="formDisabled || !!selectedCupStage || !!selectedOpponent">
+              <option v-for="(label, value) in difficultyLabels" :key="value" :value="value">{{ label }}</option>
+            </select>
+          </div>
+        </div>
+        <label class="practice-option" :for="`${id}-practice`">
+          <input :id="`${id}-practice`" v-model="practice" type="checkbox" :disabled="formDisabled" />
+          使用本地演示开练习局（不计正式积分）
+        </label>
+      </section>
+      <div class="section-heading"><h3>第二步：选择辩题并进入竞技场</h3></div>
       <fieldset :disabled="formDisabled" class="source-options" data-source-options>
         <legend>辩题来源</legend>
         <label><input :checked="source === 'preset'" type="radio" :name="`${id}-source`" value="preset" data-source="preset" @change="selectSource('preset')">从公共题库选择</label>
@@ -284,15 +351,26 @@ onUnmounted(() => { disposed = true; version++ })
             :aria-pressed="topicFilter === category" @click="topicFilter = category">{{ label }}</button>
         </div>
         <p v-if="catalogTopics && !visibleTopics.length">这个主题暂无辩题。</p>
-        <article v-for="topic in visibleTopics" :key="topic.id" class="topic-option" :class="{ selected: selectedTopicId === topic.id }" :data-topic-id="topic.id">
-          <label>
-            <input v-model="selectedTopicId" type="radio" :name="`${id}-topic`" :value="topic.id">
-            <span><strong>{{ topic.title }}</strong><span class="description">{{ topic.description }}</span>
-              <small v-if="topic.item">{{ neonCategoryLabels[topic.item.category] }} · {{ topic.item.public ? `${topic.item.heat} 人交锋` : '仅本人可见' }}</small>
-            </span>
-          </label>
-          <TopicPublicReports v-if="topic.item?.public" :topic-id="topic.id" />
-        </article>
+        <div class="topic-grid">
+          <article v-for="(topic, index) in visibleTopics" :key="topic.id" class="topic-option" :class="{ selected: selectedTopicId === topic.id }" :data-topic-id="topic.id">
+            <label>
+              <input v-model="selectedTopicId" type="radio" :name="`${id}-topic`" :value="topic.id">
+              <span class="topic-content">
+                <span v-if="topic.item" class="topic-meta">
+                  <span v-if="topicFilter === 'hot'" class="pill topic-rank">TOP {{ index + 1 }}</span>
+                  <span class="pill">{{ neonCategoryLabels[topic.item.category] }}</span>
+                  <span class="heat">{{ topic.item.public ? `${topic.item.heat} 人交锋` : '仅本人可见' }}</span>
+                </span>
+                <strong>{{ topic.title }}</strong>
+                <span class="description">{{ topic.description }}</span>
+              </span>
+            </label>
+            <div class="topic-actions">
+              <Button type="secondary" html-type="button" :disabled="formDisabled" @click="startTopic(topic.id)">立即开辩</Button>
+              <TopicPublicReports v-if="topic.item?.public" :topic-id="topic.id" />
+            </div>
+          </article>
+        </div>
       </fieldset>
       <!-- 未选自定义时不渲染输入框：既避免隐藏控件参与表单查询，
            也保证草稿仍保存在组件状态里，切换来源不会丢输入。 -->
@@ -332,35 +410,11 @@ onUnmounted(() => { disposed = true; version++ })
           </p>
         </div>
       </div>
-      <fieldset :disabled="formDisabled" class="stance-options">
-        <legend>选择你的立场</legend>
-        <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="pro">正方（支持）</label>
-        <label><input v-model="stance" type="radio" :name="`${id}-stance`" value="con">反方（反对）</label>
-      </fieldset>
-      <div class="style-field">
-        <label :for="`${id}-ai-style`">AI 陪练流派</label>
-        <select :id="`${id}-ai-style`" v-model="opponentChoice" name="ai_style" :disabled="formDisabled || !!selectedCupStage">
-          <option v-for="(label, value) in AI_STYLE_LABELS" :key="value" :value="value">{{ opponents.find(item => item.official && item.style === value)?.name ?? label }}</option>
-          <option v-for="opponent in availableOpponents" :key="opponent.id" :value="`custom-${opponent.id}`">{{ opponent.name }} · {{ opponent.tag }}</option>
-        </select>
-        <p v-if="selectedOpponent" class="muted">{{ selectedOpponent.persona }}</p>
-        <p v-else class="muted">默认逻辑型。开赛后保存当时的辩手配置。</p>
-      </div>
-      <div class="style-field">
-        <label :for="`${id}-difficulty`">交锋难度</label>
-        <select :id="`${id}-difficulty`" v-model="difficulty" name="difficulty" :disabled="formDisabled || !!selectedCupStage || !!selectedOpponent">
-          <option v-for="(label, value) in difficultyLabels" :key="value" :value="value">{{ label }}</option>
-        </select>
-      </div>
       <div v-if="previewTopic" class="topic-preview" data-topic-preview>
         <p class="muted">本场题目预览（按纯文本展示，创建后保存为快照）</p>
         <h3>{{ previewTopic.title }}</h3>
         <p v-if="previewTopic.description" class="description">{{ previewTopic.description }}</p>
       </div>
-      <label class="practice-option" :for="`${id}-practice`">
-        <input :id="`${id}-practice`" v-model="practice" type="checkbox" :disabled="formDisabled" />
-        使用本地演示开练习局（不计正式积分）
-      </label>
       <p class="muted">你将持{{ stance === 'pro' ? '正方' : '反方' }}，AI 持{{ stance === 'pro' ? '反方' : '正方' }}。{{ source === 'custom' ? '请填写辩题后创建会话。' : '请选择一个辩题后创建会话。' }}</p>
       <Alert v-if="createError" type="error" :title="createError" role="alert" />
       <p v-if="creationUncertain" role="status">创建结果尚未确认。请先查看历史会话，核实是否已创建，避免重复创建。</p>
@@ -375,40 +429,87 @@ onUnmounted(() => { disposed = true; version++ })
 </template>
 
 <style scoped>
-.view-header, .view-actions, .stance-options, .source-options { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.view-header { justify-content: space-between; }
-.view-header h2 { margin-bottom: 0; font-family: var(--app-serif); }
-.cup-preview { display: grid; gap: 10px; padding: 14px; color: #6e4e18; background: #fff8e8; border: 1px solid #ead7a8; border-radius: var(--app-radius-panel); }
-.cup-preview strong span { font-size: 12px; font-weight: 500; }
-.cup-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.cup-heading p { margin: 0; font-size: 13px; }
-.cup-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px; }
-.cup-stages button { display: grid; gap: 4px; padding: 9px 8px; border: 1px solid #ead7a8; background: #fffcf4; color: inherit; border-radius: 8px; text-align: left; }
-.cup-stages button[aria-pressed='true'] { border-color: #946725; background: #fcebc3; }
-.muted, .description { color: var(--app-text-muted); font-size: 13px; line-height: 1.8; }
-fieldset { min-width: 0; padding: 0; margin: 20px 0; border: 0; }
-legend { margin-bottom: 12px; font-weight: 600; }
-.source-options label { display: inline-flex; gap: 8px; align-items: center; }
-.topic-options { display: grid; gap: 10px; }
-.topic-filters { display: flex; flex-wrap: wrap; gap: 8px; }
-.topic-filters button { padding: 5px 10px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
-.topic-filters button[aria-pressed="true"] { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
-.topic-option { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
-.topic-option.selected { border-color: var(--app-selected-border); background: var(--app-selected-bg); }
-.topic-option label { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.topics-view { display: grid; gap: 24px; min-width: 0; }
+.topics-view form { display: grid; gap: 14px; }
+.view-header, .view-actions, .section-heading, .cup-heading { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.view-header { align-items: flex-end; }
+.view-header h2 { margin: 0; color: var(--app-text); font: 700 24px/1.3 var(--app-serif); }
+.view-header p, .cup-heading p { margin: 4px 0 0; }
+.section-heading h3, .cup-heading h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.lobby-panel, .topic-option {
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+  background: var(--app-surface);
+  box-shadow: 0 1px 3px rgba(28, 25, 23, .06);
+}
+.lobby-panel { display: grid; gap: 14px; padding: 16px; min-width: 0; }
+.cup-heading > .arco-btn { color: #78350f; border: 1px solid #fde68a; border-radius: 12px; background: #fffbeb; }
+.cup-stages { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cup-stages button { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--app-border); border-radius: 12px; color: var(--app-text); background: var(--app-surface); text-align: left; }
+.cup-stages button[aria-pressed='true'] { border-color: #d6a858; background: #fffbeb; }
+.cup-stages small { color: var(--app-text-muted); }
+fieldset { min-width: 0; padding: 0; margin: 0; border: 0; }
+legend { margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.source-options, .stance-options { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.source-options label, .stance-options label, .practice-option { display: inline-flex; gap: 6px; align-items: center; }
+.stance-options { padding: 4px; border-radius: 12px; background: var(--app-background); }
+.stance-options legend { float: left; margin: 0 4px; align-self: center; }
+.stance-options label { padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+.stance-options label:has(:checked) { background: var(--app-surface); box-shadow: 0 1px 2px rgba(28, 25, 23, .12); }
+.persona-grid, .topic-grid, .opponent-settings { display: grid; gap: 12px; }
+.persona-card { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--app-border); border-radius: 12px; color: var(--app-text); background: var(--app-surface); text-align: left; overflow-wrap: anywhere; }
+.persona-card[aria-pressed='true'], .topic-option.selected { border-color: var(--app-pro); box-shadow: 0 0 0 2px var(--app-pro-pale); }
+.persona-card[aria-pressed='true'] { background: var(--app-pro-pale); }
+.persona-heading, .persona-meta, .topic-meta { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px; }
+.persona-meta { color: var(--app-con); font-size: 11px; }
+.pill, .heat { font-size: 11px; }
+.pill { padding: 2px 8px; border-radius: 999px; background: var(--app-background); color: var(--app-text-muted); }
+.topic-rank { background: var(--app-pro-pale); color: var(--app-pro); }
+.heat { color: #92400e; }
+.muted, .description { color: var(--app-text-muted); font-size: 12px; line-height: 1.7; }
+.topic-options { display: grid; gap: 12px; }
+.topic-filters, .topic-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.topic-filters button { padding: 5px 12px; border: 1px solid var(--app-border); border-radius: 8px; color: var(--app-text); background: var(--app-surface); font-size: 12px; }
+.topic-filters button[aria-pressed='true'] { border-color: #1c1917; color: #fff; background: #1c1917; }
+.topic-option { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 16px; overflow-wrap: anywhere; }
+.topic-option label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .topic-option input { flex: none; margin-top: 4px; }
+.topic-content { display: grid; gap: 8px; flex: 1; min-width: 0; }
+.topic-content strong { font: 700 16px/1.4 var(--app-serif); }
+.topic-actions > .arco-btn { flex: 1; }
+.topic-actions > .arco-btn,
+.topics-view form > .arco-btn-primary { border-radius: var(--app-radius-sm); font-weight: 650; }
+.topic-actions > .arco-btn { color: var(--app-pro); background: var(--app-pro-pale); }
+.topics-view form > .arco-btn-primary:not([disabled]) { color: #fff; background: #c9362b; }
+.topics-view form > .arco-btn-primary:not([disabled]):hover { background: var(--app-pro); }
 .description { display: block; white-space: pre-wrap; }
-.stance-options label { display: inline-flex; gap: 8px; align-items: center; }
-.view-actions { margin-top: 20px; }
-[role="alert"], .custom-topic { margin-bottom: 16px; }
-.custom-field { margin: 16px 0; }
-.custom-field label { display: block; margin-bottom: 8px; font-weight: 600; }
-.custom-field textarea { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); font: inherit; resize: vertical; }
+.view-actions { justify-content: flex-start; }
+.custom-field { margin: 12px 0; }
+.custom-field label, .style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.custom-field textarea, .style-field select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--app-input-border);
+  border-radius: var(--app-radius-control);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font: inherit;
+}
+.custom-field textarea { resize: vertical; }
 .counter { margin: 6px 0 0; font-size: 12px; color: var(--app-text-muted); }
 .counter.invalid { color: var(--app-danger-text, #cb2634); }
-.style-field label { display: block; margin-bottom: 8px; font-weight: 600; }
-.practice-option { display: flex; align-items: center; gap: 8px; margin-block: 12px; }
-.style-field select { width: 100%; padding: 10px; border: 1px solid var(--app-input-border); border-radius: var(--app-radius-control); background: var(--app-surface); color: var(--app-text); }
 .topic-preview { padding: 16px; border: 1px dashed var(--app-border); border-radius: var(--app-radius-control); overflow-wrap: anywhere; }
 .topic-preview h3 { margin: 8px 0; white-space: pre-wrap; }
+@media (min-width: 640px) {
+  .lobby-panel { padding: 20px; }
+  .opponent-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 768px) {
+  .persona-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .topic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .cup-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .topic-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 </style>

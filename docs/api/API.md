@@ -117,7 +117,7 @@ OpenAPI 用 Cookie `apiKey` 表达 Session，用 Header `apiKey` 表达 CSRF；�
 | 请求 Schema | 字段 | JSON 类型 | 必填 | 约束 |
 | --- | --- | --- | --- | --- |
 | `Credentials`（注册/登录复用） | `username` | string | 是 | trim 后转小写；归一化后 3–32 位 ASCII 字母、数字、下划线。限制作用于归一化值。 |
-| `Credentials` | `password` | string | 是 | 原样校验，12–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
+| `Credentials` | `password` | string | 是 | 原样校验，6–128 个 Unicode 码点、UTF-8 最多 512 字节。 |
 | `CreateDebateRequest` | `topic_id` | string | 二选一 | 预设题 ID，正整数十进制字符串。与 `custom_topic` **恰有一个出现**。 |
 | `CreateDebateRequest` | `custom_topic` | object | 二选一 | 私有自定义辩题，包含必填 `title` 和可选 `background`。与 `topic_id` 恰有一个出现。 |
 | `CreateDebateRequest.custom_topic` | `title` | string | 是 | 1–200 个 Unicode 码点，拒绝纯空白（Unicode White_Space 与 U+FEFF），保存原文不裁剪。 |
@@ -193,7 +193,7 @@ Schema 不推定数据库内部字段都是 HTTP 字段：例如 `user_id`、`pa
 {"username":"Alice","password":"example-password"}
 ```
 
-用户名去除首尾空白后转小写，长度为 3–32 位，仅允许 ASCII 字母、数字和下划线。密码按原样校验，长度为 12–128 个 Unicode 码点且最多 512 字节。`users.username` 以归一化值唯一约束，`password_hash` 仅用于服务端认证。注册同一 IP 每小时最多 5 次，限流先于密码哈希。
+用户名去除首尾空白后转小写，长度为 3–32 位，仅允许 ASCII 字母、数字和下划线。密码按原样校验，长度为 6–128 个 Unicode 码点且最多 512 字节。`users.username` 以归一化值唯一约束，`password_hash` 仅用于服务端认证。注册同一 IP 每小时最多 5 次，限流先于密码哈希。
 
 `201` 返回新用户，随后由用户登录。
 

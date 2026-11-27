@@ -336,6 +336,8 @@ function onRepractice(improvement: string, quote: ReviewQuote | null) {
 .issue-group li { display: grid; gap: 4px; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
 .quote-ref { color: var(--app-text-secondary); font-size: 13px; }
 .review-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.review-panel { border-color: #e5e0da; background: #fff; box-shadow: 0 5px 18px rgba(55,45,33,.05); }
+.review-state, .dimension-card, .issue-group { border-color: #e5e0da; background: #fffdfa; }
 @media (min-width: 900px) {
   .review-body { grid-template-columns: minmax(0, 280px) minmax(0, 1fr); align-items: start; }
   .review-issues { grid-template-columns: repeat(3, minmax(0, 1fr)); }

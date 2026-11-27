@@ -74,12 +74,12 @@ func TestNormalizeUsernameLengthIsMeasuredAfterTrim(t *testing.T) {
 
 func TestValidatePasswordAcceptsContractLengths(t *testing.T) {
 	for name, raw := range map[string]string{
-		"12 ascii":            strings.Repeat("a", 12),
+		"6 ascii":             strings.Repeat("a", 6),
 		"128 ascii":           strings.Repeat("a", 128),
-		"12 chinese runes":    strings.Repeat("密", 12),
+		"6 chinese runes":     strings.Repeat("密", 6),
 		"128 four byte runes": strings.Repeat("😀", 128),
 		"mixed":               "pässwörd-1234",
-		"spaces are data":     "            ",
+		"spaces are data":     "      ",
 		"trailing space":      "password1234 ",
 		"boundary 512 bytes":  strings.Repeat("😀", 128),
 	} {
@@ -98,11 +98,11 @@ func TestValidatePasswordAcceptsContractLengths(t *testing.T) {
 func TestValidatePasswordRejectsInvalid(t *testing.T) {
 	for name, raw := range map[string]string{
 		"empty":             "",
-		"11 runes":          strings.Repeat("a", 11),
+		"5 runes":           strings.Repeat("a", 5),
 		"129 runes":         strings.Repeat("a", 129),
 		"129 chinese runes": strings.Repeat("密", 129),
 		"invalid utf8":      string([]byte{0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4}),
-		"truncated utf8":    strings.Repeat("密", 11) + string([]byte{0xe5, 0xaf}),
+		"truncated utf8":    strings.Repeat("密", 5) + string([]byte{0xe5, 0xaf}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := ValidatePassword(raw); err == nil {
@@ -114,10 +114,10 @@ func TestValidatePasswordRejectsInvalid(t *testing.T) {
 
 func TestValidatePasswordDoesNotTrim(t *testing.T) {
 	// 去掉首尾空白后会变短，但契约要求原样校验，不得 trim。
-	if err := ValidatePassword("   abcdefghi   "); err != nil {
+	if err := ValidatePassword(" abcd "); err != nil {
 		t.Fatalf("password must not be trimmed: %v", err)
 	}
-	if err := ValidatePassword(" 短密码   "); err == nil {
-		t.Fatal("password shorter than 12 runes must be rejected even if bytes >= 12")
+	if err := ValidatePassword(" 短密码 "); err == nil {
+		t.Fatal("password shorter than 6 runes must be rejected even if bytes >= 12")
 	}
 }

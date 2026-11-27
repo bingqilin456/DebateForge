@@ -4,6 +4,8 @@ services:
     environment:
       AI_MODE: byok
       BYOK_MASTER_KEY_FILE: /run/secrets/byok_master_key
+      V2_ANNOTATION_FAKE: "0"
+      V2_REVIEW_FAKE: "0"
     secrets:
       - byok_master_key
 

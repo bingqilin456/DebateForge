@@ -25,3 +25,5 @@ GRANT SELECT, INSERT, UPDATE ON `siyige_deploy`.`neon_opponents` TO 'siyige_depl
 GRANT SELECT, INSERT, UPDATE ON `siyige_deploy`.`neon_public_reports` TO 'siyige_deploy_app'@'%';
 GRANT SELECT, INSERT, UPDATE ON `siyige_deploy`.`neon_dojo_attempts` TO 'siyige_deploy_app'@'%';
 GRANT SELECT, INSERT, UPDATE ON `siyige_deploy`.`neon_profiles` TO 'siyige_deploy_app'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `siyige_deploy`.`user_model_settings` TO 'siyige_deploy_app'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `siyige_deploy`.`neon_judge_models` TO 'siyige_deploy_app'@'%';

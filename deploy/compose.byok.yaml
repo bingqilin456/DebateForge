@@ -8,7 +8,12 @@ services:
       V2_REVIEW_FAKE: "0"
     secrets:
       - byok_master_key
+    networks:
+      byok-egress: {}
 
 secrets:
   byok_master_key:
     file: ${T07_BYOK_MASTER_KEY_FILE:?set T07_BYOK_MASTER_KEY_FILE}
+
+networks:
+  byok-egress: {}

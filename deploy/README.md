@@ -42,7 +42,7 @@ t07=(docker compose --env-file deploy/.env -f deploy/compose.yaml -p siyige-t07-
 
 Neon 公网演示默认使用 `AI_MODE=fake`。迁移与授权就绪后，应用可通过覆盖配置显式设置 `V2_ANNOTATION_FAKE=1` 和 `V2_REVIEW_FAKE=1`，分别启用演示批注与复盘。
 
-个人模型设置使用 `AI_MODE=byok`，由 `compose.byok.yaml` 叠加启用。服务端通过 `BYOK_MASTER_KEY_FILE` 读取独立的 32 字节十六进制加密主密钥，用户录入的供应商密钥只在服务端加密保存，浏览器不会保存或直连供应商。正式环境启用该模式前，先准备主密钥文件并运行 `docker compose ... -f compose.byok.yaml config --quiet`，再滚动替换 app；模型供应商的请求费用由用户个人配置承担，公网部署仍需保留请求限额与出网审查。
+个人模型设置使用 `AI_MODE=byok`，由 `compose.byok.yaml` 叠加启用。服务端通过 `BYOK_MASTER_KEY_FILE` 读取独立的 32 字节十六进制加密主密钥，用户录入的供应商密钥只在服务端加密保存，浏览器不会保存或直连供应商。BYOK 覆盖会把 app 加入独立的 `byok-egress` 出网网络，默认 Fake 部署不接入该网络。正式环境启用该模式前，先准备主密钥文件并运行 `docker compose ... -f compose.byok.yaml config --quiet`，再滚动替换 app；模型供应商的请求费用由用户个人配置承担，公网部署仍需保留请求限额与出网审查。
 
 ## 3. 首次受控发布与回退
 

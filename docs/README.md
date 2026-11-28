@@ -88,6 +88,7 @@ Phase 3 优先级、自主流派和查询恢复契约见 [ADR-023](decisions/DEC
 - T06：[正式入口与首轮联调最终验收](acceptance/T06_COMPLETION_ACCEPTANCE.md)。
 - T07 部署准备见 [配置与运行清单](../deploy/README.md) 和 [验收记录](acceptance/T07_DEPLOYMENT_PREPARATION_ACCEPTANCE.md)。
 - T16 Phase 4 运维演练见[执行计划](../deploy/T16_PLAN.md)、[健康与备份新鲜度检查工具](../deploy/ops/health/README.md)和[验证记录](acceptance/T16_OPERATIONS_VALIDATION.md)；记录中的未验证项仍须现场补证。
+- T17 ECS 部署见[私有及受限公网浏览器、并发、重启与费用记录](acceptance/T17_PRIVATE_DEPLOYMENT_VALIDATION.md)。
 - T09 三轮状态机与失败恢复（含 T11 后端历史分页）见 [T09 验收记录](acceptance/T09_THREE_TURNS_RECOVERY_ACCEPTANCE.md)。
 - T10 结构化总结与重试见 [T10 验收记录](acceptance/T10_SUMMARY_RETRY_ACCEPTANCE.md)。
 - T12 核心辩论页面联调与 Phase 2（AC01–AC08）Fake 全链路验证见 [T12 验收记录](acceptance/T12_DEBATE_INTEGRATION_ACCEPTANCE.md)。
